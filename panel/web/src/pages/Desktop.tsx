@@ -392,6 +392,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     setImeSending(submit ? 'send' : 'input');
     try {
       if (!(await ensureImeControl())) return;
+      focusFrame();
       await api.typeInInstance(id, t, { submit, submitKey: imeSubmitKey });
       setImeText('');
     } catch (e: any) {

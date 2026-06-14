@@ -675,7 +675,7 @@ export async function typeInInstance(
     'cleanup(){ rm -f "$tmp"; [ -n "$clip_pid" ] && kill "$clip_pid" 2>/dev/null || true; }',
     'trap cleanup EXIT',
     `printf '%s' '${b64}' | base64 -d > "$tmp"`,
-    'xclip -selection clipboard -loops 1 -i < "$tmp" &',
+    'xclip -selection clipboard -loops 5 -i < "$tmp" &',
     'clip_pid="$!"',
     'sleep 0.08',
     'xdotool key --clearmodifiers ctrl+v',
@@ -683,7 +683,7 @@ export async function typeInInstance(
     submitCmd,
     'sleep 0.08',
     'for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$clip_pid" 2>/dev/null || break; sleep 0.1; done',
-  ].join('; ');
+  ].join('\n');
   await execCapture(inst, ['bash', '-c', cmd]);
 }
 
