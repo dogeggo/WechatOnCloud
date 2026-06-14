@@ -17,6 +17,8 @@ interface TFile {
   name: string;
   size: number;
 }
+type ImeSubmitKey = 'enter' | 'ctrlEnter';
+
 function humanSize(n: number) {
   if (n < 1024) return n + ' B';
   if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
@@ -46,7 +48,14 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
   // 中文输入条：面板里的真实 textarea（原生客户端输入法 100% 可用），回车经 xclip+xdotool 粘进微信。
   const [imeBar, setImeBar] = useState(true); // 默认开（直接在 VNC 里打中文不稳，给一个可靠通道）
   const [imeText, setImeText] = useState('');
-  const [imeSending, setImeSending] = useState(false);
+  const [imeSending, setImeSending] = useState<'input' | 'send' | null>(null);
+  const [imeSubmitKey, setImeSubmitKey] = useState<ImeSubmitKey>(() => {
+    try {
+      return window.localStorage.getItem('woc_ime_submit_key') === 'ctrlEnter' ? 'ctrlEnter' : 'enter';
+    } catch {
+      return 'enter';
+    }
+  });
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [control, setControl] = useState<{ free: boolean; mine: boolean; holder: string | null } | null>(null);
@@ -213,6 +222,14 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     }
   }, [id, vncNonce]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('woc_ime_submit_key', imeSubmitKey);
+    } catch {
+      /* ignore */
+    }
+  }, [imeSubmitKey]);
+
   // 音频/麦克风桥接：实例就绪即自动连接 kclient 的音频流（扬声器恒开，无需手动找工具条）；
   // 仅当本实例处于焦点（标签页可见且窗口聚焦）时出声/收音，失焦立即断开，避免多实例多端串音。
   useEffect(() => {
@@ -350,19 +367,37 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     }
   };
 
+  const ensureImeControl = async (): Promise<boolean> => {
+    if (!id) return false;
+    try {
+      const r = await api.controlBeat(id);
+      setControl({ free: false, mine: r.mine, holder: r.holder });
+      lastBeat.current = Date.now();
+      if (!r.mine) {
+        toast(`「${r.holder}」正在操作，请先申请控制`, 'error');
+        return false;
+      }
+      return true;
+    } catch (e: any) {
+      toast(e?.message || '申请控制失败', 'error');
+      return false;
+    }
+  };
+
   // 中文输入条发送：把本框文本经 xclip+xdotool 直接粘进微信当前聚焦的输入框（绕开 VNC IME）。
   // 在面板的真实 textarea 里用原生输入法打字，100% 可靠，不依赖 VNC 的 enable_ime / 合成事件。
-  const sendImeText = async () => {
+  const sendImeText = async (submit: boolean) => {
     const t = imeText;
-    if (!t.trim() || !id) return;
-    setImeSending(true);
+    if (!t.trim() || !id || imeSending) return;
+    setImeSending(submit ? 'send' : 'input');
     try {
-      await api.typeInInstance(id, t);
+      if (!(await ensureImeControl())) return;
+      await api.typeInInstance(id, t, { submit, submitKey: imeSubmitKey });
       setImeText('');
     } catch (e: any) {
       toast(e?.message || '发送失败：请确认实例已「升级实例」（镜像含 xclip/xdotool）', 'error');
     } finally {
-      setImeSending(false);
+      setImeSending(null);
     }
   };
 
@@ -425,6 +460,8 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
   };
 
   const title = inst?.name || '微信实例';
+  const imeLocked = !!control && !control.free && !control.mine;
+  const imeDisabled = !!imeSending || imeLocked;
 
   return (
     <div className="ws-page">
@@ -678,20 +715,42 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
                 value={imeText}
                 onChange={(e) => setImeText(e.target.value)}
                 onKeyDown={(e) => {
+                  const native = e.nativeEvent as KeyboardEvent;
+                  if (native.isComposing || e.keyCode === 229) return;
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    sendImeText();
+                    sendImeText(true);
                   }
                 }}
-                placeholder="中文输入这里 → 回车送进微信（先点好微信的输入框）。Shift+回车换行。"
+                placeholder={imeLocked ? `「${control?.holder}」正在操作，申请控制后可输入` : '中文输入这里，Enter 发送。Shift+Enter 换行。'}
+                disabled={imeDisabled}
                 rows={1}
               />
+              <select
+                className="iv-imebar-key"
+                value={imeSubmitKey}
+                onChange={(e) => setImeSubmitKey(e.target.value === 'ctrlEnter' ? 'ctrlEnter' : 'enter')}
+                disabled={imeDisabled}
+                title="微信发送快捷键"
+              >
+                <option value="enter">Enter发送</option>
+                <option value="ctrlEnter">Ctrl+Enter发送</option>
+              </select>
+              <button
+                className="btn iv-imebar-input-only"
+                disabled={imeDisabled || !imeText.trim()}
+                onClick={() => sendImeText(false)}
+                title="只粘贴到微信输入框，不发送"
+              >
+                {imeSending === 'input' ? '输入中' : '输入'}
+              </button>
               <button
                 className="btn btn-primary iv-imebar-send"
-                disabled={imeSending || !imeText.trim()}
-                onClick={sendImeText}
+                disabled={imeDisabled || !imeText.trim()}
+                onClick={() => sendImeText(true)}
+                title="粘贴到微信输入框并发送"
               >
-                {imeSending ? '发送中' : '发送'}
+                {imeSending === 'send' ? '发送中' : '发送'}
               </button>
             </div>
           )}

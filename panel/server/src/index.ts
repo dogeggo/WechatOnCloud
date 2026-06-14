@@ -944,19 +944,24 @@ app.get('/api/instances/:id/download', async (req, reply) => {
 const CONTROL_TTL = 10_000; // ms：超过则视为已空闲，可被接管
 const controlHolders = new Map<string, { sub: string; username: string; at: number }>();
 
+function claimControlForAction(id: string, u: AuthUser): { ok: true; holder: string } | { ok: false; holder: string } {
+  const now = Date.now();
+  const h = controlHolders.get(id);
+  if (!h || now - h.at > CONTROL_TTL || h.sub === u.sub) {
+    controlHolders.set(id, { sub: u.sub, username: u.username, at: now });
+    return { ok: true, holder: u.username };
+  }
+  return { ok: false, holder: h.username };
+}
+
 // 续约/认领：无人持有、已超时、或本来就是我 → 我成为操作者；否则返回当前操作者。
 app.post('/api/instances/:id/control/beat', async (req, reply) => {
   const u = requireAuth(req, reply);
   if (!u) return;
   const id = (req.params as any).id;
   if (!findInstance(id)) return reply.code(404).send({ error: '实例不存在' });
-  const now = Date.now();
-  const h = controlHolders.get(id);
-  if (!h || now - h.at > CONTROL_TTL || h.sub === u.sub) {
-    controlHolders.set(id, { sub: u.sub, username: u.username, at: now });
-    return { mine: true, holder: u.username };
-  }
-  return { mine: false, holder: h.username };
+  const r = claimControlForAction(id, u);
+  return { mine: r.ok, holder: r.holder };
 });
 
 // 只读查询当前操作者（前端轮询；不认领）。超 TTL 视为空闲。
@@ -987,10 +992,15 @@ app.post('/api/instances/:id/type', async (req, reply) => {
   const id = (req.params as any).id;
   const inst = findInstance(id);
   if (!inst) return reply.code(404).send({ error: '实例不存在' });
-  const { text } = (req.body as any) ?? {};
+  const { text, submit, submitKey } = (req.body as any) ?? {};
   if (!text || typeof text !== 'string' || text.length > 500) return reply.code(400).send({ error: '文字为空或过长' });
+  const control = claimControlForAction(id, u);
+  if (!control.ok) return reply.code(409).send({ error: `「${control.holder}」正在操作，请先申请控制`, holder: control.holder });
   try {
-    await typeInInstance(inst, text);
+    await typeInInstance(inst, text, {
+      submit: submit === true,
+      submitKey: submitKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter',
+    });
     return { ok: true };
   } catch (e: any) {
     return reply.code(500).send({ error: e?.message || '输入失败' });

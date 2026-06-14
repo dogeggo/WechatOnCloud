@@ -19,15 +19,15 @@ function loadIo(id: string): Promise<any> {
   if (w.io) return Promise.resolve(w.io);
   const existing = document.getElementById('woc-socketio') as HTMLScriptElement | null;
   if (existing && (existing as any)._wocPromise) return (existing as any)._wocPromise;
+  const s = document.createElement('script');
+  s.id = 'woc-socketio';
+  s.src = `/desktop/${encodeURIComponent(id)}/audio/socket.io/socket.io.js`;
   const p = new Promise<any>((resolve, reject) => {
-    const s = document.createElement('script');
-    s.id = 'woc-socketio';
-    s.src = `/desktop/${encodeURIComponent(id)}/audio/socket.io/socket.io.js`;
     s.onload = () => ((window as any).io ? resolve((window as any).io) : reject(new Error('io 未就绪')));
     s.onerror = () => reject(new Error('加载 socket.io 失败'));
-    document.head.appendChild(s);
-    (s as any)._wocPromise = p;
   });
+  (s as any)._wocPromise = p;
+  document.head.appendChild(s);
   return p;
 }
 
