@@ -38,7 +38,7 @@ services:
       # 默认仅放行 loopback + RFC1918 私网，直连 NAS / 局域网无需改动。
       - PANEL_ALLOWED_HOSTS=${PANEL_ALLOWED_HOSTS:-}
       # 只有这些固定来源的反代 IP/CIDR 才允许提供 X-Forwarded-Host / X-Forwarded-For。
-      - PANEL_TRUSTED_PROXIES=${PANEL_TRUSTED_PROXIES:-}
+      - PANEL_TRUSTED_PROXIES=${PANEL_TRUSTED_PROXIES:-172.18.0.1}
       # 公网部署下限制大请求体，避免未预期的大文件拖垮面板。
       - PANEL_MAX_TRANSFER_UPLOAD_MB=${PANEL_MAX_TRANSFER_UPLOAD_MB:-128}
       - PANEL_MAX_VOLUME_FILE_UPLOAD_MB=${PANEL_MAX_VOLUME_FILE_UPLOAD_MB:-256}
@@ -65,9 +65,13 @@ services:
 
     restart: always
     networks:
-      - woc_internal
+      - ${WOC_DOCKER_NETWORK:-woc_internal}
+
+#networks:
+#  woc_internal:
+#    name: ${WOC_DOCKER_NETWORK:-woc_internal}
+#    driver: bridge
 
 networks:
-  woc_internal:
-    name: ${WOC_DOCKER_NETWORK:-woc_internal}
-    driver: bridge
+  immich_default:
+    external: true

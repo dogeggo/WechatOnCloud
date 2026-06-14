@@ -64,7 +64,7 @@ import {
   type AuthUser,
 } from './sessions.js';
 import {
-  effectiveRequestHost,
+  isAllowedHost,
   isRequestHostAllowed,
   isTrustedProxy,
   parseAllowedHosts,
@@ -107,13 +107,119 @@ const RATE_LIMIT_API_PER_MIN = envInt('PANEL_RATE_LIMIT_API_PER_MIN', 600, 10, 1
 const RATE_LIMIT_AUTH_PER_MIN = envInt('PANEL_RATE_LIMIT_AUTH_PER_MIN', 30, 5, 1000);
 const sessionSockets = new Map<string, Set<Socket>>();
 
+function firstHeaderValue(v: string | string[] | undefined) {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function normalizeIp(ip: string | undefined): string {
+  const s = String(ip || '').trim();
+  return s.startsWith('::ffff:') ? s.slice('::ffff:'.length) : s;
+}
+
+function trustedClientIp(headers: IncomingMessage['headers'], remoteAddress: string | undefined): string {
+  const remote = normalizeIp(remoteAddress);
+  const forwardedFor = firstHeaderValue(headers['x-forwarded-for']);
+  if (forwardedFor && isTrustedProxy(remote, TRUSTED_PROXIES)) return normalizeIp(forwardedFor.split(',')[0]);
+  return remote || 'unknown';
+}
+
+function isTrustedForwardSource(remoteAddress: string | undefined): boolean {
+  return isTrustedProxy(normalizeIp(remoteAddress), TRUSTED_PROXIES);
+}
+
+function requestProtocol(headers: IncomingMessage['headers'], remoteAddress: string | undefined, encrypted: boolean): 'http' | 'https' {
+  if (isTrustedForwardSource(remoteAddress)) {
+    const proto = firstHeaderValue(headers['x-forwarded-proto'])
+      ?.split(',')[0]
+      ?.trim()
+      ?.toLowerCase();
+    if (proto === 'http' || proto === 'https') return proto;
+  }
+  return encrypted ? 'https' : 'http';
+}
+
+function normalizeAuthority(raw: string | undefined): string {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value || /[\s\0]/.test(value) || value.includes('://') || value.includes('@')) return '';
+  if (value.startsWith('[')) {
+    const close = value.indexOf(']');
+    if (close <= 0) return '';
+    const rest = value.slice(close + 1);
+    if (rest && !/^:\d{1,5}$/.test(rest)) return '';
+    return rest ? `${value.slice(0, close + 1)}:${Number(rest.slice(1))}` : value.slice(0, close + 1);
+  }
+  const parts = value.split(':');
+  if (parts.length > 2) return '';
+  if (parts.length === 2) {
+    if (!parts[0] || !/^\d{1,5}$/.test(parts[1])) return '';
+    return `${parts[0]}:${Number(parts[1])}`;
+  }
+  return value;
+}
+
+function defaultPort(protocol: 'http' | 'https'): number {
+  return protocol === 'https' ? 443 : 80;
+}
+
+function authorityForOrigin(raw: string | undefined, protocol: 'http' | 'https'): string {
+  const authority = normalizeAuthority(raw);
+  if (!authority) return '';
+  const host = parseHost(authority);
+  if (!host) return '';
+  const portPart = authority.startsWith('[')
+    ? authority.slice(authority.indexOf(']') + 1)
+    : authority.slice(host.length);
+  if (!portPart) return host;
+  const port = Number(portPart.slice(1));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return '';
+  return port === defaultPort(protocol) ? host : `${host}:${port}`;
+}
+
+function allowedAuthorityForOrigin(raw: string | undefined, protocol: 'http' | 'https'): string {
+  const authority = authorityForOrigin(raw, protocol);
+  return authority && isAllowedHost(parseHost(authority), ALLOWED_HOSTS) ? authority : '';
+}
+
+function effectiveRequestOrigin(
+  headers: IncomingMessage['headers'],
+  remoteAddress: string | undefined,
+  encrypted = false,
+): string {
+  const protocol = requestProtocol(headers, remoteAddress, encrypted);
+  const xfh = firstHeaderValue(headers['x-forwarded-host']);
+  if (xfh && isTrustedForwardSource(remoteAddress)) {
+    const forwardedAuthority = allowedAuthorityForOrigin(xfh.split(',')[0], protocol);
+    if (forwardedAuthority) return `${protocol}://${forwardedAuthority}`;
+  }
+  const host = allowedAuthorityForOrigin(firstHeaderValue(headers.host), protocol);
+  return host ? `${protocol}://${host}` : '';
+}
+
 function basicAuth(inst: Instance) {
   return 'Basic ' + Buffer.from(`${inst.kasmUser}:${inst.kasmPassword}`).toString('base64');
 }
 
 initStore();
 
-const app = Fastify({ logger: true, trustProxy: false, bodyLimit: 64 * 1024 });
+const app = Fastify({
+  logger: {
+    serializers: {
+      req(req) {
+        const headers = (req as any).headers ?? {};
+        const socket = (req as any).socket;
+        return {
+          method: (req as any).method,
+          url: (req as any).url,
+          host: (req as any).host ?? headers.host,
+          remoteAddress: trustedClientIp(headers, socket?.remoteAddress ?? (req as any).ip),
+          remotePort: socket?.remotePort,
+        };
+      },
+    },
+  },
+  trustProxy: false,
+  bodyLimit: 64 * 1024,
+});
 
 // DNS-rebinding gate: reject requests whose Host header is neither a loopback /
 // RFC1918 LAN address nor in PANEL_ALLOWED_HOSTS. Runs before every route so
@@ -147,20 +253,8 @@ function pathOf(rawUrl: string | undefined): string {
   return (rawUrl || '/').split('?')[0] || '/';
 }
 
-function firstHeader(v: string | string[] | undefined): string | undefined {
-  return Array.isArray(v) ? v[0] : v;
-}
-
-function normalizeIp(ip: string | undefined): string {
-  const s = String(ip || '').trim();
-  return s.startsWith('::ffff:') ? s.slice('::ffff:'.length) : s;
-}
-
 function clientIp(req: FastifyRequest): string {
-  const remote = normalizeIp(req.raw.socket.remoteAddress);
-  const xff = firstHeader(req.headers['x-forwarded-for']);
-  if (xff && isTrustedProxy(remote, TRUSTED_PROXIES)) return normalizeIp(xff.split(',')[0]);
-  return remote || 'unknown';
+  return trustedClientIp(req.headers, req.raw.socket.remoteAddress);
 }
 
 function rateLimitGroup(path: string): 'auth' | 'api' | null {
@@ -197,10 +291,6 @@ await app.register(cookie);
 app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
 
 // ---------- 鉴权辅助 ----------
-function firstHeaderValue(v: string | string[] | undefined) {
-  return Array.isArray(v) ? v[0] : v;
-}
-
 function requestSessionMeta(req: FastifyRequest) {
   return {
     ip: clientIp(req),
@@ -299,12 +389,8 @@ function closeSessionSockets(sessionId: string) {
 }
 
 function rawRequestSessionMeta(req: IncomingMessage) {
-  const remote = normalizeIp(req.socket.remoteAddress);
-  const forwardedFor = firstHeaderValue(req.headers['x-forwarded-for']);
   return {
-    ip: forwardedFor && isTrustedProxy(remote, TRUSTED_PROXIES)
-      ? normalizeIp(forwardedFor.split(',')[0])
-      : remote,
+    ip: trustedClientIp(req.headers, req.socket.remoteAddress),
     userAgent: firstHeaderValue(req.headers['user-agent']),
   };
 }
@@ -319,10 +405,12 @@ function isProtectedPath(path: string): boolean {
   return path !== '/api/auth/login' && path !== '/api/auth/callback';
 }
 
-function originHost(origin: string | undefined): string {
+function normalizedOrigin(origin: string | undefined): string {
   if (!origin) return '';
   try {
-    return parseHost(new URL(origin).host);
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    return `${url.protocol}//${url.host.toLowerCase()}`;
   } catch {
     return '';
   }
@@ -330,15 +418,9 @@ function originHost(origin: string | undefined): string {
 
 function sameOrigin(req: FastifyRequest | IncomingMessage): boolean {
   const headers = req.headers;
-  const remoteAddress = 'raw' in req ? req.raw.socket.remoteAddress : req.socket.remoteAddress;
-  const expected = effectiveRequestHost(
-    firstHeaderValue(headers.host),
-    headers['x-forwarded-host'],
-    ALLOWED_HOSTS,
-    remoteAddress,
-    TRUSTED_PROXIES,
-  );
-  return !!expected && originHost(firstHeaderValue(headers.origin)) === expected;
+  const socket = 'raw' in req ? req.raw.socket : req.socket;
+  const expected = effectiveRequestOrigin(headers, socket.remoteAddress, !!(socket as any).encrypted);
+  return !!expected && normalizedOrigin(firstHeaderValue(headers.origin)) === expected;
 }
 
 function contentLength(req: FastifyRequest, reply: FastifyReply, maxBytes: number): number | null {
@@ -1186,14 +1268,21 @@ function parseCookies(header?: string): Record<string, string> {
   for (const part of header.split(';')) {
     const idx = part.indexOf('=');
     if (idx === -1) continue;
-    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+    const name = part.slice(0, idx).trim();
+    if (!name) continue;
+    const raw = part.slice(idx + 1).trim();
+    try {
+      out[name] = decodeURIComponent(raw);
+    } catch {
+      out[name] = raw;
+    }
   }
   return out;
 }
 
 await app.ready();
 
-app.server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
+function handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer) {
   // DNS-rebinding gate for WebSocket upgrades (Fastify's onRequest hook does
   // not run on raw upgrades). KasmVNC proxying goes through this path.
   if (!isRequestHostAllowed(
@@ -1223,6 +1312,15 @@ app.server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) =>
   (req as any)._wocAuth = basicAuth(inst);
   trackSessionSocket(session.id, socket);
   proxy.ws(req, socket, head, { target: instanceTarget(inst) });
+}
+
+app.server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
+  try {
+    handleUpgrade(req, socket, head);
+  } catch (e: any) {
+    app.log.warn(`[upgrade] rejected malformed upgrade request: ${e?.message || e}`);
+    socket.destroy();
+  }
 });
 
 // 探测面板网络 + 重启后把已登记实例的容器拉起来
