@@ -52,8 +52,25 @@ import {
   volBackupStream,
   volRestoreArchive,
 } from './docker.js';
-import { createLoginFlow, createSession, consumeLoginFlow, destroySession, getSession, type AuthUser } from './sessions.js';
-import { parseHost, parseAllowedHosts, isRequestHostAllowed } from './host-guard.js';
+import {
+  createLoginFlow,
+  createSession,
+  consumeLoginFlow,
+  destroySession,
+  destroySessionById,
+  findSessionById,
+  listSessions,
+  touchSession,
+  type AuthUser,
+} from './sessions.js';
+import {
+  effectiveRequestHost,
+  isRequestHostAllowed,
+  isTrustedProxy,
+  parseAllowedHosts,
+  parseHost,
+  parseTrustedProxies,
+} from './host-guard.js';
 import { isEmailAllowed, loadAuthConfig } from './auth-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -67,9 +84,28 @@ const COOKIE = 'woc_sess';
 // deploys (Caddy/nginx/飞牛 内置反代) where the public hostname differs from
 // the LAN IP. See .env.example.
 const ALLOWED_HOSTS = parseAllowedHosts(process.env.PANEL_ALLOWED_HOSTS);
+const TRUSTED_PROXIES = parseTrustedProxies(process.env.PANEL_TRUSTED_PROXIES);
 const FLOW_COOKIE = 'woc_oidc';
 const authConfig = loadAuthConfig();
 let oidcConfigPromise: Promise<oidc.Configuration> | null = null;
+
+const MiB = 1024 * 1024;
+function envInt(name: string, defaultValue: number, min: number, max: number): number {
+  const raw = process.env[name];
+  const n = raw == null || raw.trim() === '' ? defaultValue : Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new Error(`${name} 必须是 ${min}-${max} 之间的整数`);
+  }
+  return n;
+}
+const MAX_TRANSFER_UPLOAD_BYTES = envInt('PANEL_MAX_TRANSFER_UPLOAD_MB', 128, 1, 512) * MiB;
+const MAX_VOLUME_FILE_UPLOAD_BYTES = envInt('PANEL_MAX_VOLUME_FILE_UPLOAD_MB', 256, 1, 1024) * MiB;
+const MAX_VOLUME_ARCHIVE_UPLOAD_BYTES = envInt('PANEL_MAX_VOLUME_ARCHIVE_UPLOAD_MB', 512, 1, 3072) * MiB;
+const MAX_VOLUME_ARCHIVE_EXTRACTED_BYTES = envInt('PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB', 1024, 1, 8192) * MiB;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_API_PER_MIN = envInt('PANEL_RATE_LIMIT_API_PER_MIN', 600, 10, 10000);
+const RATE_LIMIT_AUTH_PER_MIN = envInt('PANEL_RATE_LIMIT_AUTH_PER_MIN', 30, 5, 1000);
+const sessionSockets = new Map<string, Set<Socket>>();
 
 function basicAuth(inst: Instance) {
   return 'Basic ' + Buffer.from(`${inst.kasmUser}:${inst.kasmPassword}`).toString('base64');
@@ -77,31 +113,107 @@ function basicAuth(inst: Instance) {
 
 initStore();
 
-const app = Fastify({ logger: true, trustProxy: true });
+const app = Fastify({ logger: true, trustProxy: false, bodyLimit: 64 * 1024 });
 
 // DNS-rebinding gate: reject requests whose Host header is neither a loopback /
 // RFC1918 LAN address nor in PANEL_ALLOWED_HOSTS. Runs before every route so
 // /api/*, /desktop/* and static-file responses are all covered.
 app.addHook('onRequest', async (req, reply) => {
-  if (!isRequestHostAllowed(req.headers.host, req.headers['x-forwarded-host'], ALLOWED_HOSTS)) {
+  if (!isRequestHostAllowed(
+    req.headers.host,
+    req.headers['x-forwarded-host'],
+    ALLOWED_HOSTS,
+    req.raw.socket.remoteAddress,
+    TRUSTED_PROXIES,
+  )) {
     // 把被拒的 Host / X-Forwarded-Host 一起回显，反代调试时可一眼看出"后端实际收到的是什么"
     // —— 决定是去白名单加这个 host，还是修反代让它透传 Host。不泄露敏感信息。
-    reply.code(400).send({
+    return reply.code(400).send({
       error: 'Host header not allowed',
       host: parseHost(req.headers.host) || null,
       forwardedHost: req.headers['x-forwarded-host'] || null,
-      hint: '反代部署请把对外域名加入 PANEL_ALLOWED_HOSTS（.env 逗号分隔，支持 *.example.com），改完用 docker compose up -d 重建容器（不是 restart）使其生效',
+      hint: '反代部署请把对外精确域名加入 PANEL_ALLOWED_HOSTS（.env 逗号分隔，不支持通配符），并按需配置 PANEL_TRUSTED_PROXIES，改完用 docker compose up -d 重建容器（不是 restart）使其生效',
     });
   }
 });
 
+interface RateBucket {
+  start: number;
+  count: number;
+}
+const rateBuckets = new Map<string, RateBucket>();
+
+function pathOf(rawUrl: string | undefined): string {
+  return (rawUrl || '/').split('?')[0] || '/';
+}
+
+function firstHeader(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function normalizeIp(ip: string | undefined): string {
+  const s = String(ip || '').trim();
+  return s.startsWith('::ffff:') ? s.slice('::ffff:'.length) : s;
+}
+
+function clientIp(req: FastifyRequest): string {
+  const remote = normalizeIp(req.raw.socket.remoteAddress);
+  const xff = firstHeader(req.headers['x-forwarded-for']);
+  if (xff && isTrustedProxy(remote, TRUSTED_PROXIES)) return normalizeIp(xff.split(',')[0]);
+  return remote || 'unknown';
+}
+
+function rateLimitGroup(path: string): 'auth' | 'api' | null {
+  if (path.startsWith('/api/auth/')) return 'auth';
+  if (path.startsWith('/api/') || path.startsWith('/desktop/')) return 'api';
+  return null;
+}
+
+app.addHook('onRequest', async (req, reply) => {
+  const group = rateLimitGroup(pathOf(req.raw.url));
+  if (!group) return;
+  const limit = group === 'auth' ? RATE_LIMIT_AUTH_PER_MIN : RATE_LIMIT_API_PER_MIN;
+  const key = `${group}:${clientIp(req)}`;
+  const now = Date.now();
+  if (rateBuckets.size > 10_000) {
+    for (const [k, b] of rateBuckets) {
+      if (now - b.start >= RATE_LIMIT_WINDOW_MS) rateBuckets.delete(k);
+    }
+  }
+  const bucket = rateBuckets.get(key);
+  if (!bucket || now - bucket.start >= RATE_LIMIT_WINDOW_MS) {
+    rateBuckets.set(key, { start: now, count: 1 });
+    return;
+  }
+  bucket.count += 1;
+  if (bucket.count > limit) {
+    reply.header('retry-after', Math.ceil((RATE_LIMIT_WINDOW_MS - (now - bucket.start)) / 1000));
+    return reply.code(429).send({ error: '请求过于频繁，请稍后再试' });
+  }
+});
+
 await app.register(cookie);
-// 文件上传走原始二进制（前端以 application/octet-stream 直传 File）
-app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
+// 文件上传走原始二进制流（前端以 application/octet-stream 直传 File）
+app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
 
 // ---------- 鉴权辅助 ----------
+function firstHeaderValue(v: string | string[] | undefined) {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function requestSessionMeta(req: FastifyRequest) {
+  return {
+    ip: clientIp(req),
+    userAgent: firstHeaderValue(req.headers['user-agent']),
+  };
+}
+
+function currentSession(req: FastifyRequest) {
+  return touchSession(req.cookies?.[COOKIE], requestSessionMeta(req));
+}
+
 function currentUser(req: FastifyRequest): AuthUser | null {
-  return getSession(req.cookies?.[COOKIE])?.user ?? null;
+  return currentSession(req)?.user ?? null;
 }
 
 function requireAuth(req: FastifyRequest, reply: FastifyReply): AuthUser | null {
@@ -165,6 +277,143 @@ function getOidcConfig() {
 function publicUser(u: AuthUser) {
   return u;
 }
+
+function trackSessionSocket(sessionId: string, socket: Socket) {
+  let sockets = sessionSockets.get(sessionId);
+  if (!sockets) {
+    sockets = new Set();
+    sessionSockets.set(sessionId, sockets);
+  }
+  sockets.add(socket);
+  socket.once('close', () => {
+    sockets?.delete(socket);
+    if (sockets?.size === 0) sessionSockets.delete(sessionId);
+  });
+}
+
+function closeSessionSockets(sessionId: string) {
+  const sockets = sessionSockets.get(sessionId);
+  if (!sockets) return;
+  sessionSockets.delete(sessionId);
+  for (const socket of sockets) socket.destroy();
+}
+
+function rawRequestSessionMeta(req: IncomingMessage) {
+  const remote = normalizeIp(req.socket.remoteAddress);
+  const forwardedFor = firstHeaderValue(req.headers['x-forwarded-for']);
+  return {
+    ip: forwardedFor && isTrustedProxy(remote, TRUSTED_PROXIES)
+      ? normalizeIp(forwardedFor.split(',')[0])
+      : remote,
+    userAgent: firstHeaderValue(req.headers['user-agent']),
+  };
+}
+
+function isUnsafeMethod(method: string): boolean {
+  return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+}
+
+function isProtectedPath(path: string): boolean {
+  if (path.startsWith('/desktop/')) return true;
+  if (!path.startsWith('/api/')) return false;
+  return path !== '/api/auth/login' && path !== '/api/auth/callback';
+}
+
+function originHost(origin: string | undefined): string {
+  if (!origin) return '';
+  try {
+    return parseHost(new URL(origin).host);
+  } catch {
+    return '';
+  }
+}
+
+function sameOrigin(req: FastifyRequest | IncomingMessage): boolean {
+  const headers = req.headers;
+  const remoteAddress = 'raw' in req ? req.raw.socket.remoteAddress : req.socket.remoteAddress;
+  const expected = effectiveRequestHost(
+    firstHeaderValue(headers.host),
+    headers['x-forwarded-host'],
+    ALLOWED_HOSTS,
+    remoteAddress,
+    TRUSTED_PROXIES,
+  );
+  return !!expected && originHost(firstHeaderValue(headers.origin)) === expected;
+}
+
+function contentLength(req: FastifyRequest, reply: FastifyReply, maxBytes: number): number | null {
+  const raw = firstHeaderValue(req.headers['content-length']);
+  if (!raw || !/^\d+$/.test(raw)) {
+    reply.code(411).send({ error: '上传请求必须包含 Content-Length' });
+    return null;
+  }
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    reply.code(400).send({ error: '上传内容为空或大小不合法' });
+    return null;
+  }
+  if (n > maxBytes) {
+    reply.code(413).send({ error: `上传文件过大，上限 ${Math.round(maxBytes / MiB)} MiB` });
+    return null;
+  }
+  return n;
+}
+
+function rawUpload(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  maxBytes: number,
+): { stream: NodeJS.ReadableStream; size: number } | null {
+  const size = contentLength(req, reply, maxBytes);
+  if (size == null) return null;
+  const body = req.body as any;
+  if (!body || typeof body.pipe !== 'function') {
+    reply.code(415).send({ error: '请使用 application/octet-stream 上传文件' });
+    return null;
+  }
+  return { stream: body as NodeJS.ReadableStream, size };
+}
+
+function gzipQuery(req: FastifyRequest, reply: FastifyReply): boolean | null {
+  const gzip = String((req.query as any)?.gzip ?? '');
+  if (gzip === '1') return true;
+  if (gzip === '0') return false;
+  reply.code(400).send({ error: '缺少 gzip 参数' });
+  return null;
+}
+
+app.addHook('onSend', async (_req, reply, payload) => {
+  reply.header('x-content-type-options', 'nosniff');
+  reply.header('referrer-policy', 'no-referrer');
+  reply.header('x-frame-options', 'SAMEORIGIN');
+  reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  reply.header('permissions-policy', 'camera=(self), microphone=(self), fullscreen=(self)');
+  reply.header(
+    'content-security-policy',
+    [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'self'",
+      "img-src 'self' data: blob:",
+      "media-src 'self' blob:",
+      "connect-src 'self' ws: wss:",
+      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    ].join('; '),
+  );
+  return payload;
+});
+
+app.addHook('onRequest', async (req, reply) => {
+  const path = pathOf(req.raw.url);
+  if ((path.startsWith('/api/') || path.startsWith('/desktop/')) && isUnsafeMethod(req.method) && !sameOrigin(req)) {
+    return reply.code(403).send({ error: '请求来源不被允许' });
+  }
+  if (isProtectedPath(path) && !currentUser(req)) {
+    return reply.code(401).send({ error: '未登录' });
+  }
+});
 
 // ---------- OIDC 登录 / 会话 ----------
 app.get('/api/auth/login', async (req, reply) => {
@@ -236,7 +485,7 @@ app.get('/api/auth/callback', async (req, reply) => {
       picture,
     };
 
-    const token = createSession(user);
+    const token = createSession(user, requestSessionMeta(req));
     reply.setCookie(COOKIE, token, sessionCookieOptions(60 * 60 * 12));
     return reply.redirect(flow.returnTo);
   } catch (e: any) {
@@ -246,7 +495,9 @@ app.get('/api/auth/callback', async (req, reply) => {
 });
 
 app.post('/api/auth/logout', async (req, reply) => {
+  const cur = currentSession(req);
   destroySession(req.cookies?.[COOKIE]);
+  if (cur) closeSessionSockets(cur.id);
   reply.clearCookie(COOKIE, clearCookieOptions('/'));
   return { ok: true };
 });
@@ -255,6 +506,34 @@ app.get('/api/auth/me', async (req, reply) => {
   const u = currentUser(req);
   if (!u) return reply.code(401).send({ error: '未登录' });
   return { user: publicUser(u) };
+});
+
+// 当前账号的已登录设备。每个浏览器会话对应一条记录，可单独移除以强制该设备退出。
+app.get('/api/admin/sessions', async (req, reply) => {
+  const u = requireAuth(req, reply);
+  if (!u) return;
+  const cur = currentSession(req);
+  const devices = listSessions()
+    .filter((s) => s.user.sub === u.sub)
+    .map((s) => ({ ...s, current: s.id === cur?.id }));
+  return { devices };
+});
+
+app.delete('/api/admin/sessions/:id', async (req, reply) => {
+  const u = requireAuth(req, reply);
+  if (!u) return;
+  const id = String((req.params as any).id || '');
+  if (!/^[0-9a-f]{16}$/.test(id)) return reply.code(400).send({ error: '会话 ID 不合法' });
+
+  const target = findSessionById(id);
+  if (!target) return reply.code(404).send({ error: '设备登录记录不存在或已过期' });
+  if (target.user.sub !== u.sub) return reply.code(403).send({ error: '不能移除其他账号的登录设备' });
+
+  const currentId = currentSession(req)?.id;
+  destroySessionById(id);
+  closeSessionSockets(id);
+  if (id === currentId) reply.clearCookie(COOKIE, clearCookieOptions('/'));
+  return { ok: true, current: id === currentId };
 });
 
 // ---------- 微信实例管理 ----------
@@ -512,17 +791,17 @@ app.post('/api/admin/instances/:id/upgrade', async (req, reply) => {
 
 // ---------- 文件中转（登录即可用；走面板鉴权，不额外暴露） ----------
 // 上传：原始二进制直传，落到实例 ~/Desktop，微信文件选择器可直接选到。
-app.post('/api/instances/:id/upload', { bodyLimit: 512 * 1024 * 1024 }, async (req, reply) => {
+app.post('/api/instances/:id/upload', { bodyLimit: MAX_TRANSFER_UPLOAD_BYTES }, async (req, reply) => {
   const u = requireAuth(req, reply);
   if (!u) return;
   const id = (req.params as any).id;
   const inst = findInstance(id);
   if (!inst) return reply.code(404).send({ error: '实例不存在' });
   const name = String((req.query as any)?.name || '').trim();
-  const body = req.body as Buffer;
-  if (!Buffer.isBuffer(body) || body.length === 0) return reply.code(400).send({ error: '空文件或格式错误' });
+  const upload = rawUpload(req, reply, MAX_TRANSFER_UPLOAD_BYTES);
+  if (!upload) return;
   try {
-    await uploadToInstance(inst, name, body);
+    await uploadToInstance(inst, name, upload.stream, upload.size);
     return { ok: true };
   } catch (e: any) {
     return reply.code(400).send({ error: e?.message || '上传失败' });
@@ -727,16 +1006,16 @@ app.get('/api/admin/instances/:id/volume/download', async (req, reply) => {
 });
 
 // 上传单个文件到当前目录（原始二进制；落地为 abc 属主）
-app.post('/api/admin/instances/:id/volume/upload', { bodyLimit: 2 * 1024 * 1024 * 1024 }, async (req, reply) => {
+app.post('/api/admin/instances/:id/volume/upload', { bodyLimit: MAX_VOLUME_FILE_UPLOAD_BYTES }, async (req, reply) => {
   if (!requireAuth(req, reply)) return;
   const inst = findInstance((req.params as any).id);
   if (!inst) return reply.code(404).send({ error: '实例不存在' });
   const path = String((req.query as any)?.path || '');
   const name = String((req.query as any)?.name || '').trim();
-  const body = req.body as Buffer;
-  if (!Buffer.isBuffer(body) || body.length === 0) return reply.code(400).send({ error: '空文件或格式错误' });
+  const upload = rawUpload(req, reply, MAX_VOLUME_FILE_UPLOAD_BYTES);
+  if (!upload) return;
   try {
-    await volUploadFile(inst, path, name, body);
+    await volUploadFile(inst, path, name, upload.stream, upload.size);
     return { ok: true };
   } catch (e: any) {
     return reply.code(400).send({ error: e?.message || '上传失败' });
@@ -744,14 +1023,16 @@ app.post('/api/admin/instances/:id/volume/upload', { bodyLimit: 2 * 1024 * 1024 
 });
 
 // 上传压缩包并解压到当前目录（.tar / .tar.gz；PC 微信数据迁移用）
-app.post('/api/admin/instances/:id/volume/extract', { bodyLimit: 3 * 1024 * 1024 * 1024 }, async (req, reply) => {
+app.post('/api/admin/instances/:id/volume/extract', { bodyLimit: MAX_VOLUME_ARCHIVE_UPLOAD_BYTES }, async (req, reply) => {
   if (!requireAuth(req, reply)) return;
   const inst = findInstance((req.params as any).id);
   if (!inst) return reply.code(404).send({ error: '实例不存在' });
-  const body = req.body as Buffer;
-  if (!Buffer.isBuffer(body) || body.length === 0) return reply.code(400).send({ error: '空文件或格式错误' });
+  const upload = rawUpload(req, reply, MAX_VOLUME_ARCHIVE_UPLOAD_BYTES);
+  if (!upload) return;
+  const gzip = gzipQuery(req, reply);
+  if (gzip == null) return;
   try {
-    await volExtractArchive(inst, String((req.query as any)?.path || ''), body);
+    await volExtractArchive(inst, String((req.query as any)?.path || ''), upload.stream, gzip, MAX_VOLUME_ARCHIVE_EXTRACTED_BYTES);
     return { ok: true };
   } catch (e: any) {
     return reply.code(400).send({ error: e?.message || '解压失败（请确认是 .tar 或 .tar.gz）' });
@@ -774,14 +1055,16 @@ app.get('/api/admin/instances/:id/volume/backup', async (req, reply) => {
 });
 
 // 整卷恢复：上传本系统导出的 .tar.gz 备份（要求实例已停止）
-app.post('/api/admin/instances/:id/volume/restore', { bodyLimit: 3 * 1024 * 1024 * 1024 }, async (req, reply) => {
+app.post('/api/admin/instances/:id/volume/restore', { bodyLimit: MAX_VOLUME_ARCHIVE_UPLOAD_BYTES }, async (req, reply) => {
   if (!requireAuth(req, reply)) return;
   const inst = findInstance((req.params as any).id);
   if (!inst) return reply.code(404).send({ error: '实例不存在' });
-  const body = req.body as Buffer;
-  if (!Buffer.isBuffer(body) || body.length === 0) return reply.code(400).send({ error: '空文件或格式错误' });
+  const upload = rawUpload(req, reply, MAX_VOLUME_ARCHIVE_UPLOAD_BYTES);
+  if (!upload) return;
+  const gzip = gzipQuery(req, reply);
+  if (gzip == null) return;
   try {
-    await volRestoreArchive(inst, body);
+    await volRestoreArchive(inst, upload.stream, gzip, MAX_VOLUME_ARCHIVE_EXTRACTED_BYTES);
     return { ok: true };
   } catch (e: any) {
     return reply.code(400).send({ error: e?.message || '恢复失败' });
@@ -913,7 +1196,13 @@ await app.ready();
 app.server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
   // DNS-rebinding gate for WebSocket upgrades (Fastify's onRequest hook does
   // not run on raw upgrades). KasmVNC proxying goes through this path.
-  if (!isRequestHostAllowed(req.headers.host, req.headers['x-forwarded-host'], ALLOWED_HOSTS)) {
+  if (!isRequestHostAllowed(
+    firstHeaderValue(req.headers.host),
+    req.headers['x-forwarded-host'],
+    ALLOWED_HOSTS,
+    req.socket.remoteAddress,
+    TRUSTED_PROXIES,
+  ) || !sameOrigin(req)) {
     socket.destroy();
     return;
   }
@@ -923,7 +1212,8 @@ app.server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) =>
     return;
   }
   const cookies = parseCookies(req.headers.cookie);
-  const u = getSession(cookies[COOKIE])?.user;
+  const session = touchSession(cookies[COOKIE], rawRequestSessionMeta(req));
+  const u = session?.user;
   const inst = findInstance(parsed.id);
   if (!u || !inst) {
     socket.destroy();
@@ -931,6 +1221,7 @@ app.server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) =>
   }
   req.url = parsed.rest;
   (req as any)._wocAuth = basicAuth(inst);
+  trackSessionSocket(session.id, socket);
   proxy.ws(req, socket, head, { target: instanceTarget(inst) });
 });
 

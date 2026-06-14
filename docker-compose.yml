@@ -37,9 +37,18 @@ services:
       # DNS-rebinding 防护：套 HTTPS 反代部署时把对外域名加进 .env（详见 .env.example）。
       # 默认仅放行 loopback + RFC1918 私网，直连 NAS / 局域网无需改动。
       - PANEL_ALLOWED_HOSTS=${PANEL_ALLOWED_HOSTS:-}
+      # 只有这些固定来源的反代 IP/CIDR 才允许提供 X-Forwarded-Host / X-Forwarded-For。
+      - PANEL_TRUSTED_PROXIES=${PANEL_TRUSTED_PROXIES:-}
+      # 公网部署下限制大请求体，避免未预期的大文件拖垮面板。
+      - PANEL_MAX_TRANSFER_UPLOAD_MB=${PANEL_MAX_TRANSFER_UPLOAD_MB:-128}
+      - PANEL_MAX_VOLUME_FILE_UPLOAD_MB=${PANEL_MAX_VOLUME_FILE_UPLOAD_MB:-256}
+      - PANEL_MAX_VOLUME_ARCHIVE_UPLOAD_MB=${PANEL_MAX_VOLUME_ARCHIVE_UPLOAD_MB:-512}
+      - PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB=${PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB:-1024}
+      - PANEL_RATE_LIMIT_API_PER_MIN=${PANEL_RATE_LIMIT_API_PER_MIN:-600}
+      - PANEL_RATE_LIMIT_AUTH_PER_MIN=${PANEL_RATE_LIMIT_AUTH_PER_MIN:-30}
       # 面板通过容器名反代到动态创建的微信实例；必须使用用户自定义网络，
       # 不能用 Docker 默认 bridge，否则容器名 DNS 不可用。
-      - WOC_DOCKER_NETWORK=immich_default
+      - WOC_DOCKER_NETWORK=${WOC_DOCKER_NETWORK:-woc_internal}
 
     volumes:
       # 面板数据（实例元信息）与 OIDC 配置文件（auth.json）
@@ -52,12 +61,13 @@ services:
       # - /dev:/host-dev:ro
 
     ports:
-      - "127.0.0.1:3006:8080" # 面板 = 唯一对外入口
+      - "127.0.0.1:${WOC_HTTP_PORT}:8080" # 面板只监听本机；公网访问必须经 HTTPS 反代
 
     restart: always
     networks:
-      - immich_default
+      - woc_internal
 
 networks:
-  immich_default:
-    external: true
+  woc_internal:
+    name: ${WOC_DOCKER_NETWORK:-woc_internal}
+    driver: bridge

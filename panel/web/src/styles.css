@@ -950,6 +950,24 @@ button {
   padding: 6px 8px;
   font-size: 14px;
 }
+.device-card {
+  min-width: 0;
+}
+.device-meta {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.device-ua {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+}
 
 /* 状态徽章配色 */
 .tag-on {

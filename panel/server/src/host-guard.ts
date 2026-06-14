@@ -30,6 +30,16 @@ export function parseHost(headerHost: string | undefined): string {
   return host.toLowerCase();
 }
 
+function headerValue(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function normalizeIp(raw: string | undefined): string {
+  const ip = String(raw || '').trim();
+  if (!ip) return '';
+  return ip.startsWith('::ffff:') ? ip.slice('::ffff:'.length) : ip;
+}
+
 export function isLoopbackHost(host: string): boolean {
   return (
     host === 'localhost' ||
@@ -60,9 +70,57 @@ export function parseAllowedHosts(raw: string | undefined): string[] {
   const out: string[] = [];
   for (const part of raw.split(',')) {
     const lower = part.trim().toLowerCase();
-    if (lower) out.push(lower);
+    if (!lower) continue;
+    if (lower.includes('*')) throw new Error(`PANEL_ALLOWED_HOSTS 禁止使用通配符：${lower}`);
+    if (parseHost(lower) !== lower) throw new Error(`PANEL_ALLOWED_HOSTS 只允许填写不带端口的主机名：${lower}`);
+    out.push(lower);
   }
   return [...new Set(out)];
+}
+
+export interface TrustedProxy {
+  raw: string;
+  ip: string;
+  cidrBits?: number;
+}
+
+function parseIpv4(ip: string): number | null {
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  const o = [m[1], m[2], m[3], m[4]].map((s) => Number(s));
+  if (o.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return null;
+  return (((o[0] << 24) >>> 0) + (o[1] << 16) + (o[2] << 8) + o[3]) >>> 0;
+}
+
+export function parseTrustedProxies(raw: string | undefined): TrustedProxy[] {
+  if (!raw) return [];
+  const out: TrustedProxy[] = [];
+  for (const part of raw.split(',')) {
+    const s = normalizeIp(part);
+    if (!s) continue;
+    const [ip, bitsRaw] = s.split('/');
+    const cidrBits = bitsRaw == null || bitsRaw === '' ? undefined : Number(bitsRaw);
+    if (parseIpv4(ip) == null && ip !== '::1') throw new Error(`PANEL_TRUSTED_PROXIES 仅支持 IPv4/CIDR 或 ::1：${s}`);
+    if (cidrBits != null && (!Number.isInteger(cidrBits) || cidrBits < 0 || cidrBits > 32 || parseIpv4(ip) == null)) {
+      throw new Error(`PANEL_TRUSTED_PROXIES CIDR 不合法：${s}`);
+    }
+    out.push({ raw: s, ip, cidrBits });
+  }
+  return out;
+}
+
+export function isTrustedProxy(remoteAddress: string | undefined, trustedProxies: TrustedProxy[]): boolean {
+  const ip = normalizeIp(remoteAddress);
+  if (!ip) return false;
+  const ip4 = parseIpv4(ip);
+  return trustedProxies.some((p) => {
+    if (p.cidrBits == null) return p.ip === ip;
+    if (ip4 == null) return false;
+    const base = parseIpv4(p.ip);
+    if (base == null) return false;
+    const mask = p.cidrBits === 0 ? 0 : (0xffffffff << (32 - p.cidrBits)) >>> 0;
+    return (ip4 & mask) === (base & mask);
+  });
 }
 
 export function isAllowedHost(host: string, allowlist: string[]): boolean {
@@ -71,29 +129,35 @@ export function isAllowedHost(host: string, allowlist: string[]): boolean {
   if (isPrivateIpv4(host)) return true;
   for (const entry of allowlist) {
     if (entry === host) return true;
-    // 通配子域：*.example.com 匹配任意子域（a.example.com），但不匹配裸 example.com。
-    if (entry.startsWith('*.')) {
-      const suffix = entry.slice(1); // ".example.com"
-      if (host.length > suffix.length && host.endsWith(suffix)) return true;
-    }
   }
   return false;
 }
 
 // 反代/CDN（Cloudflare、nginx、Caddy 等）部署时，真实对外域名可能在 X-Forwarded-Host 里，
-// 而 Host 被改写成内部地址。综合判定：Host 或 X-Forwarded-Host 任一在白名单即放行。
-// 安全性：DNS-rebinding 攻击者直连面板时，浏览器 fetch 无法设置 X-Forwarded-Host（禁止首部），
-// 故该首部只会由可信反代设置，不会被攻击者利用。
+// 而 Host 被改写成内部地址。只有 TCP 来源命中 PANEL_TRUSTED_PROXIES 时才信任该首部；
+// 直连公网请求即使伪造 X-Forwarded-Host 也不会被接受。
 export function isRequestHostAllowed(
   hostHeader: string | undefined,
   forwardedHostHeader: string | string[] | undefined,
   allowlist: string[],
+  remoteAddress: string | undefined,
+  trustedProxies: TrustedProxy[],
 ): boolean {
-  if (isAllowedHost(parseHost(hostHeader), allowlist)) return true;
-  let xfh = Array.isArray(forwardedHostHeader) ? forwardedHostHeader[0] : forwardedHostHeader;
-  if (xfh) {
-    xfh = xfh.split(',')[0]; // 多级代理链取第一个（最初的客户端 Host）
-    if (isAllowedHost(parseHost(xfh), allowlist)) return true;
+  return !!effectiveRequestHost(hostHeader, forwardedHostHeader, allowlist, remoteAddress, trustedProxies);
+}
+
+export function effectiveRequestHost(
+  hostHeader: string | undefined,
+  forwardedHostHeader: string | string[] | undefined,
+  allowlist: string[],
+  remoteAddress: string | undefined,
+  trustedProxies: TrustedProxy[],
+): string {
+  const xfh = headerValue(forwardedHostHeader);
+  if (xfh && isTrustedProxy(remoteAddress, trustedProxies)) {
+    const forwarded = parseHost(xfh.split(',')[0]);
+    if (isAllowedHost(forwarded, allowlist)) return forwarded;
   }
-  return false;
+  const host = parseHost(hostHeader);
+  return isAllowedHost(host, allowlist) ? host : '';
 }

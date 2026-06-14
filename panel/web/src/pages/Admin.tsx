@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type InstanceWithStatus, type VolEntry } from '../api';
+import { api, type InstanceWithStatus, type LoggedInDevice, type VolEntry } from '../api';
 import { useUI } from '../ui';
 
 const BUSY_PHASES = ['downloading', 'extracting', 'installing'];
@@ -15,6 +15,31 @@ function fmtDate(ms: number): string {
   const d = new Date(ms);
   const p = (x: number) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fmtIsoDate(s: string): string {
+  const ms = Date.parse(s);
+  return Number.isFinite(ms) ? fmtDate(ms) : '未知';
+}
+function browserName(ua: string): string {
+  if (/MicroMessenger/i.test(ua)) return '微信内置浏览器';
+  if (/Edg\//i.test(ua)) return 'Edge';
+  if (/Firefox\//i.test(ua)) return 'Firefox';
+  if (/CriOS\//i.test(ua) || /Chrome\//i.test(ua)) return 'Chrome';
+  if (/Safari\//i.test(ua)) return 'Safari';
+  return '未知浏览器';
+}
+function osName(ua: string): string {
+  if (/Windows NT/i.test(ua)) return 'Windows';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/Mac OS X/i.test(ua)) return 'macOS';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return '未知系统';
+}
+function deviceName(userAgent: string): string {
+  const ua = userAgent || '';
+  return `${browserName(ua)} · ${osName(ua)}`;
 }
 
 const MenuIcon = (
@@ -92,6 +117,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [orphanVols, setOrphanVols] = useState<{ name: string; createdAt?: string; sizeBytes?: number }[]>([]);
   // 残留 woc-wx-* 容器（runInstance 启动失败遗留的 Created 容器等）：占着卷名让删卷报 409。
   const [orphanConts, setOrphanConts] = useState<{ id: string; name: string; status: string; volumeName?: string }[]>([]);
+  const [devices, setDevices] = useState<LoggedInDevice[]>([]);
   const setAct = (id: string, label: string | null) =>
     setActing((a) => {
       const n = { ...a };
@@ -109,6 +135,12 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
     } catch (e: any) {
       setErr(e.message);
     }
+    try {
+      const { devices } = await api.listLoggedInDevices();
+      setDevices(devices);
+    } catch {
+      /* ignore */
+    }
     // 孤儿卷 / 残留容器独立 catch：docker 接口失败不应阻塞用户/实例视图
     try {
       const { volumes } = await api.listOrphanVolumes();
@@ -121,6 +153,27 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
       setOrphanConts(containers);
     } catch {
       /* ignore */
+    }
+  };
+
+  const removeDevice = async (d: LoggedInDevice) => {
+    const ok = await confirm({
+      title: d.current ? '移除当前设备？' : `移除「${deviceName(d.userAgent)}」？`,
+      body: d.current ? '当前浏览器会立即退出登录，需要重新 OIDC 登录后才能继续访问面板。' : '该设备上的面板登录态会失效；如果仍在使用，下次操作时会回到登录页。',
+      danger: true,
+      confirmText: d.current ? '移除并退出' : '移除设备',
+    });
+    if (!ok) return;
+    try {
+      const r = await api.removeLoggedInDevice(d.id);
+      toast(d.current || r.current ? '已移除当前设备' : '已移除登录设备', 'ok');
+      if (d.current || r.current) {
+        location.assign('/login');
+        return;
+      }
+      setDevices((list) => list.filter((x) => x.id !== d.id));
+    } catch (e: any) {
+      toast(e.message || '移除失败', 'error');
     }
   };
 
@@ -271,6 +324,39 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
             ))}
           </div>
         )}
+
+        <div className="section-row" style={{ marginTop: 22 }}>
+          <span className="section-title">已登录设备</span>
+          <span className="muted small">可移除不再使用的面板登录态</span>
+        </div>
+        <div className="inst-grid">
+          {devices.length === 0 ? (
+            <div className="inst-card">
+              <div className="muted small">暂无设备记录</div>
+            </div>
+          ) : (
+            devices.map((d) => (
+              <div key={d.id} className="inst-card device-card">
+                <div className="inst-head">
+                  <span className="inst-name">{deviceName(d.userAgent)}</span>
+                  <span className={'tag ' + (d.current ? 'tag-on' : '')}>{d.current ? '当前设备' : '已登录'}</span>
+                </div>
+                <div className="device-meta">
+                  <div>IP：{d.ip || 'unknown'}</div>
+                  <div>最近活动：{fmtIsoDate(d.lastSeenAt)}</div>
+                  <div>登录时间：{fmtIsoDate(d.createdAt)}</div>
+                  <div>过期时间：{fmtIsoDate(d.expiresAt)}</div>
+                  <div className="device-ua" title={d.userAgent}>{d.userAgent}</div>
+                </div>
+                <div className="inst-admin-links">
+                  <button className="btn-text danger" onClick={() => removeDevice(d)}>
+                    {d.current ? '移除当前设备' : '移除设备'}
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
         {orphanConts.length > 0 && (
           <>

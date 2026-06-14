@@ -1,6 +1,7 @@
 import { hostname } from 'node:os';
 import { existsSync, readdirSync } from 'node:fs';
 import http from 'node:http';
+import { PassThrough, Readable, Transform } from 'node:stream';
 import zlib from 'node:zlib';
 import Docker from 'dockerode';
 import type { Instance } from './store.js';
@@ -184,7 +185,8 @@ export async function runInstance(inst: Instance): Promise<void> {
     NetworkMode: net || undefined,
     Privileged: false,
     PublishAllPorts: false,
-    SecurityOpt: ['seccomp=unconfined'],
+    SecurityOpt: ['no-new-privileges:true'],
+    CapDrop: ['ALL'],
     ShmSize: SHM_SIZE,
     RestartPolicy: { Name: 'unless-stopped' },
   };
@@ -520,14 +522,14 @@ export async function pullImage(onProgress?: (line: any) => void): Promise<void>
 // 反向：把微信收到的文件另存到桌面，即可在面板里下载。
 const TRANSFER_DIR = '/config/Desktop';
 
-// 极简单文件 tar 编码（putArchive 需要 tar；避免引入第三方依赖）。
-function tarSingleFile(name: string, content: Buffer): Buffer {
+function tarHeader(name: string, size: number): Buffer {
+  if (!Number.isSafeInteger(size) || size < 0) throw new Error('文件大小不合法');
   const h = Buffer.alloc(512, 0);
   h.write(name.slice(0, 100), 0, 'utf8'); // name
   h.write('0000644\0', 100); // mode
   h.write('0001750\0', 108); // uid 1000(octal 1750)
   h.write('0001750\0', 116); // gid 1000
-  h.write(content.length.toString(8).padStart(11, '0') + '\0', 124); // size
+  h.write(size.toString(8).padStart(11, '0') + '\0', 124); // size
   h.write('00000000000\0', 136); // mtime
   h.write('        ', 148); // checksum 占位（8 空格）
   h.write('0', 156); // typeflag 普通文件
@@ -536,8 +538,24 @@ function tarSingleFile(name: string, content: Buffer): Buffer {
   let sum = 0;
   for (let i = 0; i < 512; i++) sum += h[i];
   h.write(sum.toString(8).padStart(6, '0') + '\0 ', 148); // 真实校验和
-  const pad = (512 - (content.length % 512)) % 512;
-  return Buffer.concat([h, content, Buffer.alloc(pad, 0), Buffer.alloc(1024, 0)]);
+  return h;
+}
+
+function tarSingleFileStream(name: string, content: NodeJS.ReadableStream, size: number): Readable {
+  async function* gen() {
+    yield tarHeader(name, size);
+    let seen = 0;
+    for await (const chunk of content as AsyncIterable<Buffer | string>) {
+      const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      seen += b.length;
+      if (seen > size) throw new Error('上传内容超过声明大小');
+      yield b;
+    }
+    if (seen !== size) throw new Error('上传内容大小与 Content-Length 不一致');
+    yield Buffer.alloc((512 - (size % 512)) % 512, 0);
+    yield Buffer.alloc(1024, 0);
+  }
+  return Readable.from(gen());
 }
 
 // 校验文件名为安全 basename（防路径穿越）。
@@ -545,11 +563,11 @@ function safeName(name: string): boolean {
   return !!name && name.length <= 200 && !name.includes('/') && !name.includes('\0') && name !== '.' && name !== '..';
 }
 
-export async function uploadToInstance(inst: Instance, name: string, content: Buffer): Promise<void> {
+export async function uploadToInstance(inst: Instance, name: string, content: NodeJS.ReadableStream, size: number): Promise<void> {
   if (!safeName(name)) throw new Error('文件名不合法');
-  await execCapture(inst, ['sh', '-c', `mkdir -p ${TRANSFER_DIR}`]); // abc 家目录可写
+  await execCapture(inst, ['mkdir', '-p', TRANSFER_DIR]); // abc 家目录可写
   const c = projectContainer(inst);
-  await c.putArchive(tarSingleFile(name, content), { path: TRANSFER_DIR });
+  await c.putArchive(tarSingleFileStream(name, content, size), { path: TRANSFER_DIR });
 }
 
 export interface TransferFile {
@@ -665,9 +683,24 @@ function safeVolPath(rel: string): string {
   return parts.length ? `${VOL_ROOT}/${parts.join('/')}` : VOL_ROOT;
 }
 const relOf = (abs: string): string => (abs === VOL_ROOT ? '' : abs.slice(VOL_ROOT.length + 1));
-// gzip 魔数自动识别（用户上传可能是 .tar 或 .tar.gz；本系统备份恒为 .gz）。
-const maybeGunzip = (buf: Buffer): Buffer =>
-  buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b ? zlib.gunzipSync(buf) : buf;
+function limitStream(maxBytes: number): Transform {
+  let seen = 0;
+  return new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      seen += chunk.length;
+      if (seen > maxBytes) {
+        cb(new Error(`解压后内容超过上限 ${Math.round(maxBytes / 1024 / 1024)} MiB`));
+        return;
+      }
+      cb(null, chunk);
+    },
+  });
+}
+
+function archiveInputStream(stream: NodeJS.ReadableStream, gzip: boolean, maxExtractedBytes: number): NodeJS.ReadableStream {
+  const src = gzip ? stream.pipe(zlib.createGunzip()) : stream;
+  return src.pipe(limitStream(maxExtractedBytes));
+}
 
 export interface VolEntry {
   name: string;
@@ -721,20 +754,26 @@ export async function volDelete(inst: Instance, rel: string): Promise<void> {
   await execCapture(inst, ['rm', '-rf', abs]);
 }
 
-// 上传单个文件到指定目录（tarSingleFile 写入 uid/gid 1000，落地即 abc 属主，微信可读）。
-export async function volUploadFile(inst: Instance, rel: string, name: string, content: Buffer): Promise<void> {
+// 上传单个文件到指定目录（流式 tar 写入 uid/gid 1000，落地即 abc 属主，微信可读）。
+export async function volUploadFile(inst: Instance, rel: string, name: string, content: NodeJS.ReadableStream, size: number): Promise<void> {
   if (!safeName(name)) throw new Error('文件名不合法');
   const dir = safeVolPath(rel);
   await execCapture(inst, ['mkdir', '-p', dir]);
-  await projectContainer(inst).putArchive(tarSingleFile(name, content), { path: dir });
+  await projectContainer(inst).putArchive(tarSingleFileStream(name, content, size), { path: dir });
 }
 
 // 上传压缩包并解压到指定目录（PC 微信数据迁移：用户把文件夹打成 .tar/.tar.gz 上传）。
 // putArchive 把 tar 内容解到 dir 下，Docker 解包限制在 dir 内、防 .. 穿越。
-export async function volExtractArchive(inst: Instance, rel: string, archive: Buffer): Promise<void> {
+export async function volExtractArchive(
+  inst: Instance,
+  rel: string,
+  archive: NodeJS.ReadableStream,
+  gzip: boolean,
+  maxExtractedBytes: number,
+): Promise<void> {
   const dir = safeVolPath(rel);
   await execCapture(inst, ['mkdir', '-p', dir]);
-  await projectContainer(inst).putArchive(maybeGunzip(archive), { path: dir });
+  await projectContainer(inst).putArchive(archiveInputStream(archive, gzip, maxExtractedBytes), { path: dir });
 }
 
 export async function volDownloadFile(inst: Instance, rel: string): Promise<Buffer> {
@@ -750,18 +789,47 @@ export async function volDownloadFile(inst: Instance, rel: string): Promise<Buff
   return extractSingleFileFromTar(Buffer.concat(chunks));
 }
 
-// 整卷备份：把 /config 打成 tar 流并经 gzip 输出（路由直接 pipe 给响应，避免大文件入内存）。
-// getArchive('/config') 的条目前缀为 config/，恢复时解到容器根即可落回 /config。
+// 整卷备份：在容器内把 /config 内容打成相对路径 tar.gz，路由直接 pipe 给响应，避免大文件入内存。
 export async function volBackupStream(inst: Instance): Promise<NodeJS.ReadableStream> {
-  const tar = (await projectContainer(inst).getArchive({ path: VOL_ROOT })) as NodeJS.ReadableStream;
-  const gzip = zlib.createGzip();
-  tar.on('error', (e) => gzip.destroy(e as Error));
-  return tar.pipe(gzip);
+  const exec = await projectContainer(inst).exec({
+    Cmd: ['tar', '-C', VOL_ROOT, '-czf', '-', '.'],
+    AttachStdout: true,
+    AttachStderr: true,
+    Tty: false,
+    User: 'abc',
+  });
+  const raw = await exec.start({ hijack: true, stdin: false });
+  const out = new PassThrough();
+  const err = new PassThrough();
+  let errText = '';
+  let ended = false;
+  out.on('finish', () => {
+    ended = true;
+  });
+  err.on('data', (b: Buffer) => {
+    if (errText.length < 4096) errText += b.toString('utf8');
+  });
+  docker.modem.demuxStream(raw, out, err);
+  raw.on('end', async () => {
+    const info = await exec.inspect();
+    if (info.ExitCode && info.ExitCode !== 0) {
+      out.destroy(new Error((errText || `备份失败，退出码 ${info.ExitCode}`).trim()));
+      return;
+    }
+    if (!ended) out.end();
+  });
+  raw.on('error', (e) => out.destroy(e));
+  return out;
 }
 
-// 整卷恢复：仅适用于本系统导出的备份（条目前缀 config/），解到容器根 → 落回 /config。要求实例已停止。
-export async function volRestoreArchive(inst: Instance, archive: Buffer): Promise<void> {
-  await projectContainer(inst).putArchive(maybeGunzip(archive), { path: '/' });
+// 整卷恢复：只解入 /config。要求上传的 tar/tar.gz 条目为相对路径。
+export async function volRestoreArchive(
+  inst: Instance,
+  archive: NodeJS.ReadableStream,
+  gzip: boolean,
+  maxExtractedBytes: number,
+): Promise<void> {
+  await projectContainer(inst).putArchive(archiveInputStream(archive, gzip, maxExtractedBytes), { path: VOL_ROOT });
 }
 
 // 实例容器名（供反代构造 target）。

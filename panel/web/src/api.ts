@@ -6,6 +6,17 @@ export interface PanelUser {
   picture?: string;
 }
 
+export interface LoggedInDevice {
+  id: string;
+  user: PanelUser;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  ip: string;
+  userAgent: string;
+  current: boolean;
+}
+
 export type WechatPhase = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error';
 export interface WechatStatus {
   phase: WechatPhase;
@@ -83,6 +94,8 @@ export const api = {
   me: () => req<{ user: PanelUser }>('/api/auth/me'),
   loginUrl: (returnTo = '/') => `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
   logout: () => req('/api/auth/logout', { method: 'POST' }),
+  listLoggedInDevices: () => req<{ devices: LoggedInDevice[] }>('/api/admin/sessions'),
+  removeLoggedInDevice: (id: string) => req<{ ok: boolean; current?: boolean }>(`/api/admin/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // 微信实例
   listInstances: () => req<{ instances: InstanceWithStatus[] }>('/api/instances'),
@@ -151,9 +164,9 @@ export const api = {
   volumeUpload: (id: string, path: string, file: File) =>
     rawUpload(`/api/admin/instances/${id}/volume/upload?path=${encodeURIComponent(path)}&name=${encodeURIComponent(file.name)}`, file),
   volumeExtract: (id: string, path: string, file: File) =>
-    rawUpload(`/api/admin/instances/${id}/volume/extract?path=${encodeURIComponent(path)}`, file),
+    rawUpload(`/api/admin/instances/${id}/volume/extract?path=${encodeURIComponent(path)}&gzip=${file.name.endsWith('.gz') ? '1' : '0'}`, file),
   volumeRestore: (id: string, file: File) =>
-    rawUpload(`/api/admin/instances/${id}/volume/restore`, file),
+    rawUpload(`/api/admin/instances/${id}/volume/restore?gzip=${file.name.endsWith('.gz') ? '1' : '0'}`, file),
 
   // 多端协作：操作控制权
   controlStatus: (id: string) => req<{ free: boolean; mine: boolean; holder: string | null }>(`/api/instances/${id}/control`),
