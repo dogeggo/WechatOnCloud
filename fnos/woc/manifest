@@ -1,7 +1,7 @@
 appname=wechat-on-cloud
 version=1.0.0
 display_name=云微
-desc=在飞牛 NAS 上运行服务端微信，浏览器多端共享同一会话；支持多实例与按账号的访问权限。面板为唯一对外入口，微信实例由面板按需创建。
+desc=在飞牛 NAS 上运行服务端微信，浏览器多端共享同一会话；支持多实例与 OIDC 邮箱白名单登录。面板为唯一对外入口，微信实例由面板按需创建。
 platform=all
 source=thirdparty
 maintainer=Gloridust

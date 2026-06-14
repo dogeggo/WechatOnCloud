@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useUI } from '../ui';
-import { useAuth } from '../auth';
 import { useInstances } from '../AppShell';
 import { VncAudio } from '../vncAudio';
 
@@ -34,10 +33,8 @@ const MenuIcon = (
 export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void }) {
   const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
-  const { user } = useAuth();
   const { toast, confirm } = useUI();
   const { instances, loaded, reload } = useInstances();
-  const isAdmin = user?.role === 'admin';
 
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [loadStuck, setLoadStuck] = useState(false); // iframe 久未加载出来（疑似实例无响应）
@@ -462,11 +459,9 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
             >
               剪贴板
             </button>
-            {isAdmin && (
-              <button className="ws-action" title="重启实例（修复卡死/最小化丢失）" onClick={restartInstance}>
-                重启
-              </button>
-            )}
+            <button className="ws-action" title="重启实例（修复卡死/最小化丢失）" onClick={restartInstance}>
+              重启
+            </button>
           </>
         )}
       </header>
@@ -479,7 +474,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
       ) : !inst ? (
         <div className="iv-stage iv-center">
           <div className="iv-notice">
-            <div className="iv-notice-title">无权访问或实例不存在</div>
+            <div className="iv-notice-title">实例不存在</div>
             <button className="btn btn-primary iv-notice-btn" onClick={() => nav('/')}>
               返回主页
             </button>
@@ -489,18 +484,12 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
         <div className="iv-stage iv-center">
           <div className="iv-notice">
             <div className="iv-notice-title">{inst.runtime === 'missing' ? '容器尚未创建' : '实例已停止'}</div>
-            {isAdmin ? (
-              <button className="btn btn-primary iv-notice-btn" disabled={starting} onClick={start}>
-                {starting ? '启动中…' : inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
-              </button>
-            ) : (
-              <div className="iv-notice-sub">请联系管理员启动该实例</div>
-            )}
-            {isAdmin && (
-              <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
-                查看日志
-              </button>
-            )}
+            <button className="btn btn-primary iv-notice-btn" disabled={starting} onClick={start}>
+              {starting ? '启动中…' : inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
+            </button>
+            <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
+              查看日志
+            </button>
           </div>
         </div>
       ) : ['downloading', 'extracting', 'installing'].includes(inst.wechat.phase) ? (
@@ -523,18 +512,12 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
                 ? inst.wechat.message || '安装失败，可在「管理」重试'
                 : '该实例容器已就绪，但尚未安装微信'}
             </div>
-            {isAdmin ? (
-              <button className="btn btn-primary iv-notice-btn" onClick={() => nav('/admin')}>
-                去「管理」{inst.wechat.phase === 'error' ? '重试 / 更新' : '下载安装'}
-              </button>
-            ) : (
-              <div className="iv-notice-sub">请联系管理员在「管理」中下载安装微信</div>
-            )}
-            {isAdmin && (
-              <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
-                查看日志
-              </button>
-            )}
+            <button className="btn btn-primary iv-notice-btn" onClick={() => nav('/admin')}>
+              去「管理」{inst.wechat.phase === 'error' ? '重试 / 更新' : '下载安装'}
+            </button>
+            <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
+              查看日志
+            </button>
           </div>
         </div>
       ) : (
@@ -585,14 +568,12 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
                 >
                   重新连接
                 </button>
-                {isAdmin && (
-                  <button className="btn" onClick={restartInstance}>
-                    重启实例
-                  </button>
-                )}
+                <button className="btn" onClick={restartInstance}>
+                  重启实例
+                </button>
               </div>
               <div className="iv-loading-sub" style={{ marginTop: 8 }}>
-                管理员也可稍候，面板会自动检测无响应实例并重启自愈。
+                也可稍候，面板会自动检测无响应实例并重启自愈。
               </div>
             </div>
           )}

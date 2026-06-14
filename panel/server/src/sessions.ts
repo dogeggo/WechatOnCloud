@@ -1,37 +1,66 @@
 import { randomBytes } from 'node:crypto';
 
+export interface AuthUser {
+  sub: string;
+  email: string;
+  username: string;
+  name?: string;
+  picture?: string;
+}
+
 interface Session {
-  userId: string;
+  user: AuthUser;
   expires: number;
 }
 
-const TTL_MS = 1000 * 60 * 60 * 12; // 12 小时
-const sessions = new Map<string, Session>();
-
-export function createSession(userId: string) {
-  const token = randomBytes(32).toString('hex');
-  sessions.set(token, { userId, expires: Date.now() + TTL_MS });
-  return token;
+export interface LoginFlow {
+  state: string;
+  nonce: string;
+  codeVerifier: string;
+  returnTo: string;
+  expires: number;
 }
 
-export function getSession(token?: string) {
-  if (!token) return null;
-  const s = sessions.get(token);
+const SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 小时
+const FLOW_TTL_MS = 1000 * 60 * 10; // 10 分钟
+const sessions = new Map<string, Session>();
+const loginFlows = new Map<string, LoginFlow>();
+
+function token() {
+  return randomBytes(32).toString('hex');
+}
+
+export function createSession(user: AuthUser) {
+  const t = token();
+  sessions.set(t, { user, expires: Date.now() + SESSION_TTL_MS });
+  return t;
+}
+
+export function getSession(t?: string) {
+  if (!t) return null;
+  const s = sessions.get(t);
   if (!s) return null;
   if (s.expires < Date.now()) {
-    sessions.delete(token);
+    sessions.delete(t);
     return null;
   }
   return s;
 }
 
-export function destroySession(token?: string) {
-  if (token) sessions.delete(token);
+export function destroySession(t?: string) {
+  if (t) sessions.delete(t);
 }
 
-// 禁用/删除账号后，立即踢掉其所有在线会话
-export function destroyUserSessions(userId: string) {
-  for (const [token, s] of sessions) {
-    if (s.userId === userId) sessions.delete(token);
-  }
+export function createLoginFlow(flow: Omit<LoginFlow, 'expires'>) {
+  const t = token();
+  loginFlows.set(t, { ...flow, expires: Date.now() + FLOW_TTL_MS });
+  return t;
+}
+
+export function consumeLoginFlow(t?: string) {
+  if (!t) return null;
+  const flow = loginFlows.get(t);
+  loginFlows.delete(t);
+  if (!flow || flow.expires < Date.now()) return null;
+  return flow;
 }

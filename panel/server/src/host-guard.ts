@@ -1,10 +1,10 @@
 // Host-header allowlist for DNS-rebinding protection.
 //
-// Background: the panel binds 0.0.0.0:8080 and ships default credentials
-// (admin / wechat). Without Host-header validation, a malicious site the
+// Background: the panel binds 0.0.0.0:8080 and authenticates with OIDC.
+// Without Host-header validation, a malicious site the
 // operator visits can use DNS rebinding to point a hostname at the panel's
 // LAN/loopback IP and drive every authenticated API from the operator's own
-// browser — including the docker.sock-backed admin endpoints. The
+// browser — including the docker.sock-backed management endpoints. The
 // `sameSite: 'lax'` cookie does not stop this: after rebinding, the browser
 // treats the attacker hostname as same-origin with the panel and includes
 // any cookie it issues. The fix is host-allowlisting at the request edge.

@@ -137,7 +137,7 @@ dist
 
 # WechatOnCloud: 微信运行数据（登录态/消息，大且敏感，勿提交）
 /data/
-# WechatOnCloud: 面板账号数据（含密码哈希，勿提交）
+# WechatOnCloud: 面板数据与 OIDC 配置（含 client secret，勿提交）
 /data-panel/
 /.claude
 .DS_Store

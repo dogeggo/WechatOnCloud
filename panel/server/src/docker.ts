@@ -4,8 +4,25 @@ import http from 'node:http';
 import zlib from 'node:zlib';
 import Docker from 'dockerode';
 import type { Instance } from './store.js';
+import {
+  assertInstanceId,
+  assertProjectContainerName,
+  assertProjectVolumeName,
+  assertVideoDevice,
+  isProjectContainerName,
+  isProjectVolumeName,
+  normalizeDockerNetworkName,
+  parseIdFromContainerName,
+  parseIdFromVolumeName,
+} from './resource-guard.js';
 
-const WECHAT_IMAGE = process.env.WOC_WECHAT_IMAGE || 'ghcr.io/gloridust/wechat-on-cloud:latest';
+function assertDockerImageRef(image: string): string {
+  const ref = image.trim();
+  if (!ref || /[\s\0]/.test(ref)) throw new Error(`Docker 镜像名不合法：${image || '(empty)'}`);
+  return ref;
+}
+
+const WECHAT_IMAGE = assertDockerImageRef(process.env.WOC_WECHAT_IMAGE || 'ghcr.io/gloridust/wechat-on-cloud:latest');
 const PUID = process.env.PUID || '1000';
 const PGID = process.env.PGID || '1000';
 const TZ = process.env.TZ || 'Asia/Shanghai';
@@ -57,9 +74,29 @@ function realisticMac(id: string): string {
 const docker = new Docker(); // 默认连 /var/run/docker.sock
 
 // 面板自身所在的 docker 网络名；新实例都 attach 到它，便于按容器名互访。
-let networkName: string | null = process.env.WOC_DOCKER_NETWORK || null;
+let networkName: string | null = normalizeDockerNetworkName(process.env.WOC_DOCKER_NETWORK);
 
 export type RuntimeState = 'running' | 'stopped' | 'missing';
+
+function assertProjectInstance(inst: Instance): void {
+  assertInstanceId(inst.id);
+  assertProjectContainerName(inst.containerName);
+  assertProjectVolumeName(inst.volumeName);
+  const containerId = parseIdFromContainerName(inst.containerName);
+  const volumeId = parseIdFromVolumeName(inst.volumeName);
+  if (containerId !== inst.id || volumeId !== inst.id) {
+    throw new Error('实例 ID、容器名与数据卷名不一致');
+  }
+}
+
+function projectContainer(inst: Instance): Docker.Container {
+  assertProjectInstance(inst);
+  return docker.getContainer(inst.containerName);
+}
+
+function projectVolume(name: string): Docker.Volume {
+  return docker.getVolume(assertProjectVolumeName(name));
+}
 
 // 启动时探测面板自身网络（容器内 hostname = 容器短 id）。失败不致命：
 // 退回 WOC_DOCKER_NETWORK 或 null（null 时用 docker 默认 bridge，靠 IP 不靠名字会有问题，故尽量探测成功）。
@@ -69,7 +106,7 @@ export async function ensureNetwork(): Promise<string | null> {
     const self = docker.getContainer(hostname());
     const info = await self.inspect();
     const nets = Object.keys(info.NetworkSettings?.Networks || {}).filter((n) => n !== 'none' && n !== 'host');
-    if (nets.length > 0) networkName = nets[0];
+    if (nets.length > 0) networkName = normalizeDockerNetworkName(nets[0]);
   } catch (e: any) {
     console.warn('[docker] 无法探测面板网络（本地开发或缺少 docker.sock 时正常）:', e?.message || e);
   }
@@ -87,13 +124,13 @@ function videoDevices(): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (explicit.length) return explicit;
+  if (explicit.length) return explicit.map(assertVideoDevice);
   for (const dir of ['/host-dev', '/dev']) {
     try {
       if (!existsSync(dir)) continue;
       const vids = readdirSync(dir)
         .filter((n) => /^video\d+$/.test(n))
-        .map((n) => `/dev/${n}`); // 宿主侧设备路径
+        .map((n) => assertVideoDevice(`/dev/${n}`)); // 宿主侧设备路径
       if (vids.length) return vids;
     } catch {
       /* 无权限/不可读，忽略 */
@@ -130,10 +167,11 @@ async function ensureImage(): Promise<void> {
 
 // 创建并启动一个微信实例容器。若同名容器已存在则先移除（仅容器，不动卷）。
 export async function runInstance(inst: Instance): Promise<void> {
+  assertProjectInstance(inst);
   const net = await ensureNetwork();
   await ensureImage();
   try {
-    const existing = docker.getContainer(inst.containerName);
+    const existing = projectContainer(inst);
     await existing.inspect();
     await existing.remove({ force: true });
   } catch {
@@ -142,8 +180,10 @@ export async function runInstance(inst: Instance): Promise<void> {
   // 摄像头设备（探测不到则为空数组 → 仅摄像头不可用，音频/麦克风照常）
   const vids = videoDevices();
   const hostConfig: Docker.HostConfig = {
-    Binds: [`${inst.volumeName}:/config`],
+    Binds: [`${assertProjectVolumeName(inst.volumeName)}:/config`],
     NetworkMode: net || undefined,
+    Privileged: false,
+    PublishAllPorts: false,
     SecurityOpt: ['seccomp=unconfined'],
     ShmSize: SHM_SIZE,
     RestartPolicy: { Name: 'unless-stopped' },
@@ -153,7 +193,10 @@ export async function runInstance(inst: Instance): Promise<void> {
     hostConfig.MemorySwap = INSTANCE_MEM; // 禁止 swap 膨胀：限制即为硬上限
   }
   if (vids.length) {
-    hostConfig.Devices = vids.map((d) => ({ PathOnHost: d, PathInContainer: d, CgroupPermissions: 'rwm' }));
+    hostConfig.Devices = vids.map((d) => {
+      const path = assertVideoDevice(d);
+      return { PathOnHost: path, PathInContainer: path, CgroupPermissions: 'rwm' };
+    });
     hostConfig.GroupAdd = ['video']; // 让容器内 abc 用户能访问 /dev/videoN
     console.log(`[docker] 实例 ${inst.id} 挂载摄像头设备: ${vids.join(', ')}`);
   }
@@ -193,7 +236,7 @@ export async function runInstance(inst: Instance): Promise<void> {
 // 确保实例容器在运行：缺失则按需创建（不会重建已有卷），停止则启动。
 export async function ensureRunning(inst: Instance): Promise<void> {
   try {
-    const c = docker.getContainer(inst.containerName);
+    const c = projectContainer(inst);
     const info = await c.inspect();
     if (!info.State?.Running) await c.start();
   } catch {
@@ -235,7 +278,7 @@ export async function regenInstanceMachineId(inst: Instance): Promise<void> {
 // 停止实例容器（保留容器与数据卷，可再启动）。
 export async function stopInstance(inst: Instance): Promise<void> {
   try {
-    await docker.getContainer(inst.containerName).stop({ t: 5 } as any);
+    await projectContainer(inst).stop({ t: 5 } as any);
   } catch {
     /* 已停止或不存在 */
   }
@@ -243,14 +286,14 @@ export async function stopInstance(inst: Instance): Promise<void> {
 
 export async function removeInstance(inst: Instance, purgeVolume: boolean): Promise<void> {
   try {
-    const c = docker.getContainer(inst.containerName);
+    const c = projectContainer(inst);
     await c.remove({ force: true });
   } catch {
     /* 容器可能已不存在 */
   }
   if (purgeVolume) {
     try {
-      await docker.getVolume(inst.volumeName).remove({ force: true } as any);
+      await projectVolume(inst.volumeName).remove({ force: true } as any);
     } catch {
       /* 卷可能不存在 */
     }
@@ -268,7 +311,7 @@ export async function listOrphanVolumes(referencedVolumes: Set<string>): Promise
   const containerRefs = new Set<string>();
   for (const c of allContainers) {
     for (const m of c.Mounts || []) {
-      if (typeof m.Name === 'string' && m.Name.startsWith('woc-data-')) containerRefs.add(m.Name);
+      if (typeof m.Name === 'string' && isProjectVolumeName(m.Name)) containerRefs.add(m.Name);
     }
   }
   // 与 store 视角并集：取两者都未引用的卷
@@ -277,7 +320,7 @@ export async function listOrphanVolumes(referencedVolumes: Set<string>): Promise
   const { Volumes } = (await (docker as any).listVolumes()) || { Volumes: [] };
   if (!Array.isArray(Volumes)) return [];
   return Volumes
-    .filter((v: any) => typeof v?.Name === 'string' && v.Name.startsWith('woc-data-') && !referenced.has(v.Name))
+    .filter((v: any) => typeof v?.Name === 'string' && isProjectVolumeName(v.Name) && !referenced.has(v.Name))
     .map((v: any) => ({
       name: v.Name,
       createdAt: v.CreatedAt,
@@ -287,31 +330,51 @@ export async function listOrphanVolumes(referencedVolumes: Set<string>): Promise
     .sort((a, b) => (a.createdAt && b.createdAt ? (a.createdAt < b.createdAt ? 1 : -1) : 0));
 }
 
-// 显式删除一个数据卷（管理员清理孤儿卷用）。调用方负责确认它不被现存实例引用。
+// 显式删除一个数据卷。调用方负责确认它不被现存实例引用。
 export async function removeVolume(name: string): Promise<void> {
-  await docker.getVolume(name).remove({ force: true } as any);
+  await projectVolume(name).remove({ force: true } as any);
 }
 
 // 列出"残留的 woc-wx-* 容器"：在 docker 里存在但 store 没登记的（多为 runInstance 失败时
-// 留下的 Created 状态容器，或用户手动 docker run 出来的）。给管理员一键清理。
+// 留下的 Created 状态容器，或用户手动 docker run 出来的）。供面板一键清理。
 export async function listOrphanContainers(
   knownContainerNames: Set<string>,
 ): Promise<Array<{ id: string; name: string; status: string; volumeName?: string }>> {
   const all = await docker.listContainers({ all: true });
   const out: Array<{ id: string; name: string; status: string; volumeName?: string }> = [];
   for (const c of all) {
-    const name = (c.Names || []).map((n) => n.replace(/^\//, '')).find((n) => n.startsWith('woc-wx-'));
+    const name = (c.Names || []).map((n) => n.replace(/^\//, '')).find(isProjectContainerName);
     if (!name) continue;
     if (knownContainerNames.has(name)) continue;
-    const vol = (c.Mounts || []).map((m) => m.Name).find((n) => typeof n === 'string' && n.startsWith('woc-data-'));
+    const vol = (c.Mounts || []).map((m) => m.Name).find((n) => typeof n === 'string' && isProjectVolumeName(n));
     out.push({ id: c.Id, name, status: c.Status || c.State || '', volumeName: vol });
   }
   return out;
 }
 
-// 强制删除一个残留容器（按短/全 id 或容器名都行）。
-export async function removeContainerById(idOrName: string): Promise<void> {
-  await docker.getContainer(idOrName).remove({ force: true });
+// 强制删除一个残留容器（按短/全 id 或容器名都行），但实际目标必须是未登记的 woc-wx-* 容器。
+export async function removeContainerById(idOrName: string, knownContainerNames = new Set<string>()): Promise<void> {
+  const raw = String(idOrName || '').replace(/^\//, '');
+  let targetIdOrName = '';
+  let targetName = '';
+
+  if (isProjectContainerName(raw)) {
+    targetIdOrName = raw;
+    targetName = raw;
+  } else {
+    if (!/^[0-9a-f]{12,64}$/.test(raw)) throw new Error('容器 ID 不合法');
+    const all = await docker.listContainers({ all: true });
+    const matches = all.filter((c) => c.Id === raw || c.Id.startsWith(raw));
+    if (matches.length > 1) throw new Error('容器 ID 不唯一，请使用更长 ID');
+    const match = matches[0];
+    const name = match?.Names?.map((n) => n.replace(/^\//, '')).find(isProjectContainerName);
+    if (!match || !name) throw new Error('拒绝删除非本项目容器');
+    targetIdOrName = match.Id;
+    targetName = name;
+  }
+
+  if (knownContainerNames.has(targetName)) throw new Error('该容器属于现存实例，不能在此删除');
+  await docker.getContainer(targetIdOrName).remove({ force: true });
 }
 
 // 取实例容器的"working set"内存（MB）：等同 docker stats 显示值 = usage - inactive_file。
@@ -319,7 +382,7 @@ export async function removeContainerById(idOrName: string): Promise<void> {
 // 不触发自愈，避免容器刚启动 stats 不可用就被误杀）。一次性 stats、不订阅 stream。
 export async function instanceMemoryMB(inst: Instance): Promise<number> {
   try {
-    const c = docker.getContainer(inst.containerName);
+    const c = projectContainer(inst);
     const s: any = await c.stats({ stream: false } as any);
     const usage = Number(s?.memory_stats?.usage) || 0;
     const inactive = Number(
@@ -337,6 +400,7 @@ export async function instanceMemoryMB(inst: Instance): Promise<number> {
 // 这里带注入鉴权请求真正会卡的那条路径（/vnc/index.html，经 nginx→kclient 静态serve），
 // 超时即判不健康。无鉴权时 nginx 直接 401（很快），故必须注入鉴权让请求真正打到 kclient 静态层。
 export async function instanceHttpHealthy(inst: Instance, timeoutMs = 8000): Promise<boolean> {
+  assertProjectInstance(inst);
   const auth = 'Basic ' + Buffer.from(`${inst.kasmUser}:${inst.kasmPassword}`).toString('base64');
   return await new Promise<boolean>((resolve) => {
     let settled = false;
@@ -370,7 +434,7 @@ export async function instanceHttpHealthy(inst: Instance, timeoutMs = 8000): Pro
 
 export async function instanceRuntime(inst: Instance): Promise<RuntimeState> {
   try {
-    const info = await docker.getContainer(inst.containerName).inspect();
+    const info = await projectContainer(inst).inspect();
     return info.State?.Running ? 'running' : 'stopped';
   } catch {
     return 'missing';
@@ -379,7 +443,7 @@ export async function instanceRuntime(inst: Instance): Promise<RuntimeState> {
 
 // 在实例容器内执行命令，返回 stdout；若命令失败，把 stderr 透出给调用方。
 async function execCapture(inst: Instance, cmd: string[]): Promise<string> {
-  const c = docker.getContainer(inst.containerName);
+  const c = projectContainer(inst);
   const exec = await c.exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true, Tty: false, User: 'abc' });
   const stream = await exec.start({ hijack: true, stdin: false });
   return await new Promise<string>((resolve, reject) => {
@@ -406,7 +470,7 @@ async function execCapture(inst: Instance, cmd: string[]): Promise<string> {
 
 // 触发下载/安装（detached，立即返回，后台下载）。
 export async function triggerWechat(inst: Instance, cmd: 'install' | 'update'): Promise<void> {
-  const c = docker.getContainer(inst.containerName);
+  const c = projectContainer(inst);
   const exec = await c.exec({
     Cmd: ['/woc/wechat-ctl.sh', cmd === 'update' ? 'update' : 'install'],
     AttachStdout: false,
@@ -484,7 +548,7 @@ function safeName(name: string): boolean {
 export async function uploadToInstance(inst: Instance, name: string, content: Buffer): Promise<void> {
   if (!safeName(name)) throw new Error('文件名不合法');
   await execCapture(inst, ['sh', '-c', `mkdir -p ${TRANSFER_DIR}`]); // abc 家目录可写
-  const c = docker.getContainer(inst.containerName);
+  const c = projectContainer(inst);
   await c.putArchive(tarSingleFile(name, content), { path: TRANSFER_DIR });
 }
 
@@ -515,7 +579,7 @@ export async function deleteInstanceFile(inst: Instance, name: string): Promise<
 
 export async function downloadFromInstance(inst: Instance, name: string): Promise<Buffer> {
   if (!safeName(name)) throw new Error('文件名不合法');
-  const c = docker.getContainer(inst.containerName);
+  const c = projectContainer(inst);
   const stream = (await c.getArchive({ path: `${TRANSFER_DIR}/${name}` })) as NodeJS.ReadableStream;
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
@@ -551,7 +615,7 @@ function extractSingleFileFromTar(tar: Buffer): Buffer {
 
 // 拉取实例容器日志（末尾 N 行），供前端"查看/导出日志"排错。
 export async function instanceLogs(inst: Instance, tail = 600): Promise<string> {
-  const c = docker.getContainer(inst.containerName);
+  const c = projectContainer(inst);
   const buf = (await c.logs({ stdout: true, stderr: true, tail, timestamps: true })) as unknown as Buffer;
   // docker 非 TTY 日志为多路复用流：每帧 8 字节头（[stream,0,0,0,size BE]）+ 负载；解出纯文本。
   let out = '';
@@ -582,7 +646,7 @@ export async function typeInInstance(inst: Instance, text: string): Promise<void
   await execCapture(inst, ['bash', '-c', cmd]);
 }
 
-// ---------- 数据卷管理（仅管理员；路由层用 requireAdmin 限制） ----------
+// ---------- 数据卷管理（路由层要求已登录） ----------
 // 数据卷 = 容器内 /config 持久卷，含微信全部数据（登录态、加密聊天库等）。提供浏览/上传/解压/下载/
 // 改名/移动/删除 + 整卷备份/恢复。主要场景：把 PC 微信数据迁移上来、跨实例迁移、离线备份。
 // 路径安全：所有相对路径经 safeVolPath 归一化并严格限制在 /config 内，禁止 .. 穿越。
@@ -662,7 +726,7 @@ export async function volUploadFile(inst: Instance, rel: string, name: string, c
   if (!safeName(name)) throw new Error('文件名不合法');
   const dir = safeVolPath(rel);
   await execCapture(inst, ['mkdir', '-p', dir]);
-  await docker.getContainer(inst.containerName).putArchive(tarSingleFile(name, content), { path: dir });
+  await projectContainer(inst).putArchive(tarSingleFile(name, content), { path: dir });
 }
 
 // 上传压缩包并解压到指定目录（PC 微信数据迁移：用户把文件夹打成 .tar/.tar.gz 上传）。
@@ -670,13 +734,13 @@ export async function volUploadFile(inst: Instance, rel: string, name: string, c
 export async function volExtractArchive(inst: Instance, rel: string, archive: Buffer): Promise<void> {
   const dir = safeVolPath(rel);
   await execCapture(inst, ['mkdir', '-p', dir]);
-  await docker.getContainer(inst.containerName).putArchive(maybeGunzip(archive), { path: dir });
+  await projectContainer(inst).putArchive(maybeGunzip(archive), { path: dir });
 }
 
 export async function volDownloadFile(inst: Instance, rel: string): Promise<Buffer> {
   const abs = safeVolPath(rel);
   if (abs === VOL_ROOT) throw new Error('不能下载整个根目录，请用整卷备份');
-  const stream = (await docker.getContainer(inst.containerName).getArchive({ path: abs })) as NodeJS.ReadableStream;
+  const stream = (await projectContainer(inst).getArchive({ path: abs })) as NodeJS.ReadableStream;
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
     stream.on('data', (d: Buffer) => chunks.push(d));
@@ -689,7 +753,7 @@ export async function volDownloadFile(inst: Instance, rel: string): Promise<Buff
 // 整卷备份：把 /config 打成 tar 流并经 gzip 输出（路由直接 pipe 给响应，避免大文件入内存）。
 // getArchive('/config') 的条目前缀为 config/，恢复时解到容器根即可落回 /config。
 export async function volBackupStream(inst: Instance): Promise<NodeJS.ReadableStream> {
-  const tar = (await docker.getContainer(inst.containerName).getArchive({ path: VOL_ROOT })) as NodeJS.ReadableStream;
+  const tar = (await projectContainer(inst).getArchive({ path: VOL_ROOT })) as NodeJS.ReadableStream;
   const gzip = zlib.createGzip();
   tar.on('error', (e) => gzip.destroy(e as Error));
   return tar.pipe(gzip);
@@ -697,11 +761,12 @@ export async function volBackupStream(inst: Instance): Promise<NodeJS.ReadableSt
 
 // 整卷恢复：仅适用于本系统导出的备份（条目前缀 config/），解到容器根 → 落回 /config。要求实例已停止。
 export async function volRestoreArchive(inst: Instance, archive: Buffer): Promise<void> {
-  await docker.getContainer(inst.containerName).putArchive(maybeGunzip(archive), { path: '/' });
+  await projectContainer(inst).putArchive(maybeGunzip(archive), { path: '/' });
 }
 
 // 实例容器名（供反代构造 target）。
 export function instanceTarget(inst: Instance): string {
+  assertProjectInstance(inst);
   return `http://${inst.containerName}:3000`;
 }
 

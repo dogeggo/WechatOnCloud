@@ -197,33 +197,6 @@ button {
   box-shadow: inset 0 1px 2px rgba(var(--shadow) / 0.16), 0 0 0 3px rgba(var(--green-rgb) / 0.22);
 }
 
-/* 密码框 + 显示/隐藏切换 */
-.pw-field {
-  position: relative;
-}
-.pw-field .input {
-  padding-right: 46px;
-}
-.pw-toggle {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: none;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 10px;
-}
-.pw-toggle:active {
-  background: rgba(var(--shadow) / 0.06);
-}
-
 /* 按钮：浮起 blob，按下缩小 + 折痕收紧 */
 .btn {
   position: relative;
@@ -524,7 +497,7 @@ button {
   box-shadow: none;
 }
 
-/* 子账号列表 */
+/* 实例与管理卡片 */
 .user-row {
   position: relative;
   z-index: 1;
@@ -1081,7 +1054,7 @@ button {
   color: var(--muted);
 }
 
-/* ── 默认密码安全告警条 ──────────────────────────────────── */
+/* ── 告警条 ─────────────────────────────────────────────── */
 .warn-banner {
   position: relative;
   z-index: 1;
@@ -1813,7 +1786,7 @@ button {
   }
 }
 
-/* ── 数据卷管理（管理员）──────────────────────────────────── */
+/* ── 数据卷管理 ──────────────────────────────────── */
 .vol-modal {
   width: 640px;
   max-width: 92vw;

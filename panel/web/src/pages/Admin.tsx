@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type PanelUser, type InstanceWithStatus, type VolEntry } from '../api';
-import { useUI, PasswordInput } from '../ui';
-import { useAuth } from '../auth';
+import { api, type InstanceWithStatus, type VolEntry } from '../api';
+import { useUI } from '../ui';
 
 const BUSY_PHASES = ['downloading', 'extracting', 'installing'];
 
@@ -78,19 +77,12 @@ function EmptyState({ icon, title, sub, action }: { icon: string; title: string;
   );
 }
 
-export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: () => void; onChangePassword: () => void }) {
+export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const nav = useNavigate();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
   const { toast, confirm } = useUI();
-  const [users, setUsers] = useState<PanelUser[]>([]);
   const [instances, setInstances] = useState<InstanceWithStatus[]>([]);
   const [err, setErr] = useState('');
-  const [creatingUser, setCreatingUser] = useState(false);
   const [creatingInst, setCreatingInst] = useState(false);
-  const [assignInst, setAssignInst] = useState<InstanceWithStatus | null>(null); // 给实例选账户
-  const [assignUser, setAssignUser] = useState<PanelUser | null>(null); // 给账户选实例
-  const [resetTarget, setResetTarget] = useState<PanelUser | null>(null); // 重置密码弹窗
   const [deleteInst, setDeleteInst] = useState<InstanceWithStatus | null>(null); // 删除实例弹窗
   const [renameInst, setRenameInst] = useState<InstanceWithStatus | null>(null); // 重命名实例弹窗
   const [securityInst, setSecurityInst] = useState<InstanceWithStatus | null>(null); // 安全（内存阈值）弹窗
@@ -108,14 +100,11 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
       return n;
     });
 
-  const subs = users.filter((u) => u.role !== 'admin');
   const timer = useRef<number | undefined>(undefined);
 
   const load = async () => {
-    if (!isAdmin) return; // 子账号无管理数据权限，管理页只给改密
     try {
-      const [{ users }, { instances }] = await Promise.all([api.listUsers(), api.listInstances()]);
-      setUsers(users);
+      const { instances } = await api.listInstances();
       setInstances(instances);
     } catch (e: any) {
       setErr(e.message);
@@ -232,267 +221,122 @@ export default function Admin({ onOpenMenu, onChangePassword }: { onOpenMenu: ()
     }
   };
 
-  const instName = (id: string) => instances.find((i) => i.id === id)?.name || id;
-  const usersForInstance = (id: string) => subs.filter((u) => u.allowedInstances.includes(id));
-
-  const toggle = async (u: PanelUser) => {
-    try {
-      await api.setDisabled(u.id, !u.disabled);
-      toast(u.disabled ? '已启用' : '已禁用', 'ok');
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-    load();
-  };
-  const removeUser = async (u: PanelUser) => {
-    const ok = await confirm({ title: `删除子账号「${u.username}」？`, body: '该账户将无法再登录。', danger: true, confirmText: '删除' });
-    if (!ok) return;
-    try {
-      await api.deleteUser(u.id);
-      toast('已删除', 'ok');
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-    load();
-  };
-
   return (
     <div className="ws-page">
       <header className="ws-head">
         <button className="ws-menu" onClick={onOpenMenu} aria-label="菜单">
           {MenuIcon}
         </button>
-        <span className="ws-title">{isAdmin ? '管理' : '设置'}</span>
+        <span className="ws-title">管理</span>
       </header>
 
       <main className="content">
         {err && <div className="error">{err}</div>}
 
-        {isAdmin && (
-          <>
-            <div className="section-row">
-              <span className="section-title">微信实例</span>
-              <button className="btn-text" onClick={() => setCreatingInst(true)}>
-                + 新建实例
+        <div className="section-row">
+          <span className="section-title">微信实例</span>
+          <button className="btn-text" onClick={() => setCreatingInst(true)}>
+            + 新建实例
+          </button>
+        </div>
+        {instances.length === 0 ? (
+          <EmptyState
+            icon="🖥️"
+            title="还没有微信实例"
+            sub="新建一个实例，进入后扫码登录即可在浏览器里用微信"
+            action={
+              <button className="btn btn-primary" onClick={() => setCreatingInst(true)}>
+                ＋ 新建微信实例
               </button>
-            </div>
-            {instances.length === 0 ? (
-              <EmptyState
-                icon="🖥️"
-                title="还没有微信实例"
-                sub="新建一个实例，进入后扫码登录即可在浏览器里用微信"
-                action={
-                  <button className="btn btn-primary" onClick={() => setCreatingInst(true)}>
-                    ＋ 新建微信实例
-                  </button>
-                }
+            }
+          />
+        ) : (
+          <div className="inst-grid">
+            {instances.map((inst) => (
+              <InstanceAdminCard
+                key={inst.id}
+                inst={inst}
+                acting={acting[inst.id]}
+                onEnter={() => nav(`/i/${inst.id}`)}
+                onTrigger={trigger}
+                onStart={() => start(inst)}
+                onStop={() => lifecycle(inst, 'stop')}
+                onRestart={() => lifecycle(inst, 'restart')}
+                onUpgrade={() => lifecycle(inst, 'upgrade')}
+                onRename={() => setRenameInst(inst)}
+                onDelete={() => setDeleteInst(inst)}
+                onSecurity={() => setSecurityInst(inst)}
+                onVolume={() => setVolumeInst(inst)}
               />
-            ) : (
-              <div className="inst-grid">
-                {instances.map((inst) => (
-                  <InstanceAdminCard
-                    key={inst.id}
-                    inst={inst}
-                    userCount={usersForInstance(inst.id).length}
-                    acting={acting[inst.id]}
-                    onEnter={() => nav(`/i/${inst.id}`)}
-                    onTrigger={trigger}
-                    onStart={() => start(inst)}
-                    onStop={() => lifecycle(inst, 'stop')}
-                    onRestart={() => lifecycle(inst, 'restart')}
-                    onUpgrade={() => lifecycle(inst, 'upgrade')}
-                    onRename={() => setRenameInst(inst)}
-                    onAssign={() => setAssignInst(inst)}
-                    onDelete={() => setDeleteInst(inst)}
-                    onSecurity={() => setSecurityInst(inst)}
-                    onVolume={() => setVolumeInst(inst)}
-                  />
-                ))}
-              </div>
-            )}
-
-            <div className="section-row" style={{ marginTop: 22 }}>
-              <span className="section-title">子账号</span>
-              <button className="btn-text" onClick={() => setCreatingUser(true)}>
-                + 新建子账号
-              </button>
-            </div>
-            {subs.length === 0 ? (
-              <EmptyState
-                icon="👥"
-                title="还没有子账号"
-                sub="子账号是登录这套面板的身份，可按账号分配能访问哪些实例"
-                action={
-                  <button className="btn btn-primary" onClick={() => setCreatingUser(true)}>
-                    ＋ 新建子账号
-                  </button>
-                }
-              />
-            ) : (
-              <div className="inst-grid">
-                {subs.map((u) => (
-                  <div key={u.id} className="inst-card">
-                    <div className="inst-head">
-                      <span className="inst-name">{u.username}</span>
-                      {u.disabled ? <span className="tag tag-off">已禁用</span> : <span className="tag tag-on">正常</span>}
-                    </div>
-                    <div className="inst-sub">{u.allowedInstances.length > 0 ? `可访问 ${u.allowedInstances.length} 个实例` : '未分配实例'}</div>
-                    {u.allowedInstances.length > 0 && (
-                      <div className="chip-row" style={{ marginTop: 8 }}>
-                        {u.allowedInstances.map((id) => (
-                          <span key={id} className="chip chip-static">
-                            {instName(id)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <div className="inst-admin-links">
-                      <button className="btn-text" onClick={() => setAssignUser(u)}>
-                        可访问实例
-                      </button>
-                      <button className="btn-text" onClick={() => toggle(u)}>
-                        {u.disabled ? '启用' : '禁用'}
-                      </button>
-                      <button className="btn-text" onClick={() => setResetTarget(u)}>
-                        重置密码
-                      </button>
-                      <button className="btn-text danger" onClick={() => removeUser(u)}>
-                        删除
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {orphanConts.length > 0 && (
-              <>
-                <div className="section-row" style={{ marginTop: 22 }}>
-                  <span className="section-title">残留容器</span>
-                  <span className="muted small">不属于任何登记实例（多为创建失败遗留）；它们占着数据卷名，需先清理它们才能删除同名数据卷。</span>
-                </div>
-                <div className="inst-grid">
-                  {orphanConts.map((c) => (
-                    <div key={c.id} className="inst-card">
-                      <div className="inst-head">
-                        <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{c.name}</span>
-                        <span className="tag tag-off">{c.status || 'unknown'}</span>
-                      </div>
-                      {c.volumeName && (
-                        <div className="inst-sub" style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                          占用卷：{c.volumeName}
-                        </div>
-                      )}
-                      <div className="inst-admin-links">
-                        <button className="btn-text danger" onClick={() => removeOrphanCont(c)}>
-                          删除容器
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-            {orphanVols.length > 0 && (
-              <>
-                <div className="section-row" style={{ marginTop: 22 }}>
-                  <span className="section-title">未使用的数据卷</span>
-                  <span className="muted small">删除实例时未勾选「彻底清除」会保留下来；可在新建实例时复用以继承聊天记录。</span>
-                </div>
-                <div className="inst-grid">
-                  {orphanVols.map((v) => (
-                    <div key={v.name} className="inst-card">
-                      <div className="inst-head">
-                        <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{v.name}</span>
-                      </div>
-                      <div className="inst-sub">
-                        {v.createdAt ? `创建于 ${v.createdAt.slice(0, 10)}` : '创建时间未知'}
-                        {typeof v.sizeBytes === 'number' ? `　·　${(v.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ''}
-                      </div>
-                      <div className="inst-admin-links">
-                        <button className="btn-text" onClick={() => setCreatingInst(true)} title="去「新建实例」对话框，在「数据卷」下拉里选择复用此卷">
-                          复用为新实例
-                        </button>
-                        <button className="btn-text danger" onClick={() => removeOrphanVol(v.name)}>
-                          彻底删除
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </>
+            ))}
+          </div>
         )}
 
-        {/* 账号：所有人（含子账号）都能在此改密 */}
-        <div className="section-row" style={{ marginTop: isAdmin ? 22 : 0 }}>
-          <span className="section-title">账号</span>
-        </div>
-        <div className="inst-grid">
-          <div className="inst-card">
-            <div className="inst-head">
-              <span className="inst-name">{user?.username}</span>
-              {isAdmin ? <span className="tag">管理员</span> : <span className="tag tag-on">子账号</span>}
+        {orphanConts.length > 0 && (
+          <>
+            <div className="section-row" style={{ marginTop: 22 }}>
+              <span className="section-title">残留容器</span>
+              <span className="muted small">不属于任何登记实例（多为创建失败遗留）；它们占着数据卷名，需先清理它们才能删除同名数据卷。</span>
             </div>
-            <div className="inst-sub">{isAdmin ? '可访问全部实例' : `可访问 ${user?.allowedInstances.length ?? 0} 个实例`}</div>
-            <div className="inst-actions">
-              <button className="btn btn-primary inst-act-wide" onClick={onChangePassword}>
-                修改密码
-              </button>
+            <div className="inst-grid">
+              {orphanConts.map((c) => (
+                <div key={c.id} className="inst-card">
+                  <div className="inst-head">
+                    <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{c.name}</span>
+                    <span className="tag tag-off">{c.status || 'unknown'}</span>
+                  </div>
+                  {c.volumeName && (
+                    <div className="inst-sub" style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                      占用卷：{c.volumeName}
+                    </div>
+                  )}
+                  <div className="inst-admin-links">
+                    <button className="btn-text danger" onClick={() => removeOrphanCont(c)}>
+                      删除容器
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        </div>
+          </>
+        )}
+        {orphanVols.length > 0 && (
+          <>
+            <div className="section-row" style={{ marginTop: 22 }}>
+              <span className="section-title">未使用的数据卷</span>
+              <span className="muted small">删除实例时未勾选「彻底清除」会保留下来；可在新建实例时复用以继承聊天记录。</span>
+            </div>
+            <div className="inst-grid">
+              {orphanVols.map((v) => (
+                <div key={v.name} className="inst-card">
+                  <div className="inst-head">
+                    <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{v.name}</span>
+                  </div>
+                  <div className="inst-sub">
+                    {v.createdAt ? `创建于 ${v.createdAt.slice(0, 10)}` : '创建时间未知'}
+                    {typeof v.sizeBytes === 'number' ? `　·　${(v.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ''}
+                  </div>
+                  <div className="inst-admin-links">
+                    <button className="btn-text" onClick={() => setCreatingInst(true)} title="去「新建实例」对话框，在「数据卷」下拉里选择复用此卷">
+                      复用为新实例
+                    </button>
+                    <button className="btn-text danger" onClick={() => removeOrphanVol(v.name)}>
+                      彻底删除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </main>
 
-      {creatingUser && (
-        <CreateUser
-          instances={instances}
-          onClose={() => setCreatingUser(false)}
-          onDone={() => {
-            setCreatingUser(false);
-            load();
-          }}
-        />
-      )}
       {creatingInst && (
         <CreateInstance
-          subs={subs}
           onClose={() => setCreatingInst(false)}
           onDone={() => {
             setCreatingInst(false);
             load();
-          }}
-        />
-      )}
-      {assignInst && (
-        <AssignUsers
-          inst={assignInst}
-          subs={subs}
-          onClose={() => setAssignInst(null)}
-          onDone={() => {
-            setAssignInst(null);
-            load();
-          }}
-        />
-      )}
-      {assignUser && (
-        <AssignInstances
-          user={assignUser}
-          instances={instances}
-          onClose={() => setAssignUser(null)}
-          onDone={() => {
-            setAssignUser(null);
-            load();
-          }}
-        />
-      )}
-      {resetTarget && (
-        <ResetPassword
-          user={resetTarget}
-          onClose={() => setResetTarget(null)}
-          onDone={() => {
-            setResetTarget(null);
-            toast('密码已重置', 'ok');
           }}
         />
       )}
@@ -564,49 +408,6 @@ function RenameInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
           </button>
           <button className="btn btn-primary" disabled={busy || !name.trim() || name.trim() === inst.name}>
             保存
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function ResetPassword({ user, onClose, onDone }: { user: PanelUser; onClose: () => void; onDone: () => void }) {
-  const [pw, setPw] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const mismatch = confirm.length > 0 && pw !== confirm;
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr('');
-    if (pw !== confirm) {
-      setErr('两次输入的新密码不一致');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.resetUser(user.id, pw);
-      onDone();
-    } catch (e: any) {
-      setErr(e.message || '重置失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="modal-mask" onClick={onClose}>
-      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h2>重置「{user.username}」的密码</h2>
-        <PasswordInput placeholder="新密码（至少 6 位）" autoComplete="new-password" value={pw} onChange={setPw} />
-        <PasswordInput placeholder="再次输入新密码" autoComplete="new-password" value={confirm} onChange={setConfirm} />
-        {(mismatch || err) && <div className="error">{mismatch ? '两次输入的新密码不一致' : err}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn btn-primary" disabled={busy || pw.length < 6 || pw !== confirm}>
-            重置
           </button>
         </div>
       </form>
@@ -853,7 +654,6 @@ function DeleteInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
 // 管理页的实例卡片：含微信版本管理（下载/更新）+ 重命名/分配/删除
 function InstanceAdminCard({
   inst,
-  userCount,
   acting,
   onEnter,
   onTrigger,
@@ -862,13 +662,11 @@ function InstanceAdminCard({
   onRestart,
   onUpgrade,
   onRename,
-  onAssign,
   onDelete,
   onSecurity,
   onVolume,
 }: {
   inst: InstanceWithStatus;
-  userCount: number;
   acting?: string;
   onEnter: () => void;
   onTrigger: (inst: InstanceWithStatus, kind: 'install' | 'update') => void;
@@ -877,7 +675,6 @@ function InstanceAdminCard({
   onRestart: () => void;
   onUpgrade: () => void;
   onRename: () => void;
-  onAssign: () => void;
   onDelete: () => void;
   onSecurity: () => void;
   onVolume: () => void;
@@ -912,7 +709,6 @@ function InstanceAdminCard({
       </div>
       <div className="inst-sub">
         {sub}
-        {!acting && ` · 可访问 ${userCount} 人`}
       </div>
 
       {working && (
@@ -975,9 +771,6 @@ function InstanceAdminCard({
                   <button className="btn-text" onClick={onRename}>
                     重命名
                   </button>
-                  <button className="btn-text" onClick={onAssign}>
-                    分配账户
-                  </button>
                   <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(inst.id), '_blank')} title="查看实例容器日志">
                     日志
                   </button>
@@ -1004,7 +797,7 @@ function InstanceAdminCard({
   );
 }
 
-// 数据卷管理（仅管理员）：整卷备份/恢复 + 文件浏览器（浏览/上传/解压/下载/改名/移动/删除）。
+// 数据卷管理：整卷备份/恢复 + 文件浏览器（浏览/上传/解压/下载/改名/移动/删除）。
 // 主要场景：把 PC 微信数据迁移上来、跨实例迁移、离线备份。全程在「运行中」的实例上操作
 // （浏览/改名/删除靠 docker exec，需容器运行）。整卷恢复会覆盖全部数据，强提示并建议恢复后重启实例。
 function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus; onClose: () => void; onChanged: () => void }) {
@@ -1271,93 +1064,8 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
   );
 }
 
-// 通用 chip 多选
-function ChipMultiSelect({
-  options,
-  selected,
-  onToggle,
-  empty,
-}: {
-  options: { id: string; label: string }[];
-  selected: Set<string>;
-  onToggle: (id: string) => void;
-  empty: string;
-}) {
-  if (options.length === 0) return <div className="muted small">{empty}</div>;
-  return (
-    <div className="chip-row chip-row-pick">
-      {options.map((o) => (
-        <button
-          type="button"
-          key={o.id}
-          className={'chip chip-toggle' + (selected.has(o.id) ? ' on' : '')}
-          onClick={() => onToggle(o.id)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function CreateUser({ instances, onClose, onDone }: { instances: InstanceWithStatus[]; onClose: () => void; onDone: () => void }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [sel, setSel] = useState<Set<string>>(new Set());
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr('');
-    setBusy(true);
-    try {
-      await api.createUser(username.trim(), password, [...sel]);
-      onDone();
-    } catch (e: any) {
-      setErr(e.message || '创建失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="modal-mask" onClick={onClose}>
-      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h2>新建子账号</h2>
-        <input
-          className="input"
-          placeholder="用户名（3-20 位字母/数字/下划线）"
-          autoCapitalize="off"
-          autoCorrect="off"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <PasswordInput placeholder="初始密码（至少 6 位）" autoComplete="new-password" value={password} onChange={setPassword} />
-        <div className="field-label">可访问的微信实例</div>
-        <ChipMultiSelect
-          options={instances.map((i) => ({ id: i.id, label: i.name }))}
-          selected={sel}
-          onToggle={(id) => setSel((s) => toggleSet(s, id))}
-          empty="暂无实例，可稍后在账户里分配"
-        />
-        {err && <div className="error">{err}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn btn-primary" disabled={busy || !username || !password}>
-            创建
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function CreateInstance({ subs, onClose, onDone }: { subs: PanelUser[]; onClose: () => void; onDone: () => void }) {
+function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState('');
-  const [sel, setSel] = useState<Set<string>>(new Set());
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   // 未使用的旧数据卷（之前删除实例但未勾选「彻底清除」时保留下来的），允许在此复用以继承聊天记录。
@@ -1382,7 +1090,7 @@ function CreateInstance({ subs, onClose, onDone }: { subs: PanelUser[]; onClose:
     setErr('');
     setBusy(true);
     try {
-      await api.createInstance(name.trim(), [...sel], reuse || undefined);
+      await api.createInstance(name.trim(), reuse || undefined);
       onDone();
     } catch (e: any) {
       setErr(e.message || '创建失败');
@@ -1396,13 +1104,6 @@ function CreateInstance({ subs, onClose, onDone }: { subs: PanelUser[]; onClose:
       <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <h2>新建微信实例</h2>
         <input className="input" placeholder="实例名称（如：我的微信 / 公司号）" value={name} onChange={(e) => setName(e.target.value)} />
-        <div className="field-label">允许访问的子账号（管理员默认可访问全部）</div>
-        <ChipMultiSelect
-          options={subs.map((u) => ({ id: u.id, label: u.username }))}
-          selected={sel}
-          onToggle={(id) => setSel((s) => toggleSet(s, id))}
-          empty="暂无子账号"
-        />
         {orphans.length > 0 && (
           <>
             <div className="field-label" style={{ marginTop: 12 }}>数据卷（可选）</div>
@@ -1433,115 +1134,4 @@ function CreateInstance({ subs, onClose, onDone }: { subs: PanelUser[]; onClose:
       </form>
     </div>
   );
-}
-
-function AssignUsers({
-  inst,
-  subs,
-  onClose,
-  onDone,
-}: {
-  inst: InstanceWithStatus;
-  subs: PanelUser[];
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [sel, setSel] = useState<Set<string>>(new Set(subs.filter((u) => u.allowedInstances.includes(inst.id)).map((u) => u.id)));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  const save = async () => {
-    setBusy(true);
-    setErr('');
-    try {
-      await api.setInstanceUsers(inst.id, [...sel]);
-      onDone();
-    } catch (e: any) {
-      setErr(e.message || '保存失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="modal-mask" onClick={onClose}>
-      <div className="card modal" onClick={(e) => e.stopPropagation()}>
-        <h2>「{inst.name}」可访问账户</h2>
-        <ChipMultiSelect
-          options={subs.map((u) => ({ id: u.id, label: u.username }))}
-          selected={sel}
-          onToggle={(id) => setSel((s) => toggleSet(s, id))}
-          empty="暂无子账号"
-        />
-        {err && <div className="error">{err}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn btn-primary" disabled={busy} onClick={save}>
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AssignInstances({
-  user,
-  instances,
-  onClose,
-  onDone,
-}: {
-  user: PanelUser;
-  instances: InstanceWithStatus[];
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [sel, setSel] = useState<Set<string>>(new Set(user.allowedInstances));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  const save = async () => {
-    setBusy(true);
-    setErr('');
-    try {
-      await api.setUserInstances(user.id, [...sel]);
-      onDone();
-    } catch (e: any) {
-      setErr(e.message || '保存失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="modal-mask" onClick={onClose}>
-      <div className="card modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{user.username} 可访问实例</h2>
-        <ChipMultiSelect
-          options={instances.map((i) => ({ id: i.id, label: i.name }))}
-          selected={sel}
-          onToggle={(id) => setSel((s) => toggleSet(s, id))}
-          empty="暂无实例"
-        />
-        {err && <div className="error">{err}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn btn-primary" disabled={busy} onClick={save}>
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function toggleSet(s: Set<string>, id: string): Set<string> {
-  const next = new Set(s);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  return next;
 }

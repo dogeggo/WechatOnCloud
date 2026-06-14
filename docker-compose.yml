@@ -31,9 +31,8 @@ services:
       - WOC_WATCHDOG_INTERVAL_SEC=${WOC_WATCHDOG_INTERVAL_SEC:-300}
       # 设备伪装：os-release 伪装成 deepin（默认开，=0 关恢复 Debian）。详见 .env.example / doc/设备伪装.md。
       - WOC_SPOOF_OS=${WOC_SPOOF_OS:-1}
-      # 面板首个管理员账号（仅首次启动、无账号文件时写入；务必改掉默认密码）
-      - PANEL_ADMIN_USER=${WOC_USER}
-      - PANEL_ADMIN_PASSWORD=${WOC_PASSWORD}
+      # 面板 OIDC/Google 登录配置文件（容器内路径；默认 /data/auth.json）
+      - PANEL_AUTH_CONFIG=${PANEL_AUTH_CONFIG:-/data/auth.json}
       - PANEL_DATA=/data/accounts.json
       # DNS-rebinding 防护：套 HTTPS 反代部署时把对外域名加进 .env（详见 .env.example）。
       # 默认仅放行 loopback + RFC1918 私网，直连 NAS / 局域网无需改动。
@@ -43,10 +42,10 @@ services:
       - WOC_DOCKER_NETWORK=immich_default
 
     volumes:
-      # 面板账号数据（用户、实例元信息、密码哈希）
+      # 面板数据（实例元信息）与 OIDC 配置文件（auth.json）
       - /mnt/wechat/data-panel:/data
       # 面板经 docker 引擎创建/启动/删除微信实例容器、exec 触发下载、读取进度。
-      # 注意：docker.sock 等同宿主 root 权限，故实例增删仅限管理员，docker API 绝不暴露给前端。
+      # 注意：docker.sock 等同宿主 root 权限；仅允许 auth.json 白名单邮箱登录，docker API 绝不暴露给前端。
       - /var/run/docker.sock:/var/run/docker.sock
       # 摄像头自动探测（可选）：把宿主 /dev 只读挂进来，面板据此发现 /dev/videoN 并映射给实例。
       # 不想自动探测就删掉此行，改用上面的 WOC_VIDEO_DEVICES 显式指定。

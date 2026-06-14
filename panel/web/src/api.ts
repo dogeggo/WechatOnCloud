@@ -1,11 +1,9 @@
 export interface PanelUser {
-  id: string;
+  sub: string;
+  email: string;
   username: string;
-  role: 'admin' | 'sub';
-  disabled: boolean;
-  createdAt: string;
-  allowedInstances: string[]; // admin 为空数组（隐式全部）
-  mustChangePassword?: boolean; // 仍在用默认密码时为 true
+  name?: string;
+  picture?: string;
 }
 
 export type WechatPhase = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error';
@@ -83,33 +81,15 @@ async function req<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export const api = {
   me: () => req<{ user: PanelUser }>('/api/auth/me'),
-  login: (username: string, password: string) =>
-    req<{ user: PanelUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  loginUrl: (returnTo = '/') => `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
   logout: () => req('/api/auth/logout', { method: 'POST' }),
-  changePassword: (oldPassword: string, newPassword: string) =>
-    req('/api/account/password', { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) }),
-
-  // 子账号
-  listUsers: () => req<{ users: PanelUser[] }>('/api/admin/users'),
-  createUser: (username: string, password: string, allowedInstances: string[] = []) =>
-    req<{ user: PanelUser }>('/api/admin/users', {
-      method: 'POST',
-      body: JSON.stringify({ username, password, allowedInstances }),
-    }),
-  setDisabled: (id: string, disabled: boolean) =>
-    req<{ user: PanelUser }>(`/api/admin/users/${id}/disable`, { method: 'POST', body: JSON.stringify({ disabled }) }),
-  resetUser: (id: string, newPassword: string) =>
-    req<{ user: PanelUser }>(`/api/admin/users/${id}/reset`, { method: 'POST', body: JSON.stringify({ newPassword }) }),
-  deleteUser: (id: string) => req(`/api/admin/users/${id}`, { method: 'DELETE' }),
-  setUserInstances: (id: string, instanceIds: string[]) =>
-    req<{ user: PanelUser }>(`/api/admin/users/${id}/instances`, { method: 'POST', body: JSON.stringify({ instanceIds }) }),
 
   // 微信实例
   listInstances: () => req<{ instances: InstanceWithStatus[] }>('/api/instances'),
-  createInstance: (name: string, allowedUserIds: string[] = [], reuseVolume?: string) =>
+  createInstance: (name: string, reuseVolume?: string) =>
     req<{ instance: PanelInstance }>('/api/admin/instances', {
       method: 'POST',
-      body: JSON.stringify({ name, allowedUserIds, reuseVolume: reuseVolume || undefined }),
+      body: JSON.stringify({ name, reuseVolume: reuseVolume || undefined }),
     }),
   regenMachineId: (id: string) =>
     req(`/api/admin/instances/${id}/regen-machine-id`, { method: 'POST' }),
@@ -132,8 +112,6 @@ export const api = {
     req<{ instance: PanelInstance }>(`/api/admin/instances/${id}/rename`, { method: 'POST', body: JSON.stringify({ name }) }),
   deleteInstance: (id: string, purge = false) =>
     req(`/api/admin/instances/${id}${purge ? '?purge=1' : ''}`, { method: 'DELETE' }),
-  setInstanceUsers: (id: string, userIds: string[]) =>
-    req(`/api/admin/instances/${id}/users`, { method: 'POST', body: JSON.stringify({ userIds }) }),
   instanceWechatStatus: (id: string) => req<{ status: WechatStatus }>(`/api/instances/${id}/wechat/status`),
   instanceWechatInstall: (id: string) => req(`/api/admin/instances/${id}/wechat/install`, { method: 'POST' }),
   instanceWechatUpdate: (id: string) => req(`/api/admin/instances/${id}/wechat/update`, { method: 'POST' }),
@@ -158,7 +136,7 @@ export const api = {
   downloadFileUrl: (id: string, name: string) => `/api/instances/${id}/download?name=${encodeURIComponent(name)}`,
   deleteFile: (id: string, name: string) => req(`/api/instances/${id}/files?name=${encodeURIComponent(name)}`, { method: 'DELETE' }),
 
-  // 数据卷管理（仅管理员）
+  // 数据卷管理
   volumeList: (id: string, path = '') =>
     req<{ path: string; entries: VolEntry[] }>(`/api/admin/instances/${id}/volume?path=${encodeURIComponent(path)}`),
   volumeMkdir: (id: string, path: string) =>

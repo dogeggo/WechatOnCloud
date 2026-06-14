@@ -13,8 +13,7 @@ services:
       - PUID=${WOC_PUID:-1000}
       - PGID=${WOC_PGID:-1000}
       - TZ=${WOC_TZ:-Asia/Shanghai}
-      - PANEL_ADMIN_USER=${WOC_USER:-admin}
-      - PANEL_ADMIN_PASSWORD=${WOC_PASSWORD:-wechat}
+      - PANEL_AUTH_CONFIG=${PANEL_AUTH_CONFIG:-/data/auth.json}
       - PANEL_DATA=/data/accounts.json
     volumes:
       - ./data-panel:/data

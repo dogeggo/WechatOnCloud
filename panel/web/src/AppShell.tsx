@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './auth';
-import { useUI, PasswordInput } from './ui';
+import { useUI } from './ui';
 import { api, type InstanceWithStatus } from './api';
 import InstanceView from './pages/Desktop';
 import Admin from './pages/Admin';
@@ -83,10 +83,8 @@ const Icon = {
 
 export default function AppShell() {
   const state = useInstancesLoader();
-  const { refresh } = useAuth();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('woc_sb_collapsed') === '1');
   const [drawer, setDrawer] = useState(false);
-  const [showPw, setShowPw] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const loc = useLocation();
 
@@ -126,7 +124,6 @@ export default function AppShell() {
   }, []);
 
   const openMenu = () => setDrawer(true);
-  const openChangePassword = () => setShowPw(true);
 
   return (
     <InstancesCtx.Provider value={state}>
@@ -135,14 +132,13 @@ export default function AppShell() {
         <div className="shell-backdrop" onClick={() => setDrawer(false)} />
         <main className="workspace">
           <Routes>
-            <Route path="/" element={<HomeView onOpenMenu={openMenu} onChangePassword={openChangePassword} />} />
-            <Route path="/admin" element={<Admin onOpenMenu={openMenu} onChangePassword={openChangePassword} />} />
+            <Route path="/" element={<HomeView onOpenMenu={openMenu} />} />
+            <Route path="/admin" element={<Admin onOpenMenu={openMenu} />} />
             <Route path="/i/:id" element={<InstanceView onOpenMenu={openMenu} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
-      {showPw && <ChangePassword onClose={() => setShowPw(false)} onSaved={() => refresh()} />}
     </InstancesCtx.Provider>
   );
 }
@@ -153,7 +149,6 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
   const { instances } = useInstances();
   const nav = useNavigate();
   const loc = useLocation();
-  const isAdmin = user?.role === 'admin';
   const go = (p: string) => nav(p);
 
   return (
@@ -195,9 +190,9 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
       </div>
 
       <div className="sb-footer">
-        <button className={'sb-item' + (loc.pathname === '/admin' ? ' on' : '')} onClick={() => go('/admin')} title={isAdmin ? '管理' : '设置'}>
+        <button className={'sb-item' + (loc.pathname === '/admin' ? ' on' : '')} onClick={() => go('/admin')} title="管理">
           <span className="sb-ic">{Icon.gear}</span>
-          {!collapsed && <span className="sb-label">{isAdmin ? '管理' : '设置'}</span>}
+          {!collapsed && <span className="sb-label">管理</span>}
         </button>
         <button
           className="sb-item"
@@ -211,8 +206,7 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
         </button>
         {!collapsed && (
           <div className="sb-user">
-            {user?.username}
-            {isAdmin && ' · 管理员'}
+            {user?.username || user?.email}
           </div>
         )}
       </div>
@@ -220,11 +214,10 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
   );
 }
 
-function HomeView({ onOpenMenu, onChangePassword }: { onOpenMenu: () => void; onChangePassword: () => void }) {
+function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
   const { user } = useAuth();
   const { instances, loaded } = useInstances();
   const nav = useNavigate();
-  const isAdmin = user?.role === 'admin';
 
   return (
     <div className="ws-page">
@@ -237,27 +230,14 @@ function HomeView({ onOpenMenu, onChangePassword }: { onOpenMenu: () => void; on
 
       <div className="content">
         <div className="hello">
-          你好，<b>{user?.username}</b>
-          {isAdmin && <span className="tag">管理员</span>}
+          你好，<b>{user?.username || user?.email}</b>
         </div>
 
-        {user?.mustChangePassword && (
-          <button className="warn-banner" onClick={onChangePassword}>
-            <span className="warn-icon">!</span>
-            <span className="warn-text">
-              <b>你还在使用默认密码</b>
-              <span>该系统登录着你的微信，请立即修改密码 ›</span>
-            </span>
-          </button>
-        )}
-
         <div className="section-row">
-          <span className="section-title">我的微信实例</span>
-          {isAdmin && (
-            <button className="btn-text" onClick={() => nav('/admin')}>
-              管理 ›
-            </button>
-          )}
+          <span className="section-title">微信实例</span>
+          <button className="btn-text" onClick={() => nav('/admin')}>
+            管理 ›
+          </button>
         </div>
 
         {loaded && instances.length === 0 ? (
@@ -266,7 +246,7 @@ function HomeView({ onOpenMenu, onChangePassword }: { onOpenMenu: () => void; on
               <img src="/favicon.svg" alt="" />
             </div>
             <div className="empty-title">还没有微信实例</div>
-            <div className="empty-sub">{isAdmin ? '去「管理」新建一个微信实例' : '请联系管理员为你分配实例'}</div>
+            <div className="empty-sub">去「管理」新建一个微信实例</div>
           </div>
         ) : (
           <div className="inst-grid">
@@ -295,57 +275,6 @@ function HomeView({ onOpenMenu, onChangePassword }: { onOpenMenu: () => void; on
         )}
 
       </div>
-    </div>
-  );
-}
-
-export function ChangePassword({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
-  const [oldPassword, setOld] = useState('');
-  const [newPassword, setNew] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [msg, setMsg] = useState('');
-  const [busy, setBusy] = useState(false);
-  const mismatch = confirm.length > 0 && newPassword !== confirm;
-  const canSubmit = !busy && !!oldPassword && newPassword.length >= 6 && newPassword === confirm;
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMsg('');
-    if (newPassword !== confirm) {
-      setMsg('两次输入的新密码不一致');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.changePassword(oldPassword, newPassword);
-      setMsg('修改成功');
-      onSaved?.();
-      setTimeout(onClose, 800);
-    } catch (e: any) {
-      setMsg(e.message || '修改失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="modal-mask" onClick={onClose}>
-      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h2>修改密码</h2>
-        <PasswordInput placeholder="原密码" autoComplete="current-password" value={oldPassword} onChange={setOld} />
-        <PasswordInput placeholder="新密码（至少 6 位）" autoComplete="new-password" value={newPassword} onChange={setNew} />
-        <PasswordInput placeholder="再次输入新密码" autoComplete="new-password" value={confirm} onChange={setConfirm} />
-        {mismatch && <div className="error">两次输入的新密码不一致</div>}
-        {msg && <div className={msg === '修改成功' ? 'ok' : 'error'}>{msg}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn btn-primary" disabled={!canSubmit}>
-            确定
-          </button>
-        </div>
-      </form>
     </div>
   );
 }
