@@ -159,6 +159,11 @@ app.post('/api/admin/instances/:id/rename', async (req, reply) => {
   return handle(reply, () => instances.rename(routeParams(req).id, routeBody(req).name), 400, '重命名失败');
 });
 
+app.post('/api/admin/instances/:id/icon', { bodyLimit: 350 * 1024 }, async (req, reply) => {
+  if (!requireUser(req, reply)) return;
+  return handle(reply, () => instances.setIcon(routeParams(req).id, routeBody(req).icon), 400, '设置图标失败');
+});
+
 app.post('/api/admin/instances/:id/start', async (req, reply) => {
   if (!requireUser(req, reply)) return;
   return handle(reply, () => instances.start(routeParams(req).id), 500, '启动失败');

@@ -9,7 +9,6 @@ export type WechatInstallAction = 'install' | 'update';
 export interface AppProfile {
   label: string;
   createLabel: string;
-  icon: string;
   needsInstall: boolean;
   enterHint: string;
   installedText: string;
@@ -23,7 +22,6 @@ export const APP_PROFILES: Record<AppType, AppProfile> = {
   wechat: {
     label: '微信',
     createLabel: '微信',
-    icon: '微',
     needsInstall: true,
     enterHint: '首次进入请扫码登录微信',
     installedText: '微信已安装',
@@ -35,7 +33,6 @@ export const APP_PROFILES: Record<AppType, AppProfile> = {
   chromium: {
     label: 'Chromium',
     createLabel: 'Chromium 浏览器',
-    icon: 'C',
     needsInstall: false,
     enterHint: '浏览器已就绪，直接使用即可',
     installedText: 'Chromium 已就绪',

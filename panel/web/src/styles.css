@@ -913,6 +913,21 @@ button {
   justify-content: space-between;
   gap: 8px;
 }
+.inst-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.inst-avatar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--trough);
+}
 .inst-name {
   font-size: 16px;
   font-weight: 700;
@@ -1386,6 +1401,7 @@ button {
   align-items: center;
   justify-content: center;
   text-transform: uppercase;
+  overflow: hidden;
 }
 .sb-dot {
   position: absolute;
@@ -1603,6 +1619,7 @@ button {
   align-items: center;
   justify-content: center;
   text-transform: uppercase;
+  overflow: hidden;
 }
 .home-card-main {
   position: relative;
@@ -2116,4 +2133,62 @@ button {
 .vol-act:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* ── 实例图标编辑 ─────────────────────────────────────── */
+.inst-avatar img,
+.inst-avatar svg,
+.sb-avatar img,
+.sb-avatar svg,
+.home-card-av img,
+.home-card-av svg {
+  display: block;
+}
+.icon-edit-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.icon-crop {
+  position: relative;
+  height: 240px;
+  border-radius: var(--r-small);
+  overflow: hidden;
+  background: #1a1d24;
+}
+.icon-zoom {
+  width: 100%;
+  accent-color: var(--wx-green);
+}
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 8px;
+}
+.icon-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: none;
+  border-radius: var(--r-small);
+  background: var(--trough);
+  cursor: pointer;
+  box-shadow: inset 0 1px 2px rgba(var(--shadow) / 0.1);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.icon-pick span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.icon-pick.sel {
+  background: var(--surface);
+  box-shadow: var(--crease-accent);
+}
+.icon-pick.sel span {
+  color: var(--wx-green-dark);
+}
+.icon-pick:active {
+  transform: scale(0.96);
 }
