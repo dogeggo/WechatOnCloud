@@ -32,12 +32,6 @@ const PGID = process.env.PGID || "1000";
 const TZ = process.env.TZ || "Asia/Shanghai";
 const SHM_SIZE = 1024 * 1024 * 1024; // 1gb
 
-// 默认关闭 KasmVNC 的 GPU 硬件编码（baseimage 检测到 /dev/dri/renderD* 时会给 Xvnc 加 -hw3d）：
-// 在 WSL2 / 虚拟 GPU 环境下该路径会导致 Xvnc 内存持续膨胀（实测反馈 21h 涨到 ~9GB）。
-// 我们已设 LIBGL_ALWAYS_SOFTWARE=1 走软件渲染，hw3d 对微信这类静态界面收益甚微。
-// 真实可用 GPU 想启用硬件编码：面板侧设 WOC_ENABLE_GPU=1。
-const ENABLE_GPU = process.env.WOC_ENABLE_GPU === "1";
-
 // 可选：给每个实例容器设内存上限（GiB），作为 Xvnc 等异常增长时的兜底，避免拖垮宿主。
 // 默认 0 = 不限制（保持原行为）。命中上限时容器内 OOM 杀进程、由 s6 自动重启 VNC。
 const INSTANCE_MEM_GB = Number(process.env.WOC_INSTANCE_MEM_GB) || 0;
@@ -178,8 +172,8 @@ function envList(inst: Instance): string[] {
     `CUSTOM_USER=${inst.kasmUser}`,
     `PASSWORD=${inst.kasmPassword}`,
   ];
-  // baseimage 仅检查该变量是否「已设置」（值无关），设上即不再给 Xvnc 加 -hw3d。
-  if (!ENABLE_GPU) env.push("DISABLE_DRI=1");
+  // 固定禁用 DRI，配合镜像内 LIBGL_ALWAYS_SOFTWARE=1 强制软件渲染。
+  env.push("DISABLE_DRI=1");
   // 透传 os 伪装开关给容器内的 00-woc-identity 钩子（决定是否把 /etc/os-release 改成 deepin）。
   env.push(`WOC_SPOOF_OS=${SPOOF_OS ? "1" : "0"}`);
   return env;

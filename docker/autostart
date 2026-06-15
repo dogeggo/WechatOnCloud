@@ -7,7 +7,7 @@ set -u
 
 WECHAT_BIN=/config/wechat/opt/wechat/wechat
 
-# 容器内无 GPU，强制软件渲染
+# 强制软件渲染
 export LIBGL_ALWAYS_SOFTWARE=1
 
 # 防“最小化后丢失”：本桌面（openbox）无任务栏，微信被最小化就无处恢复 → 黑屏。
