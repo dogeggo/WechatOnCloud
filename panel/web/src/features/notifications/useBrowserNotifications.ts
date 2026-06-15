@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type DesktopClientReplacedEvent, type InstanceNotificationEvent } from '../../api';
+import { api, isUnauthorizedError, type DesktopClientReplacedEvent, type InstanceNotificationEvent } from '../../api';
 import { useUI } from '../../ui';
 import { ReconnectWatchdog } from '../../utils/connectionWatchdog';
 import { dispatchDesktopClientReplaced } from '../desktop/desktopClientEvents';
@@ -154,6 +154,7 @@ export function useBrowserNotifications() {
 
     let stream: EventSource | null = null;
     let disposed = false;
+    let authProbeRunning = false;
     const reconnectWatchdog = new ReconnectWatchdog({
       name: 'notifications-stream',
       initialDelayMs: STREAM_RECONNECT_INITIAL_DELAY,
@@ -178,6 +179,37 @@ export function useBrowserNotifications() {
       reconnectWatchdog.schedule();
     }
 
+    async function probeAuth(): Promise<'ok' | 'unauthorized'> {
+      try {
+        await api.me();
+        return 'ok';
+      } catch (error) {
+        if (isUnauthorizedError(error)) return 'unauthorized';
+        throw error;
+      }
+    }
+
+    async function handleStreamError() {
+      if (disposed || authProbeRunning) return;
+      authProbeRunning = true;
+      try {
+        const auth = await probeAuth();
+        if (disposed) return;
+        if (auth === 'unauthorized') {
+          disposed = true;
+          reconnectWatchdog.destroy();
+          closeStream();
+          navigate('/login', { replace: true });
+          return;
+        }
+        scheduleReconnect();
+      } catch {
+        scheduleReconnect();
+      } finally {
+        authProbeRunning = false;
+      }
+    }
+
     function connect() {
       if (disposed) return;
       closeStream();
@@ -186,7 +218,9 @@ export function useBrowserNotifications() {
       next.onopen = () => {
         reconnectWatchdog.reset();
       };
-      next.onerror = () => scheduleReconnect();
+      next.onerror = () => {
+        void handleStreamError();
+      };
       next.addEventListener('notification', onNotification as EventListener);
       next.addEventListener('desktop-client-replaced', onDesktopClientReplaced as EventListener);
     }
@@ -198,7 +232,7 @@ export function useBrowserNotifications() {
       reconnectWatchdog.destroy();
       closeStream();
     };
-  }, [showNotification]);
+  }, [navigate, showNotification]);
 
   return {
     notificationStatus: status,

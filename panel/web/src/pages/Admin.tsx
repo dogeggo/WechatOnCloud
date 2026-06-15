@@ -799,7 +799,10 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
                           value={volume.renameVal}
                           onChange={(e) => volume.setRenameVal(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') volume.doRename(en.name);
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.currentTarget.blur();
+                            }
                             if (e.key === 'Escape') volume.setRenaming(null);
                           }}
                           onBlur={() => volume.doRename(en.name)}

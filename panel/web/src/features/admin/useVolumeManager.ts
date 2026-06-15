@@ -21,12 +21,20 @@ export function useVolumeManager({
   const [busy, setBusy] = useState('');
   const [mkdirOpen, setMkdirOpen] = useState(false);
   const [mkdirName, setMkdirName] = useState('');
-  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renaming, setRenamingState] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  const renamingRef = useRef<string | null>(null);
+  const renameSubmittingRef = useRef(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const extractRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
   const offline = inst.runtime !== 'running';
+
+  const setRenaming = useCallback((name: string | null) => {
+    renamingRef.current = name;
+    if (name) renameSubmittingRef.current = false;
+    setRenamingState(name);
+  }, []);
 
   const load = useCallback(
     async (nextPath: string) => {
@@ -77,14 +85,23 @@ export function useVolumeManager({
   };
 
   const doRename = async (oldName: string) => {
+    if (renameSubmittingRef.current || renamingRef.current !== oldName) return;
     const nextName = renameVal.trim();
+    renameSubmittingRef.current = true;
     setRenaming(null);
-    if (!nextName || nextName === oldName) return;
-    await run(
-      '处理中...',
-      () => api.volumeMove(inst.id, joinVolumePath(path, oldName), normalizeMoveTarget(path, nextName)),
-      '已重命名 / 移动',
-    );
+    if (!nextName || nextName === oldName) {
+      renameSubmittingRef.current = false;
+      return;
+    }
+    try {
+      await run(
+        '处理中...',
+        () => api.volumeMove(inst.id, joinVolumePath(path, oldName), normalizeMoveTarget(path, nextName)),
+        '已重命名 / 移动',
+      );
+    } finally {
+      renameSubmittingRef.current = false;
+    }
   };
 
   const doDelete = async (entry: VolEntry) => {

@@ -98,7 +98,9 @@ export function useVncFrame({
     return startProbeWatchdog({
       name: `vnc:${id}`,
       intervalMs: active ? 5000 : 10000,
-      probe: reconnectIfDisconnected,
+      probe: () => {
+        reconnectIfDisconnected();
+      },
     });
   }, [active, frameLoaded, id, reconnectIfDisconnected, showVnc]);
 

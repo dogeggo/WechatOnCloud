@@ -169,6 +169,11 @@ export function desktopUrl(id: string, clientId: string): string {
 }
 
 export function routeInstanceId(pathname: string): string | null {
-  const match = pathname.match(/^\/i\/([0-9a-f]{10})$/);
-  return match ? match[1] : null;
+  const match = pathname.match(/^\/i\/([^/]+)$/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
 }

@@ -1,5 +1,20 @@
 import { payloadErrorMessage } from './utils/errors';
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly data: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 export interface PanelUser {
   sub: string;
   email: string;
@@ -105,15 +120,40 @@ export interface VolEntry {
   mtime: number; // epoch ms
 }
 
+function responseTextMessage(data: unknown): string | null {
+  if (typeof data !== 'string') return null;
+  const text = data.trim().replace(/\s+/g, ' ');
+  if (!text || text.startsWith('<')) return null;
+  return text.length > 240 ? `${text.slice(0, 240)}...` : text;
+}
+
+// 错误响应也走这里读取，解析失败不能覆盖 HTTP 状态。
+async function readResponseData(res: Response): Promise<unknown> {
+  if (res.status === 204 || res.status === 205) return undefined;
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json') || contentType.includes('+json');
+  if (isJson) {
+    try {
+      return await res.json();
+    } catch {
+      if (res.ok) throw new ApiError(res.status, `响应解析失败 (${res.status})`, undefined);
+      return undefined;
+    }
+  }
+  try {
+    const text = await res.text();
+    return text || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildError(data: unknown, status: number, fallback = '请求失败'): ApiError {
+  const message = payloadErrorMessage(data) || responseTextMessage(data) || fallback;
+  return new ApiError(status, `${message} (${status})`, data);
+}
+
 // 原始二进制上传（File 直传 application/octet-stream），用于数据卷上传/解压/恢复
-async function readJson(res: Response): Promise<unknown> {
-  return res.json();
-}
-
-function buildError(data: unknown, status: number): Error {
-  return new Error(payloadErrorMessage(data) || `请求失败 (${status})`);
-}
-
 async function rawUpload<T = unknown>(url: string, file: File, errorText = '上传失败'): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
@@ -121,8 +161,8 @@ async function rawUpload<T = unknown>(url: string, file: File, errorText = '上�
     headers: { 'content-type': 'application/octet-stream' },
     body: file,
   });
-  const data = await readJson(res);
-  if (!res.ok) throw new Error(payloadErrorMessage(data) || errorText);
+  const data = await readResponseData(res);
+  if (!res.ok) throw buildError(data, res.status, errorText);
   return data as T;
 }
 
@@ -134,7 +174,7 @@ async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
     ...opts,
     headers,
   });
-  const data = await readJson(res);
+  const data = await readResponseData(res);
   if (!res.ok) {
     // 会话过期：除登录/探测接口外，任意接口收到 401 都说明 cookie 失效，直接回登录页（避免页面卡在错误态）
     const isAuthProbe = path.includes('/api/auth/login') || path.includes('/api/auth/me');

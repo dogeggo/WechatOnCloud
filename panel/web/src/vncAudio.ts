@@ -207,6 +207,7 @@ export class VncAudio {
   private micUnavailable = false;
   private micDeviceChangeBound = false;
   private gestureBound = false;
+  private resumeOnGesture: (() => void) | null = null;
   private destroyed = false;
   private connecting = false;
   private reconnectWatchdog: ReconnectWatchdog;
@@ -317,6 +318,7 @@ export class VncAudio {
       }
     }
     this.opened = false;
+    this.clearResumeOnGesture();
     this.player?.destroy();
     this.player = null;
   }
@@ -330,12 +332,19 @@ export class VncAudio {
     this.gestureBound = true;
     const resume = () => {
       void this.player?.audioCtx?.resume().catch((error) => console.warn('恢复音频上下文失败', error));
-      window.removeEventListener('pointerdown', resume, true);
-      window.removeEventListener('keydown', resume, true);
-      this.gestureBound = false;
+      this.clearResumeOnGesture();
     };
+    this.resumeOnGesture = resume;
     window.addEventListener('pointerdown', resume, true);
     window.addEventListener('keydown', resume, true);
+  }
+
+  private clearResumeOnGesture() {
+    if (!this.resumeOnGesture) return;
+    window.removeEventListener('pointerdown', this.resumeOnGesture, true);
+    window.removeEventListener('keydown', this.resumeOnGesture, true);
+    this.resumeOnGesture = null;
+    this.gestureBound = false;
   }
 
   private async startMic() {

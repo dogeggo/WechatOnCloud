@@ -57,7 +57,7 @@ export function useAdminPanel() {
   }, [refreshOrphanVolumes, reloadInstances]);
 
   useEffect(() => {
-    void load(false);
+    void load();
   }, [load]);
 
   const removeDevice = useCallback(
