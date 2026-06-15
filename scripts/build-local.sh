@@ -12,8 +12,8 @@ OWNER="${WOC_IMAGE_OWNER:-dogeggo}"
 TAG="${WOC_VERSION:-latest}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-PANEL_IMAGE="ghcr.io/${OWNER}/woc-panel:${TAG}"
-WECHAT_IMAGE="ghcr.io/${OWNER}/wechat-on-cloud:${TAG}"
+PANEL_IMAGE="docker.io/${OWNER}/woc-panel:${TAG}"
+WECHAT_IMAGE="docker.io/${OWNER}/wechat-on-cloud:${TAG}"
 
 echo "==> 构建面板镜像 ${PANEL_IMAGE}"
 docker build -t "${PANEL_IMAGE}" "${ROOT}/panel"

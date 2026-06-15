@@ -25,7 +25,7 @@ function assertDockerImageRef(image: string): string {
 }
 
 const WECHAT_IMAGE = assertDockerImageRef(
-  process.env.WOC_WECHAT_IMAGE || "ghcr.io/dogeggo/wechat-on-cloud:latest",
+  process.env.WOC_WECHAT_IMAGE || "docker.io/dogeggo/wechat-on-cloud:latest",
 );
 const PUID = process.env.PUID || "1000";
 const PGID = process.env.PGID || "1000";
@@ -217,6 +217,10 @@ export async function runInstance(inst: Instance): Promise<void> {
     PublishAllPorts: false,
     SecurityOpt: ["no-new-privileges:true"],
     CapDrop: ["ALL"],
+    // linuxserver/s6 init still needs these while running as root before it drops
+    // desktop services to abc: chown writable dirs, rewrite machine-id/os-release,
+    // and set uid/gid/supplementary groups for service processes.
+    CapAdd: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
     ShmSize: SHM_SIZE,
     RestartPolicy: { Name: "unless-stopped" },
   };

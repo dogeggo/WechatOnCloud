@@ -1,20 +1,20 @@
 # WechatOnCloud —— 面板为唯一服务；微信实例由面板按需动态创建（docker run）。
 # 面板挂载 docker.sock 来创建/启动/删除微信实例容器，并反向代理到它们的 KasmVNC。
-# 镜像全部从 GHCR 拉取，无需本地构建。要改配置：复制 .env.example 为 .env 后修改。
+# 镜像默认从 Docker Hub 拉取，无需本地构建。要改配置：复制 .env.example 为 .env 后修改。
 services:
   panel:
-    build: .
-    # 镜像源前缀默认 GHCR；大陆网络拉不动时改 .env 的 WOC_IMAGE_PREFIX 切到国内反代（见 .env.example）。
-    image: ${WOC_IMAGE_PREFIX}/woc-panel:${WOC_VERSION:-latest}
+    build: ./panel
+    # 镜像源前缀默认 Docker Hub；拉不动时改 .env 的 WOC_IMAGE_PREFIX 切到备用源或国内反代（见 .env.example）。
+    image: ${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/woc-panel:${WOC_VERSION:-latest}
     container_name: woc-panel
     # pull_policy 用默认（missing）：本地已有同名镜像就直接用，没有才去 GHCR 拉。
     # 这样「发布前本地自构建」与「线上拉取」都能用同一份 compose。
-    # 想强制更新到 GHCR 最新版：docker compose pull && docker compose up -d
+    # 想强制更新到远端最新版：docker compose pull && docker compose up -d
 
     environment:
       - PORT=8080
       # 新建微信实例时使用的镜像（多架构，amd64/arm64 自动匹配）；前缀同样跟随 WOC_IMAGE_PREFIX。
-      - WOC_WECHAT_IMAGE=${WOC_IMAGE_PREFIX:-ghcr.io/dogeggo}/wechat-on-cloud:${WOC_VERSION:-latest}
+      - WOC_WECHAT_IMAGE=${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/wechat-on-cloud:${WOC_VERSION:-latest}
       # 透传给每个微信实例容器（KasmVNC 基础镜像用它们降权运行）
       - PUID=${WOC_PUID:-1000}
       - PGID=${WOC_PGID:-1000}
@@ -58,17 +58,15 @@ services:
       # - /dev:/host-dev:ro
 
     ports:
-      - "127.0.0.1:${WOC_HTTP_PORT}:8080" # 面板只监听本机；公网访问必须经 HTTPS 反代
+      - "127.0.0.1:${WOC_HTTP_PORT:-36080}:8080" # 面板只监听本机；公网访问必须经 HTTPS 反代
 
     restart: always
     networks:
       - ${WOC_DOCKER_NETWORK:-woc_internal}
 
-#networks:
-#  woc_internal:
-#    name: ${WOC_DOCKER_NETWORK:-woc_internal}
-#    driver: bridge
-
 networks:
+  woc_internal:
+    name: ${WOC_DOCKER_NETWORK:-woc_internal}
+    driver: bridge
   immich_default:
     external: true
