@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { useUI } from '../../ui';
 import { errorMessage } from '../../utils/errors';
-import { readImeSubmitKey, writeImeSubmitKey, type ImeSubmitKey } from './desktopFrame';
+import {
+  readDesktopInputMode,
+  readImeSubmitKey,
+  writeDesktopInputMode,
+  writeImeSubmitKey,
+  type DesktopInputMode,
+  type ImeSubmitKey,
+} from './desktopFrame';
 
 export function useImeComposer({
   id,
@@ -16,10 +23,10 @@ export function useImeComposer({
   focusFrame: () => void;
 }) {
   const { toast } = useUI();
-  const [imeBar, setImeBar] = useState(true);
   const [imeText, setImeText] = useState('');
   const [imeSending, setImeSending] = useState<'input' | 'send' | null>(null);
   const [imeSubmitKey, setImeSubmitKey] = useState<ImeSubmitKey>(() => readImeSubmitKey());
+  const [inputMode] = useState<DesktopInputMode>(() => readDesktopInputMode());
 
   useEffect(() => {
     setImeText('');
@@ -48,9 +55,20 @@ export function useImeComposer({
     }
   };
 
+  const switchInputMode = (mode: DesktopInputMode) => {
+    if (mode === inputMode) return;
+    try {
+      writeDesktopInputMode(mode);
+    } catch (error) {
+      toast(errorMessage(error, '保存输入模式失败'), 'error');
+      return;
+    }
+    window.location.reload();
+  };
+
   return {
-    imeBar,
-    setImeBar,
+    inputMode,
+    switchInputMode,
     imeText,
     setImeText,
     imeSending,

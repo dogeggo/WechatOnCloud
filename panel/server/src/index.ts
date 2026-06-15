@@ -245,6 +245,18 @@ app.post('/api/instances/:id/type', async (req, reply) => {
   }, 500, '输入失败');
 });
 
+app.post('/api/instances/:id/key', async (req, reply) => {
+  const user = requireUser(req, reply);
+  if (!user) return;
+  const body = routeBody(req);
+  return handle(reply, async () => {
+    const inst = instances.requireInstance(routeParams(req).id);
+    const claim = control.claimForAction(inst.id, user);
+    if (!claim.ok) throw httpError(409, `「${claim.holder}」正在操作，请先申请控制`);
+    return instances.keyInput(inst.id, body.key);
+  }, 500, '按键输入失败');
+});
+
 app.get('/api/admin/instances/:id/logs', async (req, reply) => {
   if (!requireUser(req, reply)) return;
   try {

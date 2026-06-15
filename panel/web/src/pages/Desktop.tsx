@@ -9,6 +9,7 @@ import { useDesktopControl } from '../features/desktop/useDesktopControl';
 import { useDesktopFiles } from '../features/desktop/useDesktopFiles';
 import { useImeComposer } from '../features/desktop/useImeComposer';
 import { useInstanceRuntimeActions } from '../features/desktop/useInstanceRuntimeActions';
+import { useSeamlessIme } from '../features/desktop/useSeamlessIme';
 import { useVncFrame } from '../features/desktop/useVncFrame';
 import { formatBytes } from '../utils/format';
 
@@ -52,6 +53,14 @@ export default function InstanceView({
     controlLocked: imeLocked,
     ensureControl: desktopControl.ensureControl,
     focusFrame: vnc.focusFrame,
+  });
+  useSeamlessIme({
+    active,
+    showVnc,
+    id,
+    frameLoaded: vnc.frameLoaded,
+    frameRef,
+    inputMode: ime.inputMode,
   });
   const runtime = useInstanceRuntimeActions({ id, reload, reconnect: vnc.reconnect });
 
@@ -103,13 +112,22 @@ export default function InstanceView({
             >
               文件
             </button>
-            <button
-              className={'ws-action' + (ime.imeBar ? ' on' : '')}
-              title="底部中文输入条：用本机输入法打中文，回车送进微信（最可靠）"
-              onClick={() => ime.setImeBar((v) => !v)}
-            >
-              中文输入
-            </button>
+            <div className="ws-mode" role="group" aria-label="输入模式">
+              <button
+                className={'ws-mode-btn' + (ime.inputMode === 'seamless' ? ' on' : '')}
+                title="无感输入：直接在微信里打中文，候选提交后转发到远端"
+                onClick={() => ime.switchInputMode('seamless')}
+              >
+                无感
+              </button>
+              <button
+                className={'ws-mode-btn' + (ime.inputMode === 'forward' ? ' on' : '')}
+                title="转发输入：使用底部输入条发送文本，最稳定"
+                onClick={() => ime.switchInputMode('forward')}
+              >
+                转发
+              </button>
+            </div>
             <button
               className="ws-action"
               title="把文本发送到容器剪贴板（局域网 http 下也可用）"
@@ -317,7 +335,7 @@ export default function InstanceView({
           )}
           </div>
 
-          {ime.imeBar && (
+          {ime.inputMode === 'forward' && (
             <div className="iv-imebar">
               <textarea
                 className="iv-imebar-input"

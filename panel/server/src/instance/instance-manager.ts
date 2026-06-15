@@ -15,6 +15,7 @@ import {
   instanceLogs,
   instanceMemoryMB,
   instanceRuntime,
+  keyInInstance,
   listInstanceFiles,
   listOrphanContainers,
   listOrphanVolumes,
@@ -218,6 +219,13 @@ export class InstanceManager {
       submit: submit === true,
       submitKey: submitKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter',
     });
+    return { ok: true };
+  }
+
+  async keyInput(id: unknown, key: unknown) {
+    const value = String(key ?? '');
+    if (!/^[A-Za-z_]{1,20}$/.test(value)) throw httpError(400, '按键名不合法');
+    await keyInInstance(this.requireInstance(id), value);
     return { ok: true };
   }
 

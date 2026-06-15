@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { VncAudio } from '../../vncAudio';
-import { blurVncFrame, disableKasmIme, focusVncFrame, injectVncStyle } from './desktopFrame';
+import { blurVncFrame, focusVncFrame, injectVncStyle, readDesktopInputMode, writeKasmImeMode } from './desktopFrame';
 
 export function useVncFrame({
   active,
@@ -46,7 +46,7 @@ export function useVncFrame({
   }, [showVnc, frameLoaded, id, vncNonce]);
 
   useEffect(() => {
-    disableKasmIme();
+    writeKasmImeMode(readDesktopInputMode());
   }, [id, vncNonce]);
 
   useEffect(() => {

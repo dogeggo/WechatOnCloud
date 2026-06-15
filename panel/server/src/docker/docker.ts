@@ -1,6 +1,5 @@
 import { hostname } from "node:os";
 import { existsSync, readdirSync } from "node:fs";
-import http from "node:http";
 import { PassThrough, Readable, Transform } from "node:stream";
 import zlib from "node:zlib";
 import Docker from "dockerode";
@@ -473,48 +472,6 @@ export async function instanceMemoryMB(inst: Instance): Promise<number> {
   }
 }
 
-// 响应性健康探测：实测发现容器跑久了会出现 I/O / 服务 stall —— 进程没死、面板显示"在线"，
-// 但读不出 VNC 客户端静态文件（nginx 报 upstream timed out），浏览器永远卡在"正在连接桌面"。
-// 这里带注入鉴权请求真正会卡的那条路径（/vnc/index.html，经 nginx→kclient 静态serve），
-// 超时即判不健康。无鉴权时 nginx 直接 401（很快），故必须注入鉴权让请求真正打到 kclient 静态层。
-export async function instanceHttpHealthy(
-  inst: Instance,
-  timeoutMs = 8000,
-): Promise<boolean> {
-  assertProjectInstance(inst);
-  const auth =
-    "Basic " +
-    Buffer.from(`${inst.kasmUser}:${inst.kasmPassword}`).toString("base64");
-  return await new Promise<boolean>((resolve) => {
-    let settled = false;
-    const done = (ok: boolean) => {
-      if (settled) return;
-      settled = true;
-      resolve(ok);
-    };
-    const req = http.get(
-      {
-        host: inst.containerName,
-        port: 3000,
-        path: "/vnc/index.html",
-        headers: { authorization: auth },
-        timeout: timeoutMs,
-      },
-      (res) => {
-        // 拿到响应头即说明 nginx+kclient 静态serve 活着（健康时为 200）。读掉 body 释放连接。
-        const ok = !!res.statusCode && res.statusCode < 500;
-        res.resume();
-        done(ok);
-      },
-    );
-    req.on("timeout", () => {
-      req.destroy();
-      done(false); // 超时 = stall，判不健康
-    });
-    req.on("error", () => done(false));
-  });
-}
-
 export async function instanceRuntime(inst: Instance): Promise<RuntimeState> {
   try {
     const info = await projectContainer(inst).inspect();
@@ -827,7 +784,7 @@ export async function typeInInstance(
     'cleanup(){ rm -f "$tmp"; [ -n "$clip_pid" ] && kill "$clip_pid" 2>/dev/null || true; }',
     "trap cleanup EXIT",
     `printf '%s' '${b64}' | base64 -d > "$tmp"`,
-    'xclip -selection clipboard -loops 5 -i < "$tmp" &',
+    'xclip -selection clipboard -loops 5 -i < "$tmp" >/dev/null 2>&1 &',
     'clip_pid="$!"',
     "sleep 0.08",
     "xdotool key --clearmodifiers ctrl+v",
@@ -835,6 +792,19 @@ export async function typeInInstance(
     submitCmd,
     "sleep 0.08",
     'for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$clip_pid" 2>/dev/null || break; sleep 0.1; done',
+  ].join("\n");
+  await execCapture(inst, ["bash", "-c", cmd]);
+}
+
+export async function keyInInstance(inst: Instance, key: string): Promise<void> {
+  if (!/^[A-Za-z_]{1,20}$/.test(key)) throw new Error("按键名不合法");
+  const cmd = [
+    "set -e",
+    'display="${DISPLAY:-}"',
+    'if [ -z "$display" ]; then for x in /tmp/.X11-unix/X*; do [ -e "$x" ] || continue; display=":${x##*X}"; break; done; fi',
+    'export DISPLAY="${display:-:1}"',
+    'command -v xdotool >/dev/null 2>&1 || { echo "xdotool not installed in instance image" >&2; exit 127; }',
+    `xdotool key --clearmodifiers ${key}`,
   ].join("\n");
   await execCapture(inst, ["bash", "-c", cmd]);
 }

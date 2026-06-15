@@ -1,6 +1,8 @@
 export type ImeSubmitKey = 'enter' | 'ctrlEnter';
+export type DesktopInputMode = 'forward' | 'seamless';
 
 const IME_SUBMIT_KEY = 'woc_ime_submit_key';
+const DESKTOP_INPUT_MODE_KEY = 'woc_input_mode';
 const VNC_STYLE_ID = 'woc-vnc-style';
 
 const VNC_CONTROL_STYLE =
@@ -17,8 +19,17 @@ export function writeImeSubmitKey(value: ImeSubmitKey): void {
   window.localStorage.setItem(IME_SUBMIT_KEY, value);
 }
 
-export function disableKasmIme(): void {
-  window.localStorage.setItem('enable_ime', 'false');
+export function readDesktopInputMode(): DesktopInputMode {
+  return window.localStorage.getItem(DESKTOP_INPUT_MODE_KEY) === 'seamless' ? 'seamless' : 'forward';
+}
+
+export function writeDesktopInputMode(value: DesktopInputMode): void {
+  window.localStorage.setItem(DESKTOP_INPUT_MODE_KEY, value);
+  writeKasmImeMode(value);
+}
+
+export function writeKasmImeMode(value: DesktopInputMode): void {
+  window.localStorage.setItem('enable_ime', value === 'seamless' ? 'true' : 'false');
 }
 
 export function focusVncFrame(frame: HTMLIFrameElement | null): void {

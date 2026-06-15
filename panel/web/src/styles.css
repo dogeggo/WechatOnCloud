@@ -1528,6 +1528,29 @@ button {
   background: var(--wx-green, #07c160);
   color: #fff;
 }
+.ws-mode {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  background: var(--surface);
+  border-radius: 999px;
+  box-shadow: var(--crease);
+}
+.ws-mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--wx-green-dark);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ws-mode-btn.on {
+  background: var(--wx-green, #07c160);
+  color: #fff;
+}
 .ws-page .content {
   flex: 1;
   min-height: 0;
@@ -1870,6 +1893,9 @@ button {
   }
   .ws-action {
     padding: 7px 12px;
+  }
+  .ws-mode-btn {
+    padding: 5px 10px;
   }
 }
 
