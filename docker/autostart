@@ -7,6 +7,20 @@ set -u
 
 # 强制软件渲染
 export LIBGL_ALWAYS_SOFTWARE=1
+# 微信内置 WeChatAppEx/Qt WebEngine 和系统 Chromium 在容器里都不能依赖浏览器 sandbox。
+# Qt 官方支持用这些环境变量透传 Chromium 参数；外链默认浏览器走下方 xdg-mime 配置。
+export QTWEBENGINE_DISABLE_SANDBOX=1
+case " ${QTWEBENGINE_CHROMIUM_FLAGS:-} " in
+    *" --no-sandbox "*) ;;
+    *) export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:+$QTWEBENGINE_CHROMIUM_FLAGS }--no-sandbox" ;;
+esac
+export BROWSER="${BROWSER:-/usr/local/bin/woc-browser}"
+
+if command -v xdg-mime >/dev/null 2>&1 && [ -f /usr/share/applications/woc-browser.desktop ]; then
+    xdg-mime default woc-browser.desktop x-scheme-handler/http 2>/dev/null || true
+    xdg-mime default woc-browser.desktop x-scheme-handler/https 2>/dev/null || true
+    xdg-mime default woc-browser.desktop text/html 2>/dev/null || true
+fi
 
 APP_TYPE=wechat
 # shellcheck source=/dev/null

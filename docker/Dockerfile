@@ -15,7 +15,7 @@ RUN set -eux; \
         curl ca-certificates locales dpkg \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
         libnss3 libgbm1 libasound2 libxss1 \
-        chromium \
+        chromium xdg-utils \
         xdotool xclip; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
@@ -53,7 +53,19 @@ RUN set -eux; \
 
 ENV LANG=zh_CN.UTF-8 \
     LC_ALL=zh_CN.UTF-8 \
-    LIBGL_ALWAYS_SOFTWARE=1
+    LIBGL_ALWAYS_SOFTWARE=1 \
+    QTWEBENGINE_DISABLE_SANDBOX=1 \
+    QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox \
+    BROWSER=/usr/local/bin/woc-browser
+
+# 微信内打开外链时可能走系统 URL handler，而不是 app-defs.sh 中的 Chromium 启动命令。
+# 用带 --no-sandbox 的 wrapper 做默认浏览器，避免容器/root 环境下 Chromium 直接退出。
+COPY woc-browser /usr/local/bin/woc-browser
+COPY woc-browser.desktop /usr/share/applications/woc-browser.desktop
+RUN chmod 755 /usr/local/bin/woc-browser && \
+    chmod 644 /usr/share/applications/woc-browser.desktop && \
+    update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/local/bin/woc-browser 200 && \
+    update-alternatives --install /usr/bin/gnome-www-browser gnome-www-browser /usr/local/bin/woc-browser 200
 
 # 改 KasmVNC web 客户端的 webpack 产物 dist/*.bundle.js：
 #  (1) 默认开启 IME 输入模式：本地（客户端）输入法打中文，拼音联想在本地完成、只把成品汉字

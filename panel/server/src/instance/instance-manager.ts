@@ -6,6 +6,7 @@ import {
   publicInstance,
   removeInstance as removeInstanceRecord,
   renameInstance,
+  setInstanceIcon,
   setInstanceMemLimits,
   type Instance,
 } from './store.js';
@@ -168,6 +169,15 @@ export class InstanceManager {
       return { instance: renameInstance(String(id || ''), String(name ?? '')) };
     } catch (e: any) {
       throw httpError(400, e?.message || '重命名失败');
+    }
+  }
+
+  setIcon(id: unknown, icon: unknown) {
+    const inst = this.requireInstance(id);
+    try {
+      return { instance: setInstanceIcon(inst.id, icon) };
+    } catch (e: any) {
+      throw httpError(400, e?.message || '设置图标失败');
     }
   }
 

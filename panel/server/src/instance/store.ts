@@ -13,6 +13,7 @@ export interface Instance {
   id: string; // 短 id，用于容器/卷命名
   name: string; // 显示名
   appType: AppType; // 承载的应用类型
+  icon?: string; // 自定义图标：data:image/... 或 builtin:<key>
   containerName: string; // woc-wx-<id>
   volumeName: string; // woc-data-<id>
   kasmUser: string; // 随机生成，服务端注入反代，永不下发前端
@@ -86,11 +87,22 @@ function asOptionalLimit(v: unknown, name: string): number | undefined {
   return v;
 }
 
+function normalizeInstanceIcon(icon: unknown): string | undefined {
+  if (icon == null) return undefined;
+  if (typeof icon !== 'string') throw new Error('图标格式不合法');
+  const value = icon.trim();
+  if (!value) return undefined;
+  if (/^builtin:[a-z0-9_-]{1,32}$/.test(value)) return value;
+  if (value.startsWith('data:image/') && value.length <= 300000) return value;
+  throw new Error('图标格式不合法或过大');
+}
+
 function parseInstance(raw: any): Instance {
   if (!raw || typeof raw !== 'object') throw new Error('实例数据格式不合法');
   const id = asString(raw.id, '实例 ID');
   const name = normalizeInstanceName(asString(raw.name, '实例名称'));
   const appType = normalizeAppType(raw.appType);
+  const icon = normalizeInstanceIcon(raw.icon);
   const containerName = asString(raw.containerName, '容器名');
   const volumeName = asString(raw.volumeName, '数据卷名');
   const kasmUser = asString(raw.kasmUser, 'Kasm 用户名');
@@ -103,6 +115,7 @@ function parseInstance(raw: any): Instance {
     id,
     name,
     appType,
+    icon,
     containerName,
     volumeName,
     kasmUser,
@@ -119,13 +132,24 @@ function parseInstance(raw: any): Instance {
   return inst;
 }
 
+function normalizeStoreData(raw: unknown): Data {
+  if (!raw || typeof raw !== 'object' || !Array.isArray((raw as any).instances)) {
+    throw new Error('账户数据文件格式不合法');
+  }
+  const instances = (raw as any).instances.map((item: any) => {
+    if (item && typeof item === 'object' && !Object.prototype.hasOwnProperty.call(item, 'appType')) {
+      return { ...item, appType: 'wechat' };
+    }
+    return item;
+  });
+  data = { instances: instances.map(parseInstance) };
+  return data;
+}
+
 export function initStore() {
   if (existsSync(FILE)) {
     const raw = JSON.parse(readFileSync(FILE, 'utf8'));
-    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.instances)) {
-      throw new Error('账户数据文件格式不合法');
-    }
-    data = { instances: raw.instances.map(parseInstance) };
+    normalizeStoreData(raw);
   } else {
     data = { instances: [] };
   }
@@ -137,6 +161,7 @@ export function publicInstance(i: Instance) {
     id: i.id,
     name: i.name,
     appType: i.appType,
+    icon: i.icon,
     createdAt: i.createdAt,
     createdBy: i.createdBy,
     memSoftLimitMB: i.memSoftLimitMB,
@@ -217,6 +242,16 @@ export function renameInstance(id: string, name: string) {
   const inst = findInstance(id);
   if (!inst) throw new Error('实例不存在');
   inst.name = normalizeInstanceName(name);
+  persist();
+  return publicInstance(inst);
+}
+
+export function setInstanceIcon(id: string, icon: unknown) {
+  const inst = findInstance(id);
+  if (!inst) throw new Error('实例不存在');
+  const value = normalizeInstanceIcon(icon);
+  if (value) inst.icon = value;
+  else delete inst.icon;
   persist();
   return publicInstance(inst);
 }

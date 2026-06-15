@@ -8,8 +8,8 @@ woc_app_def() {
     chromium)
       # 容器内无 user namespace / GPU：--no-sandbox + 软件渲染；--password-store=basic 免 keyring 弹窗。
       # --disable-background-networking 关闭 GCM/组件更新等后台请求，不影响前台网页加载。
-      APP_BIN=/usr/bin/chromium
-      APP_LAUNCH="$APP_BIN --no-sandbox --no-first-run --no-default-browser-check --start-maximized --password-store=basic --disable-gpu --disable-background-networking --user-data-dir=/config/chromium"
+      APP_BIN=/usr/local/bin/woc-browser
+      APP_LAUNCH="$APP_BIN"
       APP_NAME=Chromium
       ;;
     *)

@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+exec /usr/bin/chromium \
+  --no-sandbox \
+  --no-first-run \
+  --no-default-browser-check \
+  --start-maximized \
+  --password-store=basic \
+  --disable-gpu \
+  --disable-background-networking \
+  --user-data-dir=/config/chromium \
+  "$@"
