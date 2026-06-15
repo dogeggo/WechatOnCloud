@@ -597,9 +597,9 @@ export async function pullImage(
 }
 
 // ---------- 文件中转（上传/下载） ----------
-// 中转目录 = abc 家目录下的 Desktop（/config 持久卷）。上传落这里，应用文件选择器可直接选到；
-// 反向：把应用收到的文件另存到桌面，即可在面板里下载。
-const TRANSFER_DIR = "/config/Desktop";
+// 中转目录 = abc 家目录下的 Downloads（/config 持久卷）。上传落这里，应用文件选择器可直接选到；
+// 反向：把应用收到的文件另存到下载目录，即可在面板里下载。
+const TRANSFER_DIR = "/config/Downloads";
 
 function tarHeader(name: string, size: number): Buffer {
   if (!Number.isSafeInteger(size) || size < 0)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type DesktopFile } from '../../api';
 import { useUI } from '../../ui';
 import { errorMessage } from '../../utils/errors';
@@ -21,7 +21,6 @@ export function useDesktopFiles({
   const [showFiles, setShowFiles] = useState(false);
   const [files, setFiles] = useState<DesktopFile[]>([]);
   const [uploading, setUploading] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
   useEffect(() => {
@@ -29,39 +28,6 @@ export function useDesktopFiles({
     setShowFiles(false);
     setFiles([]);
   }, [id]);
-
-  useEffect(() => {
-    if (!active || !showVnc) return;
-    const onEnter = (event: globalThis.DragEvent) => {
-      if (!dragHasFiles(event)) return;
-      event.preventDefault();
-      dragDepth.current++;
-      setDragging(true);
-    };
-    const onOver = (event: globalThis.DragEvent) => {
-      if (dragHasFiles(event)) event.preventDefault();
-    };
-    const onLeave = (event: globalThis.DragEvent) => {
-      if (!dragHasFiles(event)) return;
-      dragDepth.current = Math.max(0, dragDepth.current - 1);
-      if (dragDepth.current === 0) setDragging(false);
-    };
-    const onDropWindow = (event: globalThis.DragEvent) => {
-      if (dragHasFiles(event)) event.preventDefault();
-      dragDepth.current = 0;
-      setDragging(false);
-    };
-    window.addEventListener('dragenter', onEnter);
-    window.addEventListener('dragover', onOver);
-    window.addEventListener('dragleave', onLeave);
-    window.addEventListener('drop', onDropWindow);
-    return () => {
-      window.removeEventListener('dragenter', onEnter);
-      window.removeEventListener('dragover', onOver);
-      window.removeEventListener('dragleave', onLeave);
-      window.removeEventListener('drop', onDropWindow);
-    };
-  }, [active, showVnc]);
 
   const refreshFiles = useCallback(async () => {
     if (!id) return;
@@ -90,29 +56,57 @@ export function useDesktopFiles({
       }
       setUploading(false);
       if (successCount) {
-        toast(`已上传 ${successCount} 个文件到桌面，应用里可直接选取`, 'ok');
+        toast(`已上传 ${successCount} 个文件到下载目录，应用里可直接选取`, 'ok');
         await refreshFiles();
       }
     },
     [id, refreshFiles, toast],
   );
 
-  const onDrop = useCallback(
-    (event: DragEvent) => {
+  useEffect(() => {
+    if (!active || !showVnc) return;
+    const onEnter = (event: globalThis.DragEvent) => {
+      if (!dragHasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      dragDepth.current++;
+      setDragging(true);
+    };
+    const onOver = (event: globalThis.DragEvent) => {
+      if (!dragHasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    };
+    const onLeave = (event: globalThis.DragEvent) => {
+      if (!dragHasFiles(event)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    };
+    const onDropWindow = (event: globalThis.DragEvent) => {
+      if (!dragHasFiles(event)) return;
       event.preventDefault();
       setDragging(false);
       dragDepth.current = 0;
-      if (event.dataTransfer.files?.length) void uploadFiles(event.dataTransfer.files);
-    },
-    [uploadFiles],
-  );
+      if (event.dataTransfer?.files.length) void uploadFiles(event.dataTransfer.files);
+    };
+    window.addEventListener('dragenter', onEnter);
+    window.addEventListener('dragover', onOver);
+    window.addEventListener('dragleave', onLeave);
+    window.addEventListener('drop', onDropWindow);
+    return () => {
+      window.removeEventListener('dragenter', onEnter);
+      window.removeEventListener('dragover', onOver);
+      window.removeEventListener('dragleave', onLeave);
+      window.removeEventListener('drop', onDropWindow);
+    };
+  }, [active, showVnc, uploadFiles]);
 
   const deleteFile = useCallback(
     async (name: string) => {
       if (!id) return;
       const ok = await confirm({
         title: `删除「${name}」？`,
-        body: '将从应用桌面（~/Desktop）移除该文件。',
+        body: '将从应用下载目录（~/Downloads）移除该文件。',
         danger: true,
         confirmText: '删除',
       });
@@ -141,10 +135,7 @@ export function useDesktopFiles({
     setShowFiles,
     files,
     uploading,
-    fileInput,
     refreshFiles,
-    uploadFiles,
-    onDrop,
     deleteFile,
     toggleFiles,
   };

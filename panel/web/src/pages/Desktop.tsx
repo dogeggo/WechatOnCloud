@@ -215,7 +215,7 @@ export default function InstanceView({
               <div className="spinner" />
               <div className="iv-loading-text">正在连接桌面…</div>
               <div className="iv-loading-sub">{profile.enterHint}</div>
-              <div className="iv-loading-sub">拖文件到此处即可上传；声音自动开启，点一下画面即可出声</div>
+              <div className="iv-loading-sub">拖文件到窗口任意位置即可上传到 ~/Downloads；声音自动开启，点一下画面即可出声</div>
               {!window.isSecureContext && (
                 <div className="iv-loading-warn">当前非 HTTPS 访问，浏览器将禁用麦克风与摄像头（音频播放不受影响）</div>
               )}
@@ -244,11 +244,11 @@ export default function InstanceView({
           )}
 
           {desktopFiles.dragging && (
-            <div className="iv-drop" onDrop={desktopFiles.onDrop} onDragOver={(e) => e.preventDefault()}>
+            <div className="iv-drop" onDragOver={(e) => e.preventDefault()}>
               <div className="drop-card">
                 <div className="drop-icon">⬇</div>
-                <div className="drop-title">松开上传到应用桌面</div>
-                <div className="drop-sub">上传后在应用里选择即可</div>
+                <div className="drop-title">松开上传到 ~/Downloads</div>
+                <div className="drop-sub">上传后在应用的下载目录中选择即可</div>
               </div>
             </div>
           )}
@@ -273,20 +273,10 @@ export default function InstanceView({
                   关闭
                 </button>
               </div>
-              <input
-                ref={desktopFiles.fileInput}
-                type="file"
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  if (e.target.files) void desktopFiles.uploadFiles(e.target.files);
-                  e.target.value = '';
-                }}
-              />
-              <button className="btn btn-primary files-upload" disabled={desktopFiles.uploading} onClick={() => desktopFiles.fileInput.current?.click()}>
-                {desktopFiles.uploading ? '上传中…' : '＋ 选择文件上传'}
-              </button>
-              <div className="files-hint">也可直接把文件拖进来。下方为桌面（~/Desktop）里的文件，应用收到的文件另存到桌面即可在此下载。</div>
+              <div className="files-hint">
+                {desktopFiles.uploading ? '上传中…' : '把文件拖到窗口任意位置即可自动上传。'}
+                下方为下载目录（~/Downloads）里的文件，应用收到的文件另存到下载目录即可在此下载。
+              </div>
               <div className="files-list">
                 {desktopFiles.files.length === 0 && (
                   <div className="muted small" style={{ padding: '10px 2px' }}>
