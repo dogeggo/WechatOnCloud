@@ -2,6 +2,7 @@ import {
   createInstance,
   findInstance,
   listInstances,
+  normalizeAppType,
   publicInstance,
   removeInstance as removeInstanceRecord,
   renameInstance,
@@ -76,11 +77,11 @@ export class InstanceManager {
     return { instances: rows };
   }
 
-  async createForUser(name: unknown, createdBy: string, reuseVolume: unknown) {
+  async createForUser(name: unknown, createdBy: string, reuseVolume: unknown, appType: unknown) {
     const reuseVolumeName = this.normalizeReuseVolume(reuseVolume);
     let inst: Instance;
     try {
-      inst = createInstance(String(name ?? ''), createdBy, reuseVolumeName);
+      inst = createInstance(String(name ?? ''), createdBy, reuseVolumeName, normalizeAppType(appType));
     } catch (e: any) {
       throw httpError(400, e?.message || '创建实例失败');
     }

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, type InstanceWithStatus, type VolEntry } from '../api';
 import { EmptyState } from '../components/EmptyState';
 import { Icons } from '../components/icons';
-import { adminCardState, type WechatInstallAction } from '../domain/instances';
+import { APP_TYPES, adminCardState, appProfile, type WechatInstallAction } from '../domain/instances';
 import { deviceName } from '../domain/devices';
 import { joinVolumePath } from '../domain/volumePaths';
 import { useCreateInstance } from '../features/admin/useCreateInstance';
@@ -54,7 +54,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
         {err && <div className="error">{err}</div>}
 
         <div className="section-row">
-          <span className="section-title">微信实例</span>
+          <span className="section-title">应用实例</span>
           <button className="btn-text" onClick={() => setCreatingInst(true)}>
             + 新建实例
           </button>
@@ -62,11 +62,11 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
         {instances.length === 0 ? (
           <EmptyState
             icon="🖥️"
-            title="还没有微信实例"
-            sub="新建一个实例，进入后扫码登录即可在浏览器里用微信"
+            title="还没有应用实例"
+            sub="新建微信或 Chromium 实例，进入后即可在浏览器里使用"
             action={
               <button className="btn btn-primary" onClick={() => setCreatingInst(true)}>
-                ＋ 新建微信实例
+                ＋ 新建实例
               </button>
             }
           />
@@ -414,6 +414,7 @@ function InstanceAdminCard({
   onToggleVncKeepAlive: (enabled: boolean) => void;
 }) {
   const wx = inst.wechat;
+  const profile = appProfile(inst.appType);
   const { badge, sub, installed, offline, working } = adminCardState(inst, acting);
   const [menuOpen, setMenuOpen] = useState(false); // 「管理」折叠菜单是否展开
 
@@ -445,7 +446,7 @@ function InstanceAdminCard({
                 {inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
               </button>
             ) : (
-              <button className="btn btn-primary inst-act-wide" disabled={!installed} onClick={onEnter} title={installed ? '' : '需先下载安装微信'}>
+              <button className="btn btn-primary inst-act-wide" disabled={!installed} onClick={onEnter} title={installed ? '' : profile.installButtonTitle}>
                 进入实例
               </button>
             )}
@@ -461,9 +462,9 @@ function InstanceAdminCard({
               <div className="inst-menu-group">
                 <div className="inst-menu-label">运维</div>
                 <div className="inst-menu-items">
-                  {!offline && (
+                  {!offline && profile.needsInstall && (
                     <button className="btn-text" onClick={() => onTrigger(inst, installed ? 'update' : 'install')}>
-                      {installed ? '更新微信' : '下载安装'}
+                      {installed ? profile.updateLabel : '下载安装'}
                     </button>
                   )}
                   <button className="btn-text" onClick={onUpgrade} title="拉取最新镜像并重建（保留聊天记录）">
@@ -686,8 +687,24 @@ function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () =
   return (
     <div className="modal-mask" onClick={onClose}>
       <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={form.submit}>
-        <h2>新建微信实例</h2>
-        <input className="input" placeholder="实例名称（如：我的微信 / 公司号）" value={form.name} onChange={(e) => form.setName(e.target.value)} />
+        <h2>新建实例</h2>
+        <div className="field-label">应用类型</div>
+        <div className="chip-row" style={{ marginTop: 8, marginBottom: 12 }}>
+          {APP_TYPES.map((type) => {
+            const profile = appProfile(type);
+            return (
+              <button
+                key={type}
+                type="button"
+                className={'chip chip-toggle' + (form.appType === type ? ' on' : '')}
+                onClick={() => form.setAppType(type)}
+              >
+                {profile.createLabel}
+              </button>
+            );
+          })}
+        </div>
+        <input className="input" placeholder="实例名称（如：我的微信 / 工作浏览器）" value={form.name} onChange={(e) => form.setName(e.target.value)} />
         {form.orphans.length > 0 && (
           <>
             <div className="field-label" style={{ marginTop: 12 }}>数据卷（可选）</div>
@@ -701,12 +718,14 @@ function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () =
               ))}
             </select>
             <div className="muted small" style={{ marginTop: 4 }}>
-              复用旧卷需**用原微信号扫码登录**才能解密历史消息；用别的号登录将看不到旧记录。
+              复用旧微信卷需用原微信号扫码登录才能解密历史消息；浏览器实例建议使用新卷。
             </div>
           </>
         )}
         {form.err && <div className="error">{form.err}</div>}
-        <div className="muted small" style={{ marginTop: 4 }}>创建后会拉起一个新的微信容器，进入后扫码登录。</div>
+        <div className="muted small" style={{ marginTop: 4 }}>
+          创建后会拉起一个新的 {appProfile(form.appType).createLabel} 容器。
+        </div>
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
             取消

@@ -5,7 +5,7 @@ import { useUI } from './ui';
 import InstanceView from './pages/Desktop';
 import Admin from './pages/Admin';
 import { Icons } from './components/icons';
-import { routeInstanceId, sidebarStatus } from './domain/instances';
+import { appProfile, routeInstanceId, sidebarStatus } from './domain/instances';
 import { useInstancesLoader, type InstancesState } from './features/instances/useInstancesLoader';
 import {
   idFromVncKeepAliveKey,
@@ -153,7 +153,7 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
         </button>
       </nav>
 
-      {!collapsed && <div className="sb-section">微信实例</div>}
+      {!collapsed && <div className="sb-section">应用实例</div>}
       <div className="sb-list">
         {instances.length === 0 && !collapsed && <div className="sb-empty">暂无可用实例</div>}
         {instances.map((inst) => {
@@ -162,7 +162,7 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
           return (
             <button key={inst.id} className={'sb-item sb-inst' + (on ? ' on' : '')} onClick={() => go(`/i/${inst.id}`)} title={inst.name}>
               <span className="sb-avatar">
-                {inst.name.slice(0, 1)}
+                {appProfile(inst.appType).icon}
                 <span className={'sb-dot ' + st.cls} />
               </span>
               {!collapsed && <span className="sb-label">{inst.name}</span>}
@@ -217,7 +217,7 @@ function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
         </div>
 
         <div className="section-row">
-          <span className="section-title">微信实例</span>
+          <span className="section-title">应用实例</span>
           <button className="btn-text" onClick={() => nav('/admin')}>
             管理 ›
           </button>
@@ -228,21 +228,22 @@ function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
             <div className="empty-blob">
               <img src="/favicon.svg" alt="" />
             </div>
-            <div className="empty-title">还没有微信实例</div>
-            <div className="empty-sub">去「管理」新建一个微信实例</div>
+            <div className="empty-title">还没有应用实例</div>
+            <div className="empty-sub">去「管理」新建微信或 Chromium 实例</div>
           </div>
         ) : (
           <div className="inst-grid">
             {instances.map((inst) => {
               const st = sidebarStatus(inst);
+              const profile = appProfile(inst.appType);
               const meta = inst.wechat.installed
-                ? `微信 ${inst.wechat.version || ''}`.trim()
+                ? `${profile.label} ${inst.wechat.version || ''}`.trim()
                 : inst.runtime === 'running'
-                  ? '待下载安装微信'
+                  ? profile.needsInstall ? `待下载安装${profile.label}` : `${profile.label} 尚未就绪`
                   : '';
               return (
                 <button key={inst.id} className="home-card" onClick={() => nav(`/i/${inst.id}`)}>
-                  <span className="home-card-av">{inst.name.slice(0, 1)}</span>
+                  <span className="home-card-av">{profile.icon}</span>
                   <span className="home-card-main">
                     <span className="home-card-name">{inst.name}</span>
                     <span className="home-card-meta">

@@ -34,9 +34,11 @@ export interface WechatStatus {
 }
 
 export type RuntimeState = 'running' | 'stopped' | 'missing';
+export type AppType = 'wechat' | 'chromium';
 export interface PanelInstance {
   id: string;
   name: string;
+  appType: AppType;
   createdAt: string;
   createdBy: string;
   memSoftLimitMB?: number;
@@ -122,12 +124,12 @@ export const api = {
   listLoggedInDevices: () => req<{ devices: LoggedInDevice[] }>('/api/admin/sessions'),
   removeLoggedInDevice: (id: string) => req<{ ok: boolean; current?: boolean }>(`/api/admin/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
-  // 微信实例
+  // 应用实例
   listInstances: () => req<{ instances: InstanceWithStatus[] }>('/api/instances'),
-  createInstance: (name: string, reuseVolume?: string) =>
+  createInstance: (name: string, reuseVolume?: string, appType: AppType = 'wechat') =>
     req<{ instance: PanelInstance }>('/api/admin/instances', {
       method: 'POST',
-      body: JSON.stringify({ name, reuseVolume: reuseVolume || undefined }),
+      body: JSON.stringify({ name, reuseVolume: reuseVolume || undefined, appType }),
     }),
   regenMachineId: (id: string) =>
     req(`/api/admin/instances/${id}/regen-machine-id`, { method: 'POST' }),

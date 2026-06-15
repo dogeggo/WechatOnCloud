@@ -175,6 +175,8 @@ function envList(inst: Instance): string[] {
   env.push("DISABLE_DRI=1");
   // 透传 os 伪装开关给容器内的 00-woc-identity 钩子（决定是否把 /etc/os-release 改成 deepin）。
   env.push(`WOC_SPOOF_OS=${SPOOF_OS ? "1" : "0"}`);
+  // 多应用实例类型，由 02-woc-app 写入数据卷，autostart 据此启动微信或 Chromium。
+  env.push(`WOC_APP_TYPE=${inst.appType}`);
   return env;
 }
 
@@ -532,8 +534,13 @@ export async function triggerWechat(
   cmd: "install" | "update",
 ): Promise<void> {
   const c = projectContainer(inst);
+  const action = cmd === "update" ? "update" : "install";
   const exec = await c.exec({
-    Cmd: ["/woc/wechat-ctl.sh", cmd === "update" ? "update" : "install"],
+    Cmd: [
+      "bash",
+      "-c",
+      `if [ -x /woc/app-ctl.sh ]; then /woc/app-ctl.sh ${inst.appType} ${action}; else /woc/wechat-ctl.sh ${action}; fi`,
+    ],
     AttachStdout: false,
     AttachStderr: false,
     User: "abc",
@@ -561,7 +568,11 @@ const DEFAULT_STATUS: WechatStatus = {
 
 export async function wechatStatus(inst: Instance): Promise<WechatStatus> {
   try {
-    const raw = await execCapture(inst, ["/woc/wechat-ctl.sh", "status"]);
+    const raw = await execCapture(inst, [
+      "bash",
+      "-c",
+      `if [ -x /woc/app-ctl.sh ]; then /woc/app-ctl.sh ${inst.appType} status; else /woc/wechat-ctl.sh status; fi`,
+    ]);
     const json = JSON.parse(raw.trim());
     return { ...DEFAULT_STATUS, ...json };
   } catch {

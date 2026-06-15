@@ -1,9 +1,54 @@
-import type { InstanceWithStatus, RuntimeState, WechatPhase } from '../api';
+import type { AppType, InstanceWithStatus, RuntimeState, WechatPhase } from '../api';
 
 export const BUSY_WECHAT_PHASES: WechatPhase[] = ['downloading', 'extracting', 'installing'];
+export const APP_TYPES: AppType[] = ['wechat', 'chromium'];
 
 export type LifecycleAction = 'stop' | 'restart' | 'upgrade';
 export type WechatInstallAction = 'install' | 'update';
+
+export interface AppProfile {
+  label: string;
+  createLabel: string;
+  icon: string;
+  needsInstall: boolean;
+  enterHint: string;
+  installedText: string;
+  notInstalledText: string;
+  installTitle: string;
+  installButtonTitle: string;
+  updateLabel: string;
+}
+
+export const APP_PROFILES: Record<AppType, AppProfile> = {
+  wechat: {
+    label: '微信',
+    createLabel: '微信',
+    icon: '微',
+    needsInstall: true,
+    enterHint: '首次进入请扫码登录微信',
+    installedText: '微信已安装',
+    notInstalledText: '微信尚未安装',
+    installTitle: '微信尚未安装',
+    installButtonTitle: '需先下载安装微信',
+    updateLabel: '更新微信',
+  },
+  chromium: {
+    label: 'Chromium',
+    createLabel: 'Chromium 浏览器',
+    icon: 'C',
+    needsInstall: false,
+    enterHint: '浏览器已就绪，直接使用即可',
+    installedText: 'Chromium 已就绪',
+    notInstalledText: 'Chromium 随镜像就绪',
+    installTitle: 'Chromium 尚未就绪',
+    installButtonTitle: '浏览器尚未就绪',
+    updateLabel: '',
+  },
+};
+
+export function appProfile(type?: AppType): AppProfile {
+  return APP_PROFILES[type ?? 'wechat'] ?? APP_PROFILES.wechat;
+}
 
 export interface StatusLabel {
   cls: string;
@@ -34,11 +79,12 @@ export function isWechatInstalled(inst: InstanceWithStatus): boolean {
 export function sidebarStatus(inst: InstanceWithStatus): StatusLabel {
   if (isRuntimeOffline(inst.runtime)) return { cls: 'st-off', text: inst.runtime === 'missing' ? '未创建' : '已停止' };
   if (isWechatBusy(inst.wechat.phase)) return { cls: 'st-busy', text: '处理中' };
-  if (inst.wechat.installed) return { cls: 'st-on', text: '在线' };
+  if (isWechatInstalled(inst)) return { cls: 'st-on', text: '在线' };
   return { cls: 'st-warn', text: '待安装' };
 }
 
 export function adminCardState(inst: InstanceWithStatus, acting?: string): InstanceCardState {
+  const profile = appProfile(inst.appType);
   const busy = isWechatBusy(inst.wechat.phase);
   const offline = isRuntimeOffline(inst.runtime);
   const installed = isWechatInstalled(inst);
@@ -57,8 +103,8 @@ export function adminCardState(inst: InstanceWithStatus, acting?: string): Insta
   else if (busy) sub = wx.percent >= 0 ? `${wx.message || '处理中'} ${wx.percent}%` : wx.message || '请稍候...';
   else if (wx.phase === 'error') sub = wx.message || '操作失败，可重试';
   else if (offline) sub = inst.runtime === 'missing' ? '容器尚未创建' : '容器已停止';
-  else if (installed) sub = wx.version ? `微信 ${wx.version}` : '微信已安装';
-  else sub = '微信尚未安装';
+  else if (installed) sub = wx.version ? `${profile.label} ${wx.version}` : profile.installedText;
+  else sub = profile.notInstalledText;
 
   return { badge, sub, busy, installed, offline, working };
 }

@@ -37,6 +37,7 @@ interface SocketIoFactory {
 
 interface SocketIoWindow extends Window {
   io?: SocketIoFactory;
+  AudioContext?: new (options?: AudioContextOptions) => AudioContext;
   webkitAudioContext?: new (options?: AudioContextOptions) => AudioContext;
 }
 

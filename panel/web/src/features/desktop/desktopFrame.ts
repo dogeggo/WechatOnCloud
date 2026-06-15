@@ -59,7 +59,8 @@ export function pushClipboardToRemote(frame: HTMLIFrameElement | null, text: str
   const textarea = doc?.getElementById('noVNC_clipboard_text') as HTMLTextAreaElement | null;
   if (!doc || !win || !textarea) return false;
   textarea.value = text;
-  textarea.dispatchEvent(new win.Event('change', { bubbles: true }));
+  const ChangeEvent = (win as Window & typeof globalThis).Event;
+  textarea.dispatchEvent(new ChangeEvent('change', { bubbles: true }));
   return true;
 }
 

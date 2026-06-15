@@ -104,7 +104,7 @@ app.post('/api/admin/instances', async (req, reply) => {
   const user = requireUser(req, reply);
   if (!user) return;
   const body = routeBody(req);
-  return handle(reply, () => instances.createForUser(body.name, user.email, body.reuseVolume), 500, '创建实例失败');
+  return handle(reply, () => instances.createForUser(body.name, user.email, body.reuseVolume, body.appType), 500, '创建实例失败');
 });
 
 app.get('/api/admin/orphan-volumes', async (req, reply) => {

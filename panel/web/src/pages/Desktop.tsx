@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useInstances } from '../AppShell';
 import { Icons } from '../components/icons';
-import { desktopUrl, isRuntimeOffline, isWechatBusy, isWechatInstalled } from '../domain/instances';
+import { appProfile, desktopUrl, isRuntimeOffline, isWechatBusy, isWechatInstalled } from '../domain/instances';
 import { useClipboardBridge } from '../features/desktop/useClipboardBridge';
 import { useDesktopControl } from '../features/desktop/useDesktopControl';
 import { useDesktopFiles } from '../features/desktop/useDesktopFiles';
@@ -30,6 +30,7 @@ export default function InstanceView({
   const frameRef = useRef<HTMLIFrameElement>(null);
 
   const inst = instances.find((i) => i.id === id);
+  const profile = appProfile(inst?.appType);
   // 进入实例时，共享列表可能尚未同步（管理页新建/安装后），先按"探测中"显示加载态，
   // 等列表刷新到该实例或超时后再判定是否真的不存在，避免从管理页跳转时误报"实例不存在"。
   const [probing, setProbing] = useState(true);
@@ -94,7 +95,7 @@ export default function InstanceView({
     return null;
   }
 
-  const title = inst?.name || '微信实例';
+  const title = inst?.name || `${profile.label}实例`;
 
   return (
     <div className="ws-page">
@@ -172,7 +173,7 @@ export default function InstanceView({
         <div className="iv-stage iv-center">
           <div className="iv-notice">
             <div className="spinner" />
-            <div className="iv-notice-title">微信安装中…</div>
+            <div className="iv-notice-title">{profile.label}就绪中…</div>
             <div className="iv-notice-sub">
               {inst.wechat.message || '请稍候'}
               {inst.wechat.percent >= 0 ? ` · ${inst.wechat.percent}%` : ''} ——完成后自动进入，无需刷新
@@ -182,14 +183,14 @@ export default function InstanceView({
       ) : !installed ? (
         <div className="iv-stage iv-center">
           <div className="iv-notice">
-            <div className="iv-notice-title">{inst.wechat.phase === 'error' ? '微信安装出错' : '微信尚未安装'}</div>
+            <div className="iv-notice-title">{inst.wechat.phase === 'error' ? `${profile.label}就绪出错` : profile.installTitle}</div>
             <div className="iv-notice-sub">
               {inst.wechat.phase === 'error'
-                ? inst.wechat.message || '安装失败，可在「管理」重试'
-                : '该实例容器已就绪，但尚未安装微信'}
+                ? inst.wechat.message || '就绪失败，可在「管理」重试'
+                : `该实例容器已就绪，但${profile.needsInstall ? '尚未下载安装' : '尚未完成初始化'}${profile.label}`}
             </div>
             <button className="btn btn-primary iv-notice-btn" onClick={() => nav('/admin')}>
-              去「管理」{inst.wechat.phase === 'error' ? '重试 / 更新' : '下载安装'}
+              去「管理」{inst.wechat.phase === 'error' ? '重试 / 处理' : profile.needsInstall ? '下载安装' : '查看状态'}
             </button>
             <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
               查看日志
@@ -204,7 +205,7 @@ export default function InstanceView({
             ref={frameRef}
             className="iv-frame"
             src={desktopUrl(id)}
-            title="电脑版微信"
+            title={`${profile.label}桌面`}
             allow="clipboard-read; clipboard-write; microphone; camera; autoplay"
             onLoad={vnc.handleFrameLoad}
           />
@@ -213,7 +214,7 @@ export default function InstanceView({
             <div className="iv-loading">
               <div className="spinner" />
               <div className="iv-loading-text">正在连接桌面…</div>
-              <div className="iv-loading-sub">首次进入请扫码登录微信</div>
+              <div className="iv-loading-sub">{profile.enterHint}</div>
               <div className="iv-loading-sub">拖文件到此处即可上传；声音自动开启，点一下画面即可出声</div>
               {!window.isSecureContext && (
                 <div className="iv-loading-warn">当前非 HTTPS 访问，浏览器将禁用麦克风与摄像头（音频播放不受影响）</div>

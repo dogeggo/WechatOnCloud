@@ -12,6 +12,7 @@ import {
 export interface Instance {
   id: string; // 短 id，用于容器/卷命名
   name: string; // 显示名
+  appType: AppType; // 承载的应用类型
   containerName: string; // woc-wx-<id>
   volumeName: string; // woc-data-<id>
   kasmUser: string; // 随机生成，服务端注入反代，永不下发前端
@@ -30,6 +31,14 @@ interface Data {
 const FILE = '/data/accounts.json';
 
 let data: Data = { instances: [] };
+
+export type AppType = 'wechat' | 'chromium';
+export const APP_TYPES: AppType[] = ['wechat', 'chromium'];
+
+export function normalizeAppType(value: unknown): AppType {
+  if (typeof value === 'string' && APP_TYPES.includes(value as AppType)) return value as AppType;
+  throw new Error('应用类型不合法');
+}
 
 export function normalizeInstanceName(name: string): string {
   const n = String(name || '').trim();
@@ -81,6 +90,7 @@ function parseInstance(raw: any): Instance {
   if (!raw || typeof raw !== 'object') throw new Error('实例数据格式不合法');
   const id = asString(raw.id, '实例 ID');
   const name = normalizeInstanceName(asString(raw.name, '实例名称'));
+  const appType = normalizeAppType(raw.appType);
   const containerName = asString(raw.containerName, '容器名');
   const volumeName = asString(raw.volumeName, '数据卷名');
   const kasmUser = asString(raw.kasmUser, 'Kasm 用户名');
@@ -92,6 +102,7 @@ function parseInstance(raw: any): Instance {
   const inst: Instance = {
     id,
     name,
+    appType,
     containerName,
     volumeName,
     kasmUser,
@@ -125,6 +136,7 @@ export function publicInstance(i: Instance) {
   return {
     id: i.id,
     name: i.name,
+    appType: i.appType,
     createdAt: i.createdAt,
     createdBy: i.createdBy,
     memSoftLimitMB: i.memSoftLimitMB,
@@ -167,7 +179,9 @@ export function createInstance(
   name: string,
   createdBy: string,
   reuseVolumeName?: string,
+  appType?: AppType,
 ) {
+  const type = normalizeAppType(appType);
   let id = newInstanceId(); // 10 hex chars
   let volumeName = `woc-data-${id}`;
   if (reuseVolumeName) {
@@ -184,6 +198,7 @@ export function createInstance(
   const inst: Instance = {
     id,
     name: displayName,
+    appType: type,
     containerName: `woc-wx-${id}`,
     volumeName,
     kasmUser: 'woc',
@@ -217,6 +232,7 @@ export function removeInstance(id: string) {
 // 已登记一个实例（迁移用：复用旧 ./data 卷）。返回是否新建。
 export function registerExistingInstance(opts: {
   name: string;
+  appType: AppType;
   containerName: string;
   volumeName: string;
   kasmUser: string;
@@ -236,6 +252,7 @@ export function registerExistingInstance(opts: {
   const inst: Instance = {
     id,
     name: normalizeInstanceName(opts.name),
+    appType: normalizeAppType(opts.appType),
     containerName: opts.containerName,
     volumeName: opts.volumeName,
     kasmUser: asString(opts.kasmUser, 'Kasm 用户名'),
