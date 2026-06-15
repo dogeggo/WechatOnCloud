@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, type InstanceWithStatus, type MemLimits } from '../../api';
+import { api, type InstanceWithStatus, type MemLimits, type PanelInstance } from '../../api';
 import { parseOptionalMiB, validateMemLimits } from '../../domain/memoryLimits';
 import { useUI } from '../../ui';
 import { errorMessage } from '../../utils/errors';
@@ -11,7 +11,7 @@ export function useInstanceSecurity({
 }: {
   inst: InstanceWithStatus;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (instance?: PanelInstance) => void;
 }) {
   const { toast, confirm } = useUI();
   const [data, setData] = useState<MemLimits | null>(null);
@@ -86,8 +86,8 @@ export function useInstanceSecurity({
 
     setBusy(true);
     try {
-      await api.setInstanceMemLimits(inst.id, soft, hard);
-      onDone();
+      const { instance } = await api.setInstanceMemLimits(inst.id, soft, hard);
+      onDone(instance);
       onClose();
     } catch (error) {
       setErr(errorMessage(error, '保存失败'));

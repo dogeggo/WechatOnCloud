@@ -1,7 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Cropper from 'react-easy-crop';
-import { api, type InstanceWithStatus, type VolEntry } from '../api';
+import { api, type InstanceWithStatus, type PanelInstance, type VolEntry } from '../api';
 import { ICON_CHOICES, InstanceIcon } from '../AppIcon';
 import { EmptyState } from '../components/EmptyState';
 import { Icons } from '../components/icons';
@@ -24,6 +24,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const {
     instances,
     forgetInstance,
+    patchInstance,
     devices,
     orphanVolumes,
     orphanContainers,
@@ -218,10 +219,10 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
         <RenameInstance
           inst={renameInst}
           onClose={() => setRenameInst(null)}
-          onDone={() => {
+          onDone={(instance) => {
+            patchInstance(instance);
             setRenameInst(null);
             toast('已重命名', 'ok');
-            load();
           }}
         />
       )}
@@ -229,9 +230,13 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
         <InstanceSecurity
           inst={securityInst}
           onClose={() => setSecurityInst(null)}
-          onDone={() => {
+          onDone={(instance) => {
+            if (!instance) {
+              load();
+              return;
+            }
+            patchInstance(instance);
             toast('已保存安全阈值', 'ok');
-            load();
           }}
         />
       )}
@@ -242,14 +247,14 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
         <InstanceIconEditor
           inst={iconInst}
           onClose={() => setIconInst(null)}
-          onDone={load}
+          onDone={(instance) => patchInstance(instance)}
         />
       )}
     </div>
   );
 }
 
-function RenameInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: () => void }) {
+function RenameInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: (instance: PanelInstance) => void }) {
   const form = useInstanceRename(inst, onDone);
   return (
     <div className="modal-mask" onClick={onClose}>
@@ -274,7 +279,7 @@ function RenameInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
 // soft：超过且无人在远程会话时主动重启（柔和自愈，不打扰）
 // hard：超过即强制重启（无视会话，防止 OOM）
 // 留空 = 使用面板全局默认（来自 env）。
-function InstanceSecurity({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: () => void }) {
+function InstanceSecurity({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: (instance?: PanelInstance) => void }) {
   const panel = useInstanceSecurity({ inst, onClose, onDone });
 
   return (
@@ -571,7 +576,7 @@ async function cropToDataUrl(src: string, area: CropArea): Promise<string> {
   return canvas.toDataURL('image/png');
 }
 
-function InstanceIconEditor({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: () => void }) {
+function InstanceIconEditor({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: (instance: PanelInstance) => void }) {
   const { toast } = useUI();
   const [selected, setSelected] = useState(inst.icon || '');
   const [busy, setBusy] = useState(false);
@@ -617,9 +622,9 @@ function InstanceIconEditor({ inst, onClose, onDone }: { inst: InstanceWithStatu
   const save = async () => {
     setBusy(true);
     try {
-      await api.setInstanceIcon(inst.id, selected || null);
+      const { instance } = await api.setInstanceIcon(inst.id, selected || null);
       toast('已保存图标', 'ok');
-      onDone();
+      onDone(instance);
       onClose();
     } catch (error) {
       toast(errorMessage(error, '保存失败'), 'error');

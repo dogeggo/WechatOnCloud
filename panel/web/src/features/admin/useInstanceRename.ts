@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { api, type InstanceWithStatus } from '../../api';
+import { api, type InstanceWithStatus, type PanelInstance } from '../../api';
 import { errorMessage } from '../../utils/errors';
 
-export function useInstanceRename(inst: InstanceWithStatus, onDone: () => void) {
+export function useInstanceRename(inst: InstanceWithStatus, onDone: (instance: PanelInstance) => void) {
   const [name, setName] = useState(inst.name);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -12,8 +12,8 @@ export function useInstanceRename(inst: InstanceWithStatus, onDone: () => void) 
     setErr('');
     setBusy(true);
     try {
-      await api.renameInstance(inst.id, name.trim());
-      onDone();
+      const { instance } = await api.renameInstance(inst.id, name.trim());
+      onDone(instance);
     } catch (error) {
       setErr(errorMessage(error, '重命名失败'));
     } finally {

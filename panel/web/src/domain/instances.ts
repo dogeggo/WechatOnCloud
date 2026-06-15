@@ -1,7 +1,8 @@
-import type { AppPhase, AppType, InstanceWithStatus, RuntimeState } from '../api';
+import type { AppPhase, AppStatus, AppType, InstanceWithStatus, RuntimeState } from '../api';
 
 export const BUSY_APP_PHASES: AppPhase[] = ['downloading', 'extracting', 'installing'];
 export const APP_TYPES: AppType[] = ['wechat', 'qq', 'chromium'];
+const OPTIMISTIC_APP_STATUS_HOLD_SECONDS = 30;
 
 export type LifecycleAction = 'stop' | 'restart' | 'upgrade';
 export type AppInstallAction = 'install' | 'update';
@@ -74,6 +75,26 @@ export interface InstanceCardState {
 
 export function isAppBusy(phase: AppPhase): boolean {
   return BUSY_APP_PHASES.includes(phase);
+}
+
+export function mergeInstanceStatusSnapshot(
+  current: InstanceWithStatus[],
+  incoming: InstanceWithStatus[],
+  nowSec = Math.floor(Date.now() / 1000),
+): InstanceWithStatus[] {
+  const currentById = new Map(current.map((inst) => [inst.id, inst]));
+  return incoming.map((next) => {
+    const prev = currentById.get(next.id);
+    if (!prev || !shouldKeepLocalAppStatus(prev.app, next.app, nowSec)) return next;
+    return { ...next, app: prev.app };
+  });
+}
+
+function shouldKeepLocalAppStatus(prev: AppStatus, next: AppStatus, nowSec: number): boolean {
+  if (!isAppBusy(prev.phase) || isAppBusy(next.phase)) return false;
+  if (next.updatedAt < prev.updatedAt) return true;
+  if (next.phase === 'idle') return nowSec - prev.updatedAt <= OPTIMISTIC_APP_STATUS_HOLD_SECONDS;
+  return false;
 }
 
 export function isRuntimeOffline(runtime: RuntimeState): boolean {

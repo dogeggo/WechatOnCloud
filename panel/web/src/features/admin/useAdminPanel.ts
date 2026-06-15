@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, type InstanceWithStatus, type LoggedInDevice, type OrphanContainer, type OrphanVolume } from '../../api';
+import { api, type InstanceWithStatus, type LoggedInDevice, type OrphanContainer, type OrphanVolume, type PanelInstance } from '../../api';
 import {
   lifecycleBusyLabel,
   lifecycleDoneMessage,
@@ -132,10 +132,11 @@ export function useAdminPanel() {
       try {
         if (action === 'install') await api.instanceAppInstall(inst.id);
         else await api.instanceAppUpdate(inst.id);
+        const updatedAt = Math.floor(Date.now() / 1000);
         updateInstances((list) =>
           list.map((item) =>
             item.id === inst.id
-              ? { ...item, app: { ...item.app, phase: 'downloading', percent: -1, message: '正在准备...' } }
+              ? { ...item, app: { ...item.app, phase: 'downloading', percent: -1, message: '正在准备...', updatedAt } }
               : item,
           ),
         );
@@ -149,6 +150,14 @@ export function useAdminPanel() {
 
   const forgetInstance = useCallback(
     (id: string) => updateInstances((list) => list.filter((item) => item.id !== id)),
+    [updateInstances],
+  );
+
+  const patchInstance = useCallback(
+    (instance: PanelInstance) =>
+      updateInstances((list) =>
+        list.map((item) => (item.id === instance.id ? { ...item, ...instance } : item)),
+      ),
     [updateInstances],
   );
 
@@ -203,6 +212,7 @@ export function useAdminPanel() {
   return {
     instances,
     forgetInstance,
+    patchInstance,
     devices,
     orphanVolumes,
     orphanContainers,
