@@ -15,6 +15,7 @@ RUN set -eux; \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
         libnss3 libgbm1 libasound2 libxss1 \
         chromium xdg-utils dbus dbus-x11 \
+        python3-dbus python3-gi gir1.2-glib-2.0 \
         xdotool xclip; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
@@ -75,6 +76,10 @@ RUN chmod 755 /usr/local/bin/woc-browser && \
 # 注意：实际加载的是 webpack 产物 dist/main.bundle.js（app/ui.js 是未打包源码、运行时不加载），故必须改 bundle。
 COPY woc-www-patch.sh woc-ime.pl woc-canvas.pl /woc/
 RUN chmod +x /woc/woc-www-patch.sh && /woc/woc-www-patch.sh
+
+# 容器内通知桥：接管 org.freedesktop.Notifications，把 QQ/微信发出的桌面通知转交面板 SSE。
+COPY woc-notifyd.py /usr/local/bin/woc-notifyd
+RUN chmod 755 /usr/local/bin/woc-notifyd
 
 # 应用下载/解压控制脚本（运行时由面板经 docker exec 触发，状态写入数据卷 /config/.woc-state）
 COPY deb-app-ctl.sh wechat-ctl.sh qq-ctl.sh /woc/

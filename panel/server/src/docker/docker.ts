@@ -29,6 +29,9 @@ const INSTANCE_IMAGE = assertDockerImageRef(
 const PUID = process.env.PUID || "1000";
 const PGID = process.env.PGID || "1000";
 const TZ = process.env.TZ || "Asia/Shanghai";
+const PANEL_INTERNAL_URL =
+  process.env.WOC_PANEL_INTERNAL_URL || "http://aoc-panel:8080";
+const PANEL_INTERNAL_HOST = process.env.WOC_PANEL_INTERNAL_HOST || "127.0.0.1";
 const SHM_SIZE = 1024 * 1024 * 1024; // 1gb
 
 // 可选：给每个实例容器设内存上限（GiB），作为 Xvnc 等异常增长时的兜底，避免拖垮宿主。
@@ -177,6 +180,11 @@ function envList(inst: Instance): string[] {
   env.push(`WOC_SPOOF_OS=${SPOOF_OS ? "1" : "0"}`);
   // 多应用实例类型，由 02-woc-app 写入数据卷，autostart 据此启动目标应用。
   env.push(`WOC_APP_TYPE=${inst.appType}`);
+  // 容器内 DBus 通知桥把消息提醒回传到面板；复用实例 Kasm 密码作为服务端内部上报密钥。
+  env.push(`WOC_INSTANCE_ID=${inst.id}`);
+  env.push(`WOC_NOTIFY_TOKEN=${inst.kasmPassword}`);
+  env.push(`WOC_PANEL_INTERNAL_URL=${PANEL_INTERNAL_URL}`);
+  env.push(`WOC_PANEL_INTERNAL_HOST=${PANEL_INTERNAL_HOST}`);
   return env;
 }
 

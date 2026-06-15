@@ -17,6 +17,8 @@ import { gzipQuery, rawUpload, sendBinary } from './http/upload-utils.js';
 import { ControlManager } from './instance/control-manager.js';
 import { InstanceManager } from './instance/instance-manager.js';
 import { initStore } from './instance/store.js';
+import { NotificationManager } from './notification/notification-manager.js';
+import { registerNotificationRoutes } from './notification/notification-routes.js';
 import { startWatchdog } from './watchdog/watchdog-manager.js';
 
 initStore();
@@ -29,6 +31,7 @@ const auth = new AuthManager(
 );
 const instances = new InstanceManager(panelConfig.watchdog);
 const control = new ControlManager();
+const notifications = new NotificationManager();
 
 const app = Fastify({
   logger: {
@@ -361,6 +364,7 @@ app.post('/api/admin/instances/:id/app/update', async (req, reply) => {
   return handle(reply, () => instances.triggerAppInstall(routeParams(req).id, 'update'), 500, '无法触发更新');
 });
 
+registerNotificationRoutes(app, auth, instances, notifications);
 registerDesktopProxy(app, auth, panelConfig);
 
 await app.register(fstatic, { root: panelConfig.staticDir, wildcard: false, index: ['index.html'] });

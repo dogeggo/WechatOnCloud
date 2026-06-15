@@ -38,6 +38,10 @@ services:
       - PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB=${PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB:-1024}
       - PANEL_RATE_LIMIT_API_PER_MIN=${PANEL_RATE_LIMIT_API_PER_MIN:-600}
       - PANEL_RATE_LIMIT_AUTH_PER_MIN=${PANEL_RATE_LIMIT_AUTH_PER_MIN:-30}
+      # 应用实例容器把 DBus 桌面通知回传到面板的内网地址；默认匹配本 compose 的 panel 容器名。
+      - WOC_PANEL_INTERNAL_URL=${WOC_PANEL_INTERNAL_URL:-http://aoc-panel:8080}
+      # 内部回传请求连接 aoc-panel，但 Host 头用 loopback 绕过公网 Host 白名单限制；仍由实例密钥鉴权。
+      - WOC_PANEL_INTERNAL_HOST=${WOC_PANEL_INTERNAL_HOST:-127.0.0.1}
       # 面板通过容器名反代到动态创建的应用实例；必须使用用户自定义网络，
       # 不能用 Docker 默认 bridge，否则容器名 DNS 不可用。
       - WOC_DOCKER_NETWORK=${WOC_DOCKER_NETWORK:-woc_internal}

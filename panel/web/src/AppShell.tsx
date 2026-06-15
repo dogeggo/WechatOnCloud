@@ -9,6 +9,7 @@ import { Icons } from './components/icons';
 import { appProfile, routeInstanceId, sidebarStatus } from './domain/instances';
 import { InstancesCtx, useInstances } from './features/instances/instances-context';
 import { useInstancesLoader } from './features/instances/useInstancesLoader';
+import { useBrowserNotifications, type BrowserNotificationStatus } from './features/notifications/useBrowserNotifications';
 import {
   idFromVncKeepAliveKey,
   isVncKeepAliveEnabled,
@@ -20,6 +21,7 @@ import {
 // ---- 实例数据：侧栏 / 主页 / 实例视图共享，安装中轮询 ----
 export default function AppShell() {
   const state = useInstancesLoader();
+  const browserNotifications = useBrowserNotifications();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('woc_sb_collapsed') === '1');
   const [drawer, setDrawer] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
@@ -103,7 +105,12 @@ export default function AppShell() {
   return (
     <InstancesCtx.Provider value={state}>
       <div className={'shell' + (railed ? ' collapsed' : '') + (drawer ? ' drawer-open' : '')}>
-        <Sidebar collapsed={railed} onToggleCollapsed={toggleCollapsed} />
+        <Sidebar
+          collapsed={railed}
+          notificationStatus={browserNotifications.notificationStatus}
+          onToggleCollapsed={toggleCollapsed}
+          onToggleNotifications={browserNotifications.toggleBrowserNotifications}
+        />
         <div className="shell-backdrop" onClick={() => setDrawer(false)} />
         <main className="workspace">
           <div className={'workspace-route' + (showingCachedInstance ? ' hidden' : '')}>
@@ -125,7 +132,17 @@ export default function AppShell() {
   );
 }
 
-function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggleCollapsed: () => void }) {
+function Sidebar({
+  collapsed,
+  notificationStatus,
+  onToggleCollapsed,
+  onToggleNotifications,
+}: {
+  collapsed: boolean;
+  notificationStatus: BrowserNotificationStatus;
+  onToggleCollapsed: () => void;
+  onToggleNotifications: () => void;
+}) {
   const { user, logout } = useAuth();
   const { confirm } = useUI();
   const { instances } = useInstances();
@@ -172,6 +189,15 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
       </div>
 
       <div className="sb-footer">
+        <button
+          className={'sb-item' + (notificationStatus === 'on' ? ' on' : '')}
+          onClick={onToggleNotifications}
+          title={notificationTitle(notificationStatus)}
+        >
+          <span className="sb-ic">{notificationStatus === 'on' ? Icons.bell : Icons.bellOff}</span>
+          {!collapsed && <span className="sb-label">通知</span>}
+          {!collapsed && <span className="sb-stxt">{notificationText(notificationStatus)}</span>}
+        </button>
         <button className={'sb-item' + (loc.pathname === '/admin' ? ' on' : '')} onClick={() => go('/admin')} title="管理">
           <span className="sb-ic">{Icons.gear}</span>
           {!collapsed && <span className="sb-label">管理</span>}
@@ -194,6 +220,20 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
       </div>
     </aside>
   );
+}
+
+function notificationTitle(status: BrowserNotificationStatus): string {
+  if (status === 'on') return '关闭浏览器通知';
+  if (status === 'blocked') return '浏览器已拒绝通知';
+  if (status === 'unsupported') return '当前浏览器不支持通知';
+  return '开启浏览器通知';
+}
+
+function notificationText(status: BrowserNotificationStatus): string {
+  if (status === 'on') return '开';
+  if (status === 'blocked') return '拒绝';
+  if (status === 'unsupported') return '不可用';
+  return '关';
 }
 
 function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {

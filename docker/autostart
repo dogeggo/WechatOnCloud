@@ -35,6 +35,12 @@ APP_TYPE="${WOC_APP_TYPE:-wechat}"
 . /woc/app-defs.sh
 woc_app_def "$APP_TYPE" || exit 1
 
+# 桌面通知桥必须在应用启动前接管 org.freedesktop.Notifications，
+# 否则部分客户端启动时探测不到通知服务后不会再重试。
+if command -v woc-notifyd >/dev/null 2>&1; then
+    woc-notifyd >>/tmp/woc-notifyd.log 2>&1 &
+fi
+
 # 防“最小化后丢失”：本桌面（openbox）无任务栏，窗口被最小化就无处恢复 → 黑屏。
 # 看守进程：每 2s 把“被最小化（不可见）”的顶层窗口重新激活，相当于禁用最小化。
 (

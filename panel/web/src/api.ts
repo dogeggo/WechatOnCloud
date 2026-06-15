@@ -70,6 +70,21 @@ export interface InstanceWithStatus extends PanelInstance {
   app: AppStatus;
 }
 
+export type NotificationUrgency = 'low' | 'normal' | 'critical';
+export interface InstanceNotificationEvent {
+  type: 'instance-notification';
+  id: string;
+  instanceId: string;
+  instanceName: string;
+  appType: AppType;
+  appName: string;
+  title: string;
+  body: string;
+  urgency: NotificationUrgency;
+  source: string;
+  createdAt: number;
+}
+
 export interface VolEntry {
   name: string;
   type: 'dir' | 'file' | 'link' | 'other';
@@ -158,6 +173,7 @@ export const api = {
   instanceAppStatus: (id: string) => req<{ status: AppStatus }>(`/api/instances/${id}/app/status`),
   instanceAppInstall: (id: string) => req(`/api/admin/instances/${id}/app/install`, { method: 'POST' }),
   instanceAppUpdate: (id: string) => req(`/api/admin/instances/${id}/app/update`, { method: 'POST' }),
+  notificationsStreamUrl: () => '/api/notifications/stream',
   instanceStart: (id: string) => req(`/api/admin/instances/${id}/start`, { method: 'POST' }),
   instanceStop: (id: string) => req(`/api/admin/instances/${id}/stop`, { method: 'POST' }),
   instanceRestart: (id: string) => req(`/api/admin/instances/${id}/restart`, { method: 'POST' }),
