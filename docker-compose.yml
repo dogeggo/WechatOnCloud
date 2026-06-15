@@ -5,12 +5,12 @@ services:
   panel:
     build: ./panel
     # 镜像源前缀默认 Docker Hub；拉不动时改 .env 的 WOC_IMAGE_PREFIX 切到备用源或国内反代（见 .env.example）。
-    image: ${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/woc-panel:${WOC_VERSION:-latest}
-    container_name: woc-panel
+    image: ${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/aoc-panel:${WOC_VERSION:-latest}
+    container_name: aoc-panel
     environment:
       - PORT=8080
       # 新建应用实例时使用的镜像（多架构，amd64/arm64 自动匹配）；前缀同样跟随 WOC_IMAGE_PREFIX。
-      - WOC_INSTANCE_IMAGE=${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/wechat-on-cloud:${WOC_VERSION:-latest}
+      - WOC_INSTANCE_IMAGE=${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/app-on-cloud:${WOC_VERSION:-latest}
       # 透传给每个应用实例容器（KasmVNC 基础镜像用它们降权运行）
       - PUID=${WOC_PUID:-1000}
       - PGID=${WOC_PGID:-1000}

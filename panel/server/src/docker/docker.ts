@@ -24,7 +24,7 @@ function assertDockerImageRef(image: string): string {
 }
 
 const INSTANCE_IMAGE = assertDockerImageRef(
-  process.env.WOC_INSTANCE_IMAGE || "docker.io/dogeggo/wechat-on-cloud:latest",
+  process.env.WOC_INSTANCE_IMAGE || "docker.io/dogeggo/app-on-cloud:latest",
 );
 const PUID = process.env.PUID || "1000";
 const PGID = process.env.PGID || "1000";

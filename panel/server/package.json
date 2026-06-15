@@ -1,5 +1,5 @@
 {
-  "name": "woc-panel-server",
+  "name": "aoc-panel-server",
   "private": true,
   "type": "module",
   "scripts": {

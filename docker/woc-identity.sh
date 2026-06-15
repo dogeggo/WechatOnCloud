@@ -3,7 +3,7 @@
 #
 # 目的：给每个实例一个【唯一且持久】的设备身份，避免所有实例共用镜像里烤死的同一个 machine-id。
 #
-# 背景（P0）：Debian/基础镜像把 machine-id 固化在镜像层里，于是全世界每个 wechat-on-cloud
+# 背景（P0）：Debian/基础镜像把 machine-id 固化在镜像层里，于是全世界每个 app-on-cloud
 # 实例的 /etc/machine-id 都相同。machine-id 是 Linux 上最接近"设备指纹"的标识，桌面客户端可能会读它做
 # 风控；成千上万个账号共用同一个 machine-id = 典型"设备农场"特征 → 被腾讯批量判风险 → 登录即
 # 被强制退出、反复循环。
