@@ -18,6 +18,19 @@ export interface InstanceNotificationEvent {
   createdAt: number;
 }
 
+export interface DesktopClientReplacedEvent {
+  type: 'desktop-client-replaced';
+  id: string;
+  clientId: string;
+  instanceId: string;
+  instanceName: string;
+  appType: Instance['appType'];
+  appName: string;
+  title: string;
+  body: string;
+  createdAt: number;
+}
+
 interface Client {
   id: number;
   res: ServerResponse;
@@ -70,6 +83,24 @@ export class NotificationManager {
     this.verifyToken(inst, authorization);
     const event = this.normalizeEvent(inst, payload);
     this.broadcast('notification', event.id, event);
+    return event;
+  }
+
+  desktopClientReplaced(inst: Instance, clientId: string): DesktopClientReplacedEvent {
+    const appName = APP_LABELS[inst.appType];
+    const event: DesktopClientReplacedEvent = {
+      type: 'desktop-client-replaced',
+      id: `${inst.id}-desktop-${Date.now().toString(36)}-${++this.eventSeq}`,
+      clientId,
+      instanceId: inst.id,
+      instanceName: inst.name,
+      appType: inst.appType,
+      appName,
+      title: `${appName}连接已断开`,
+      body: '同一个应用只能保留一个客户端连接，新客户端已接入。',
+      createdAt: Date.now(),
+    };
+    this.broadcast('desktop-client-replaced', event.id, event);
     return event;
   }
 

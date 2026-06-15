@@ -17,9 +17,16 @@ interface ConfirmOpts {
   danger?: boolean;
 }
 
+interface AlertOpts {
+  title: string;
+  body?: string;
+  confirmText?: string;
+}
+
 interface UICtx {
   toast: (text: string, kind?: ToastKind) => void;
   confirm: (opts: ConfirmOpts) => Promise<boolean>;
+  alert: (opts: AlertOpts) => Promise<void>;
 }
 
 const Ctx = createContext<UICtx>(null!);
@@ -27,6 +34,7 @@ const Ctx = createContext<UICtx>(null!);
 export function UIProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [confirmState, setConfirmState] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
+  const [alertState, setAlertState] = useState<(AlertOpts & { resolve: () => void }) | null>(null);
   const seq = useRef(0);
 
   const toast = useCallback((text: string, kind: ToastKind = 'info') => {
@@ -40,13 +48,22 @@ export function UIProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const alert = useCallback(
+    (opts: AlertOpts) => new Promise<void>((resolve) => setAlertState({ ...opts, resolve })),
+    [],
+  );
+
   const close = (v: boolean) => {
     confirmState?.resolve(v);
     setConfirmState(null);
   };
+  const closeAlert = () => {
+    alertState?.resolve();
+    setAlertState(null);
+  };
 
   return (
-    <Ctx.Provider value={{ toast, confirm }}>
+    <Ctx.Provider value={{ toast, confirm, alert }}>
       {children}
       <div className="toast-stack">
         {toasts.map((t) => (
@@ -70,6 +87,19 @@ export function UIProvider({ children }: { children: ReactNode }) {
                 onClick={() => close(true)}
               >
                 {confirmState.confirmText || '确定'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {alertState && (
+        <div className="modal-mask" onClick={closeAlert}>
+          <div className="card modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 340 }}>
+            <h2>{alertState.title}</h2>
+            {alertState.body && <div className="muted" style={{ fontSize: 14, lineHeight: 1.5 }}>{alertState.body}</div>}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-primary" onClick={closeAlert}>
+                {alertState.confirmText || '知道了'}
               </button>
             </div>
           </div>

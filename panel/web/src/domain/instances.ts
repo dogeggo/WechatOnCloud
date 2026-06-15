@@ -154,13 +154,11 @@ export function appActionDoneMessage(action: AppInstallAction, type?: AppType): 
   return action === 'install' ? `已开始下载${appProfile(type).label}` : `已开始更新${appProfile(type).label}`;
 }
 
-export function desktopUrl(id: string): string {
+export function desktopUrl(id: string, clientId: string): string {
   const params = new URLSearchParams({
     autoconnect: '1',
-    path: `desktop/${id}/websockify`,
+    path: `desktop/${id}/websockify?wocClient=${clientId}`,
     resize: 'remote',
-    reconnect: 'true',
-    reconnect_delay: '2000',
     clipboard_up: 'true',
     clipboard_down: 'true',
     clipboard_seamless: 'true',

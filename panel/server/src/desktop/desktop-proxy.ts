@@ -7,6 +7,8 @@ import { instanceTarget } from '../docker/docker.js';
 import { isRequestHostAllowed } from '../http/host-guard.js';
 import { firstHeaderValue, sameOrigin, type RequestTrustConfig } from '../http/request-utils.js';
 import { findInstance, type Instance } from '../instance/store.js';
+import type { NotificationManager } from '../notification/notification-manager.js';
+import type { DesktopClientManager } from './desktop-client-manager.js';
 
 interface DesktopUrl {
   id: string;
@@ -17,6 +19,8 @@ export function registerDesktopProxy(
   app: FastifyInstance,
   auth: AuthManager,
   trustConfig: RequestTrustConfig,
+  desktopClients: DesktopClientManager,
+  notifications: NotificationManager,
 ): void {
   const proxy = httpProxy.createProxyServer({ changeOrigin: true, ws: true });
   proxy.on('proxyReq', (proxyReq, req) => {
@@ -71,7 +75,7 @@ export function registerDesktopProxy(
 
   app.server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
     try {
-      handleUpgrade(req, socket, head, proxy, auth, trustConfig);
+      handleUpgrade(req, socket, head, proxy, auth, trustConfig, desktopClients, notifications, app.log);
     } catch (e: any) {
       app.log.warn(`[upgrade] rejected malformed upgrade request: ${e?.message || e}`);
       socket.destroy();
@@ -86,6 +90,9 @@ function handleUpgrade(
   proxy: httpProxy,
   auth: AuthManager,
   trustConfig: RequestTrustConfig,
+  desktopClients: DesktopClientManager,
+  notifications: NotificationManager,
+  log: FastifyInstance['log'],
 ): void {
   if (!isRequestHostAllowed(
     firstHeaderValue(req.headers.host),
@@ -109,8 +116,18 @@ function handleUpgrade(
     socket.destroy();
     return;
   }
-  req.url = parsed.rest;
+
+  const prepared = prepareDesktopSocketRest(parsed.rest);
+  if (!prepared) {
+    socket.destroy();
+    return;
+  }
+
+  req.url = prepared.rest;
   (req as any)._wocAuth = basicAuth(inst);
+  if (prepared.clientId && !desktopClients.register({ inst, clientId: prepared.clientId, socket, notifications, log })) {
+    return;
+  }
   auth.trackSessionSocket(session.id, socket);
   proxy.ws(req, socket, head, { target: instanceTarget(inst) });
 }
@@ -126,4 +143,28 @@ function parseDesktopUrl(rawUrl: string): DesktopUrl | null {
 
 function basicAuth(inst: Instance): string {
   return 'Basic ' + Buffer.from(`${inst.kasmUser}:${inst.kasmPassword}`).toString('base64');
+}
+
+const DESKTOP_CLIENT_ID_RE = /^[0-9a-f]{32}$/;
+
+interface PreparedDesktopSocketRest {
+  rest: string;
+  clientId: string | null;
+}
+
+function prepareDesktopSocketRest(rest: string): PreparedDesktopSocketRest | null {
+  try {
+    const url = new URL(rest, 'http://woc.local');
+    const pathname = url.pathname || '/';
+    const isDesktopClient = pathname === '/websockify' || pathname === '/websockify/';
+    const clientId = url.searchParams.get('wocClient') || '';
+    url.searchParams.delete('wocClient');
+    const cleanedRest = `${pathname}${url.search}`;
+
+    if (!isDesktopClient) return { rest: cleanedRest, clientId: null };
+    if (!DESKTOP_CLIENT_ID_RE.test(clientId)) return null;
+    return { rest: cleanedRest, clientId };
+  } catch {
+    return null;
+  }
 }

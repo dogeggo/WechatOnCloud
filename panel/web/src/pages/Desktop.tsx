@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import type { DesktopClientReplacedEvent } from '../api';
 import { api } from '../api';
 import { Icons } from '../components/icons';
 import { appProfile, desktopUrl, isAppBusy, isAppInstalled, isRuntimeOffline } from '../domain/instances';
 import { useClipboardBridge } from '../features/desktop/useClipboardBridge';
-import { useDesktopControl } from '../features/desktop/useDesktopControl';
+import { DESKTOP_CLIENT_REPLACED_EVENT } from '../features/desktop/desktopClientEvents';
 import { useDesktopFiles } from '../features/desktop/useDesktopFiles';
 import { useImeComposer } from '../features/desktop/useImeComposer';
 import { useInstanceRuntimeActions } from '../features/desktop/useInstanceRuntimeActions';
 import { useSeamlessIme } from '../features/desktop/useSeamlessIme';
 import { useVncFrame } from '../features/desktop/useVncFrame';
 import { useInstances } from '../features/instances/instances-context';
+import { useUI } from '../ui';
 import { formatBytes } from '../utils/format';
+
+function createDesktopClientId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 export default function InstanceView({
   onOpenMenu,
@@ -25,9 +33,12 @@ export default function InstanceView({
   const params = useParams<{ id: string }>();
   const id = instanceId ?? params.id;
   const nav = useNavigate();
+  const { alert: showAlert } = useUI();
   const { instances, loaded, reload } = useInstances();
 
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const [desktopClientId, setDesktopClientId] = useState(createDesktopClientId);
+  const [clientReplaced, setClientReplaced] = useState(false);
 
   const inst = instances.find((i) => i.id === id);
   const profile = appProfile(inst?.appType);
@@ -37,27 +48,17 @@ export default function InstanceView({
   const offline = inst ? isRuntimeOffline(inst.runtime) : false;
   const installed = !!inst && isAppInstalled(inst);
   const showVnc = !!inst && !offline && installed;
-  const vnc = useVncFrame({ active, showVnc, id, frameRef });
-  const desktopFiles = useDesktopFiles({ active, showVnc, id });
-  const desktopControl = useDesktopControl({
-    active,
-    showVnc,
-    id,
-    frameLoaded: vnc.frameLoaded,
-    frameRef,
-    focusFrame: vnc.focusFrame,
-  });
+  const effectiveShowVnc = showVnc && !clientReplaced;
+  const vnc = useVncFrame({ active, showVnc: effectiveShowVnc, id, frameRef });
+  const desktopFiles = useDesktopFiles({ active, showVnc: effectiveShowVnc, id });
   const clipboard = useClipboardBridge({ id, frameRef });
-  const imeLocked = !!desktopControl.control && !desktopControl.control.free && !desktopControl.control.mine;
   const ime = useImeComposer({
     id,
-    controlLocked: imeLocked,
-    ensureControl: desktopControl.ensureControl,
     focusFrame: vnc.focusFrame,
   });
   useSeamlessIme({
     active,
-    showVnc,
+    showVnc: effectiveShowVnc,
     id,
     frameLoaded: vnc.frameLoaded,
     frameRef,
@@ -67,7 +68,25 @@ export default function InstanceView({
 
   useEffect(() => {
     setProbing(true);
+    setClientReplaced(false);
+    setDesktopClientId(createDesktopClientId());
   }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    const onReplaced = (event: Event) => {
+      const detail = (event as CustomEvent<DesktopClientReplacedEvent>).detail;
+      if (detail?.instanceId !== id || detail.clientId !== desktopClientId) return;
+      setClientReplaced(true);
+      void showAlert({
+        title: detail.title || `${profile.label}连接已断开`,
+        body: detail.body || '同一个应用只能保留一个客户端连接，新客户端已接入。',
+        confirmText: '知道了',
+      });
+    };
+    window.addEventListener(DESKTOP_CLIENT_REPLACED_EVENT, onReplaced);
+    return () => window.removeEventListener(DESKTOP_CLIENT_REPLACED_EVENT, onReplaced);
+  }, [desktopClientId, id, profile.label, showAlert]);
 
   // 探测态收敛：找到实例即结束；否则给共享列表一点刷新时间（AppShell 已在导航时拉取），超时仍无则判定不存在。
   useEffect(() => {
@@ -96,6 +115,11 @@ export default function InstanceView({
   }
 
   const title = inst?.name || `${profile.label}实例`;
+  const reconnectDesktopClient = () => {
+    setDesktopClientId(createDesktopClientId());
+    setClientReplaced(false);
+    vnc.reconnect();
+  };
 
   return (
     <div className="ws-page">
@@ -104,7 +128,7 @@ export default function InstanceView({
           {Icons.menu}
         </button>
         <span className="ws-title">{title}</span>
-        {showVnc && (
+        {effectiveShowVnc && (
           <>
             <button
               className="ws-action"
@@ -197,14 +221,24 @@ export default function InstanceView({
             </button>
           </div>
         </div>
+      ) : clientReplaced ? (
+        <div className="iv-stage iv-center">
+          <div className="iv-notice">
+            <div className="iv-notice-title">{profile.label}连接已断开</div>
+            <div className="iv-notice-sub">同一个应用只能保留一个客户端连接，新客户端已接入。</div>
+            <button className="btn btn-primary iv-notice-btn" onClick={reconnectDesktopClient}>
+              重新连接
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="iv-stage iv-stage--vnc">
           <div className="iv-canvas">
           <iframe
-            key={`${id}:${vnc.vncNonce}`}
+            key={`${id}:${desktopClientId}:${vnc.vncNonce}`}
             ref={frameRef}
             className="iv-frame"
-            src={desktopUrl(id)}
+            src={desktopUrl(id, desktopClientId)}
             title={`${profile.label}桌面`}
             allow="clipboard-read; clipboard-write; microphone; camera; autoplay"
             onLoad={vnc.handleFrameLoad}
@@ -251,18 +285,6 @@ export default function InstanceView({
                 <div className="drop-icon">⬇</div>
                 <div className="drop-title">松开上传到 ~/Downloads</div>
                 <div className="drop-sub">上传后在应用的下载目录中选择即可</div>
-              </div>
-            </div>
-          )}
-
-          {desktopControl.control && !desktopControl.control.free && !desktopControl.control.mine && (
-            <div className="iv-lock">
-              <div className="iv-lock-card">
-                <div className="iv-lock-title">「{desktopControl.control.holder}」正在操作</div>
-                <div className="iv-lock-sub">为避免多端互相干扰，你当前为只读模式。</div>
-                <button className="btn btn-primary iv-notice-btn" onClick={desktopControl.takeControl}>
-                  申请控制
-                </button>
               </div>
             </div>
           )}
@@ -342,7 +364,7 @@ export default function InstanceView({
                     void ime.sendImeText(true);
                   }
                 }}
-                placeholder={imeLocked ? `「${desktopControl.control?.holder}」正在操作，申请控制后可输入` : '文本输入，Enter 发送。Shift+Enter 换行。'}
+                placeholder="文本输入，Enter 发送。Shift+Enter 换行。"
                 disabled={ime.imeDisabled}
                 rows={1}
               />

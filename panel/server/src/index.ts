@@ -4,8 +4,9 @@ import fstatic from '@fastify/static';
 import { loadAuthConfig } from './auth/auth-config.js';
 import { AuthManager, type AuthUser } from './auth/auth-manager.js';
 import { panelConfig } from './config/panel-config.js';
+import { DesktopClientManager } from './desktop/desktop-client-manager.js';
 import { registerDesktopProxy } from './desktop/desktop-proxy.js';
-import { httpError, sendError } from './http/http-error.js';
+import { sendError } from './http/http-error.js';
 import {
   registerHostGuard,
   registerRateLimit,
@@ -14,7 +15,6 @@ import {
 } from './http/request-security.js';
 import { trustedClientIp } from './http/request-utils.js';
 import { gzipQuery, rawUpload, sendBinary } from './http/upload-utils.js';
-import { ControlManager } from './instance/control-manager.js';
 import { InstanceManager } from './instance/instance-manager.js';
 import { initStore } from './instance/store.js';
 import { NotificationManager } from './notification/notification-manager.js';
@@ -30,7 +30,7 @@ const auth = new AuthManager(
   panelConfig.trustedProxies,
 );
 const instances = new InstanceManager(panelConfig.watchdog);
-const control = new ControlManager();
+const desktopClients = new DesktopClientManager();
 const notifications = new NotificationManager();
 
 const app = Fastify({
@@ -152,7 +152,7 @@ app.delete('/api/admin/instances/:id', async (req, reply) => {
   const purge = query.purge === '1' || query.purge === 'true';
   return handle(reply, async () => {
     const result = await instances.remove(id, purge);
-    control.release(String(id));
+    desktopClients.releaseInstance(String(id));
     return result;
   }, 500, '删除实例失败');
 });
@@ -213,54 +213,20 @@ app.get('/api/instances/:id/download', async (req, reply) => {
   }, 400, '下载失败');
 });
 
-app.post('/api/instances/:id/control/beat', async (req, reply) => {
-  const user = requireUser(req, reply);
-  if (!user) return;
-  return handle(reply, () => {
-    const inst = instances.requireInstance(routeParams(req).id);
-    const claim = control.claimForAction(inst.id, user);
-    return { mine: claim.ok, holder: claim.holder };
-  }, 500, '申请控制失败');
-});
-
-app.get('/api/instances/:id/control', async (req, reply) => {
-  const user = requireUser(req, reply);
-  if (!user) return;
-  return handle(reply, () => {
-    const inst = instances.requireInstance(routeParams(req).id);
-    return control.status(inst.id, user);
-  }, 500, '读取控制状态失败');
-});
-
-app.post('/api/instances/:id/control/take', async (req, reply) => {
-  const user = requireUser(req, reply);
-  if (!user) return;
-  return handle(reply, () => {
-    const inst = instances.requireInstance(routeParams(req).id);
-    return control.take(inst.id, user);
-  }, 500, '接管失败');
-});
-
 app.post('/api/instances/:id/type', async (req, reply) => {
-  const user = requireUser(req, reply);
-  if (!user) return;
+  if (!requireUser(req, reply)) return;
   const body = routeBody(req);
   return handle(reply, async () => {
     const inst = instances.requireInstance(routeParams(req).id);
-    const claim = control.claimForAction(inst.id, user);
-    if (!claim.ok) throw httpError(409, `「${claim.holder}」正在操作，请先申请控制`);
     return instances.typeText(inst.id, body.text, body.submit, body.submitKey);
   }, 500, '输入失败');
 });
 
 app.post('/api/instances/:id/key', async (req, reply) => {
-  const user = requireUser(req, reply);
-  if (!user) return;
+  if (!requireUser(req, reply)) return;
   const body = routeBody(req);
   return handle(reply, async () => {
     const inst = instances.requireInstance(routeParams(req).id);
-    const claim = control.claimForAction(inst.id, user);
-    if (!claim.ok) throw httpError(409, `「${claim.holder}」正在操作，请先申请控制`);
     return instances.keyInput(inst.id, body.key);
   }, 500, '按键输入失败');
 });
@@ -365,7 +331,7 @@ app.post('/api/admin/instances/:id/app/update', async (req, reply) => {
 });
 
 registerNotificationRoutes(app, auth, instances, notifications);
-registerDesktopProxy(app, auth, panelConfig);
+registerDesktopProxy(app, auth, panelConfig, desktopClients, notifications);
 
 await app.register(fstatic, { root: panelConfig.staticDir, wildcard: false, index: ['index.html'] });
 app.setNotFoundHandler((req, reply) => {
@@ -379,7 +345,7 @@ app.setNotFoundHandler((req, reply) => {
 await app.ready();
 await instances.ensureNetwork();
 await instances.startRegisteredInstances(app.log);
-startWatchdog(panelConfig.watchdog, instances, control, app.log);
+startWatchdog(panelConfig.watchdog, instances, desktopClients, app.log);
 
 await app.listen({ port: panelConfig.port, host: panelConfig.host });
 app.log.info(`[panel] 监听 http://${panelConfig.host}:${panelConfig.port}  （多实例反代已就绪）`);

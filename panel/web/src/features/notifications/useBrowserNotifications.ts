@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type InstanceNotificationEvent } from '../../api';
+import { api, type DesktopClientReplacedEvent, type InstanceNotificationEvent } from '../../api';
 import { useUI } from '../../ui';
+import { dispatchDesktopClientReplaced } from '../desktop/desktopClientEvents';
 
 const STORAGE_KEY = 'woc_browser_notifications';
 const STREAM_RECONNECT_INITIAL_DELAY = 1000;
@@ -107,14 +108,15 @@ export function useBrowserNotifications() {
       if ('Notification' in window) setPermission(Notification.permission);
       if (enabledRef.current && permissionRef.current === 'granted' && 'Notification' in window) {
         try {
-          const n = new Notification(event.title || event.appName || event.instanceName, {
+          const options: NotificationOptions & { renotify: boolean } = {
             body: notificationBody(event),
             icon: '/icon-192.png',
             badge: '/icon-192.png',
             tag: `woc:${event.instanceId}`,
             renotify: true,
             silent: event.urgency === 'low',
-          });
+          };
+          const n = new Notification(event.title || event.appName || event.instanceName, options);
           n.onclick = () => {
             window.focus();
             navigate(`/i/${event.instanceId}`);
@@ -140,6 +142,14 @@ export function useBrowserNotifications() {
         /* ignore malformed notification event */
       }
     };
+    const onDesktopClientReplaced = (e: MessageEvent) => {
+      try {
+        const event = JSON.parse(e.data) as DesktopClientReplacedEvent;
+        if (event?.type === 'desktop-client-replaced') dispatchDesktopClientReplaced(event);
+      } catch {
+        /* ignore malformed desktop client event */
+      }
+    };
 
     let stream: EventSource | null = null;
     let reconnectTimer: number | undefined;
@@ -155,6 +165,7 @@ export function useBrowserNotifications() {
     const closeStream = () => {
       if (!stream) return;
       stream.removeEventListener('notification', onNotification as EventListener);
+      stream.removeEventListener('desktop-client-replaced', onDesktopClientReplaced as EventListener);
       stream.onopen = null;
       stream.onerror = null;
       stream.close();
@@ -183,6 +194,7 @@ export function useBrowserNotifications() {
       };
       next.onerror = () => scheduleReconnect();
       next.addEventListener('notification', onNotification as EventListener);
+      next.addEventListener('desktop-client-replaced', onDesktopClientReplaced as EventListener);
     };
 
     connect();

@@ -85,6 +85,19 @@ export interface InstanceNotificationEvent {
   createdAt: number;
 }
 
+export interface DesktopClientReplacedEvent {
+  type: 'desktop-client-replaced';
+  id: string;
+  clientId: string;
+  instanceId: string;
+  instanceName: string;
+  appType: AppType;
+  appName: string;
+  title: string;
+  body: string;
+  createdAt: number;
+}
+
 export interface VolEntry {
   name: string;
   type: 'dir' | 'file' | 'link' | 'other';
@@ -206,10 +219,6 @@ export const api = {
   volumeRestore: (id: string, file: File) =>
     rawUpload(`/api/admin/instances/${id}/volume/restore?gzip=${file.name.endsWith('.gz') ? '1' : '0'}`, file),
 
-  // 多端协作：操作控制权
-  controlStatus: (id: string) => req<{ free: boolean; mine: boolean; holder: string | null }>(`/api/instances/${id}/control`),
-  controlBeat: (id: string) => req<{ mine: boolean; holder: string }>(`/api/instances/${id}/control/beat`, { method: 'POST' }),
-  controlTake: (id: string) => req<{ mine: boolean; holder: string }>(`/api/instances/${id}/control/take`, { method: 'POST' }),
   typeInInstance: (id: string, text: string, opts: { submit?: boolean; submitKey?: 'enter' | 'ctrlEnter' } = {}) =>
     req(`/api/instances/${id}/type`, { method: 'POST', body: JSON.stringify({ text, ...opts }) }),
   keyInInstance: (id: string, key: string) =>

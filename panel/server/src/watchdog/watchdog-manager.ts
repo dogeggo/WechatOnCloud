@@ -6,14 +6,14 @@ import {
   stopInstance,
 } from '../docker/docker.js';
 import type { WatchdogConfig } from '../config/panel-config.js';
-import type { ControlManager } from '../instance/control-manager.js';
+import type { DesktopClientManager } from '../desktop/desktop-client-manager.js';
 import type { InstanceManager } from '../instance/instance-manager.js';
 import { findInstance, listInstances, type Instance } from '../instance/store.js';
 
 export function startWatchdog(
   config: WatchdogConfig,
   instances: InstanceManager,
-  control: ControlManager,
+  desktopClients: DesktopClientManager,
   log: FastifyBaseLogger,
 ): void {
   if (!config.enabled) return;
@@ -46,7 +46,7 @@ export function startWatchdog(
         const mb = await instanceMemoryMB(inst);
         if (mb > 0) {
           const { soft, hard } = instances.effectiveLimits(inst);
-          const active = control.hasActiveSession(inst.id);
+          const active = desktopClients.hasActiveSession(inst.id);
           if (hard > 0 && mb >= hard) {
             await recover(inst, 'hard', `mem=${mb}MiB >= hard=${hard}MiB，强制重启（active=${active}）`);
             continue;

@@ -13,13 +13,9 @@ import {
 
 export function useImeComposer({
   id,
-  controlLocked,
-  ensureControl,
   focusFrame,
 }: {
   id: string | undefined;
-  controlLocked: boolean;
-  ensureControl: () => Promise<boolean>;
   focusFrame: () => void;
 }) {
   const { toast } = useUI();
@@ -44,7 +40,6 @@ export function useImeComposer({
     if (!imeText.trim() || !id || imeSending) return;
     setImeSending(submit ? 'send' : 'input');
     try {
-      if (!(await ensureControl())) return;
       focusFrame();
       await api.typeInInstance(id, imeText, { submit, submitKey: imeSubmitKey });
       setImeText('');
@@ -74,7 +69,7 @@ export function useImeComposer({
     imeSending,
     imeSubmitKey,
     setImeSubmitKey,
-    imeDisabled: !!imeSending || controlLocked,
+    imeDisabled: !!imeSending,
     sendImeText,
   };
 }
