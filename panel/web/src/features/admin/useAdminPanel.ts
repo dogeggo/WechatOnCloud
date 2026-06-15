@@ -1,0 +1,229 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api, type InstanceWithStatus, type LoggedInDevice, type OrphanContainer, type OrphanVolume } from '../../api';
+import {
+  isWechatBusy,
+  lifecycleBusyLabel,
+  lifecycleDoneMessage,
+  type LifecycleAction,
+  type WechatInstallAction,
+  wechatActionDoneMessage,
+} from '../../domain/instances';
+import { deviceName } from '../../domain/devices';
+import { errorMessage } from '../../utils/errors';
+import { isVncKeepAliveEnabled, setVncKeepAliveEnabled } from '../../vncKeepAlive';
+import { useUI } from '../../ui';
+
+function patchActionLabel(actions: Record<string, string>, id: string, label: string | null): Record<string, string> {
+  const next = { ...actions };
+  if (label) next[id] = label;
+  else delete next[id];
+  return next;
+}
+
+export function useAdminPanel() {
+  const { toast, confirm } = useUI();
+  const [instances, setInstances] = useState<InstanceWithStatus[]>([]);
+  const [devices, setDevices] = useState<LoggedInDevice[]>([]);
+  const [orphanVolumes, setOrphanVolumes] = useState<OrphanVolume[]>([]);
+  const [orphanContainers, setOrphanContainers] = useState<OrphanContainer[]>([]);
+  const [vncKeepAlive, setVncKeepAlive] = useState<Record<string, boolean>>({});
+  const [acting, setActing] = useState<Record<string, string>>({});
+  const [err, setErr] = useState('');
+  const timer = useRef<number | undefined>(undefined);
+
+  const setAct = useCallback((id: string, label: string | null) => {
+    setActing((actions) => patchActionLabel(actions, id, label));
+  }, []);
+
+  const loadInstances = useCallback(async () => {
+    const result = await api.listInstances();
+    setInstances(result.instances);
+    setVncKeepAlive(Object.fromEntries(result.instances.map((inst) => [inst.id, isVncKeepAliveEnabled(inst.id)])));
+  }, []);
+
+  const refreshOrphanVolumes = useCallback(async () => {
+    const { volumes } = await api.listOrphanVolumes();
+    setOrphanVolumes(volumes);
+  }, []);
+
+  const load = useCallback(async () => {
+    setErr('');
+    const tasks = [
+      loadInstances(),
+      api.listLoggedInDevices().then(({ devices }) => setDevices(devices)),
+      refreshOrphanVolumes(),
+      api.listOrphanContainers().then(({ containers }) => setOrphanContainers(containers)),
+    ];
+    const results = await Promise.allSettled(tasks);
+    const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (rejected) setErr(errorMessage(rejected.reason, '读取管理数据失败'));
+  }, [loadInstances, refreshOrphanVolumes]);
+
+  useEffect(() => {
+    void load();
+    return () => window.clearTimeout(timer.current);
+  }, [load]);
+
+  useEffect(() => {
+    window.clearTimeout(timer.current);
+    if (instances.some((inst) => isWechatBusy(inst.wechat.phase))) {
+      timer.current = window.setTimeout(() => void load(), 1500);
+    }
+    return () => window.clearTimeout(timer.current);
+  }, [instances, load]);
+
+  const removeDevice = useCallback(
+    async (device: LoggedInDevice) => {
+      const ok = await confirm({
+        title: device.current ? '移除当前设备？' : `移除「${deviceName(device.userAgent)}」？`,
+        body: device.current
+          ? '当前浏览器会立即退出登录，需要重新 OIDC 登录后才能继续访问面板。'
+          : '该设备上的面板登录态会失效；如果仍在使用，下次操作时会回到登录页。',
+        danger: true,
+        confirmText: device.current ? '移除并退出' : '移除设备',
+      });
+      if (!ok) return;
+      try {
+        const result = await api.removeLoggedInDevice(device.id);
+        toast(device.current || result.current ? '已移除当前设备' : '已移除登录设备', 'ok');
+        if (device.current || result.current) {
+          window.location.assign('/login');
+          return;
+        }
+        setDevices((list) => list.filter((item) => item.id !== device.id));
+      } catch (error) {
+        toast(errorMessage(error, '移除失败'), 'error');
+      }
+    },
+    [confirm, toast],
+  );
+
+  const removeOrphanContainer = useCallback(
+    async (container: OrphanContainer) => {
+      const ok = await confirm({
+        title: `删除残留容器「${container.name}」？`,
+        body: '此容器不属于任何登记实例。删除不会动数据卷，删后才能继续清理同名旧数据卷。',
+        danger: true,
+        confirmText: '删除容器',
+      });
+      if (!ok) return;
+      try {
+        await api.deleteOrphanContainer(container.id);
+        toast('已删除残留容器，可继续清理数据卷', 'ok');
+        setOrphanContainers((containers) => containers.filter((item) => item.id !== container.id));
+        await refreshOrphanVolumes();
+      } catch (error) {
+        toast(errorMessage(error, '删除失败'), 'error');
+      }
+    },
+    [confirm, refreshOrphanVolumes, toast],
+  );
+
+  const removeOrphanVolume = useCallback(
+    async (name: string) => {
+      const ok = await confirm({
+        title: `彻底删除数据卷「${name}」？`,
+        body: '该卷里保存的微信本地数据（聊天记录缓存等）将永久消失，无法恢复。',
+        danger: true,
+        confirmText: '彻底删除',
+      });
+      if (!ok) return;
+      try {
+        await api.deleteOrphanVolume(name);
+        toast('已删除数据卷', 'ok');
+        setOrphanVolumes((volumes) => volumes.filter((volume) => volume.name !== name));
+      } catch (error) {
+        toast(errorMessage(error, '删除失败'), 'error');
+      }
+    },
+    [confirm, toast],
+  );
+
+  const triggerWechat = useCallback(
+    async (inst: InstanceWithStatus, action: WechatInstallAction) => {
+      try {
+        if (action === 'install') await api.instanceWechatInstall(inst.id);
+        else await api.instanceWechatUpdate(inst.id);
+        setInstances((list) =>
+          list.map((item) =>
+            item.id === inst.id
+              ? { ...item, wechat: { ...item.wechat, phase: 'downloading', percent: -1, message: '正在准备...' } }
+              : item,
+          ),
+        );
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => void load(), 1000);
+        toast(wechatActionDoneMessage(action), 'ok');
+      } catch (error) {
+        toast(errorMessage(error, '操作失败'), 'error');
+      }
+    },
+    [load, toast],
+  );
+
+  const startInstance = useCallback(
+    async (inst: InstanceWithStatus) => {
+      setAct(inst.id, '启动中...');
+      try {
+        await api.instanceStart(inst.id);
+        toast('实例已启动', 'ok');
+        await load();
+      } catch (error) {
+        toast(errorMessage(error, '启动失败'), 'error');
+      } finally {
+        setAct(inst.id, null);
+      }
+    },
+    [load, setAct, toast],
+  );
+
+  const runLifecycle = useCallback(
+    async (inst: InstanceWithStatus, action: LifecycleAction) => {
+      setAct(inst.id, lifecycleBusyLabel(action));
+      if (action === 'upgrade') toast('正在升级实例：拉取最新镜像并重建，可能需要几分钟，请勿离开...', 'info');
+      try {
+        if (action === 'stop') await api.instanceStop(inst.id);
+        else if (action === 'upgrade') await api.instanceUpgrade(inst.id);
+        else await api.instanceRestart(inst.id);
+        toast(lifecycleDoneMessage(action), 'ok');
+        await load();
+      } catch (error) {
+        toast(errorMessage(error, '操作失败'), 'error');
+      } finally {
+        setAct(inst.id, null);
+      }
+    },
+    [load, setAct, toast],
+  );
+
+  const toggleVncKeepAlive = useCallback(
+    (inst: InstanceWithStatus, enabled: boolean) => {
+      try {
+        setVncKeepAliveEnabled(inst.id, enabled);
+        setVncKeepAlive((prefs) => ({ ...prefs, [inst.id]: enabled }));
+        toast(enabled ? '已开启 VNC 常驻' : '已关闭 VNC 常驻', 'ok');
+      } catch (error) {
+        toast(errorMessage(error, '保存 VNC 常驻设置失败'), 'error');
+      }
+    },
+    [toast],
+  );
+
+  return {
+    instances,
+    devices,
+    orphanVolumes,
+    orphanContainers,
+    vncKeepAlive,
+    acting,
+    err,
+    load,
+    removeDevice,
+    removeOrphanContainer,
+    removeOrphanVolume,
+    triggerWechat,
+    startInstance,
+    runLifecycle,
+    toggleVncKeepAlive,
+  };
+}

@@ -4,7 +4,7 @@ import http from "node:http";
 import { PassThrough, Readable, Transform } from "node:stream";
 import zlib from "node:zlib";
 import Docker from "dockerode";
-import type { Instance } from "./store.js";
+import type { Instance } from "../instance/store.js";
 import {
   assertInstanceId,
   assertProjectContainerName,
@@ -15,7 +15,7 @@ import {
   normalizeDockerNetworkName,
   parseIdFromContainerName,
   parseIdFromVolumeName,
-} from "./resource-guard.js";
+} from "../instance/resource-guard.js";
 
 function assertDockerImageRef(image: string): string {
   const ref = image.trim();

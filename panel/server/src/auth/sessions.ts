@@ -96,7 +96,7 @@ function persistSessions() {
 }
 
 function asTimestamp(v: unknown): number | null {
-  const n = typeof v === 'number' ? v : Number(v);
+  const n = typeof v === 'number' ? v : NaN;
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
@@ -111,28 +111,42 @@ function asUser(v: any): AuthUser | null {
   return { sub, email, username, name, picture };
 }
 
-function loadSessions() {
-  if (!existsSync(FILE)) return;
-  const raw = JSON.parse(readFileSync(FILE, 'utf8'));
-  const rows = Array.isArray(raw?.sessions) ? raw.sessions : [];
-  const now = Date.now();
-  for (const row of rows) {
-    const tokenHash = String(row?.tokenHash || '').trim();
-    const id = String(row?.id || '').trim();
-    const user = asUser(row?.user);
-    const createdAt = asTimestamp(row?.createdAt);
-    const lastSeenAt = asTimestamp(row?.lastSeenAt);
-    const expires = asTimestamp(row?.expires);
-    if (!/^[0-9a-f]{64}$/.test(tokenHash) || !/^[0-9a-f]{16}$/.test(id)) continue;
-    if (!user || createdAt == null || lastSeenAt == null || expires == null || expires < now) continue;
-    sessions.set(tokenHash, {
+function assertLoadedSession(row: any) {
+  if (!row || typeof row !== 'object') throw new Error('会话数据格式不合法');
+  const tokenHash = String(row.tokenHash || '').trim();
+  const id = String(row.id || '').trim();
+  const user = asUser(row.user);
+  const createdAt = asTimestamp(row.createdAt);
+  const lastSeenAt = asTimestamp(row.lastSeenAt);
+  const expires = asTimestamp(row.expires);
+  if (!/^[0-9a-f]{64}$/.test(tokenHash)) throw new Error('会话 tokenHash 不合法');
+  if (!/^[0-9a-f]{16}$/.test(id)) throw new Error('会话 ID 不合法');
+  if (!user) throw new Error('会话用户数据不合法');
+  if (createdAt == null || lastSeenAt == null || expires == null) throw new Error('会话时间字段不合法');
+  return {
+    tokenHash,
+    session: {
       id,
       user,
       createdAt,
       lastSeenAt,
       expires,
-      ...cleanMeta({ ip: row?.ip, userAgent: row?.userAgent }),
-    });
+      ...cleanMeta({ ip: row.ip, userAgent: row.userAgent }),
+    },
+  };
+}
+
+function loadSessions() {
+  if (!existsSync(FILE)) return;
+  const raw = JSON.parse(readFileSync(FILE, 'utf8'));
+  if (!raw || typeof raw !== 'object' || raw.version !== 1 || !Array.isArray(raw.sessions)) {
+    throw new Error('会话数据文件格式不合法');
+  }
+  const now = Date.now();
+  for (const row of raw.sessions) {
+    const loaded = assertLoadedSession(row);
+    if (loaded.session.expires < now) continue;
+    sessions.set(loaded.tokenHash, loaded.session);
   }
 }
 

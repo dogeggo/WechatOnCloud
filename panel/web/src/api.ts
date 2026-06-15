@@ -1,3 +1,5 @@
+import { payloadErrorMessage } from './utils/errors';
+
 export interface PanelUser {
   sub: string;
   email: string;
@@ -15,6 +17,10 @@ export interface LoggedInDevice {
   ip: string;
   userAgent: string;
   current: boolean;
+}
+export interface DesktopFile {
+  name: string;
+  size: number;
 }
 
 export type WechatPhase = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error';
@@ -35,6 +41,17 @@ export interface PanelInstance {
   createdBy: string;
   memSoftLimitMB?: number;
   memHardLimitMB?: number;
+}
+export interface OrphanVolume {
+  name: string;
+  createdAt?: string;
+  sizeBytes?: number;
+}
+export interface OrphanContainer {
+  id: string;
+  name: string;
+  status: string;
+  volumeName?: string;
 }
 export interface MemLimits {
   soft: number | null;
@@ -58,19 +75,27 @@ export interface VolEntry {
 }
 
 // 原始二进制上传（File 直传 application/octet-stream），用于数据卷上传/解压/恢复
-async function rawUpload(url: string, file: File): Promise<any> {
+async function readJson(res: Response): Promise<unknown> {
+  return res.json();
+}
+
+function buildError(data: unknown, status: number): Error {
+  return new Error(payloadErrorMessage(data) || `请求失败 (${status})`);
+}
+
+async function rawUpload<T = unknown>(url: string, file: File, errorText = '上传失败'): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/octet-stream' },
     body: file,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any).error || `请求失败 (${res.status})`);
-  return data;
+  const data = await readJson(res);
+  if (!res.ok) throw new Error(payloadErrorMessage(data) || errorText);
+  return data as T;
 }
 
-async function req<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
+async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
   // 仅在有 body 时声明 JSON content-type：否则 Fastify 对「空 body + application/json」会报 400
   const headers = opts.body ? { 'content-type': 'application/json', ...opts.headers } : opts.headers;
   const res = await fetch(path, {
@@ -78,14 +103,14 @@ async function req<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
     ...opts,
     headers,
   });
-  const data = await res.json().catch(() => ({}));
+  const data = await readJson(res);
   if (!res.ok) {
     // 会话过期：除登录/探测接口外，任意接口收到 401 都说明 cookie 失效，直接回登录页（避免页面卡在错误态）
     const isAuthProbe = path.includes('/api/auth/login') || path.includes('/api/auth/me');
     if (res.status === 401 && !isAuthProbe && location.pathname !== '/login') {
       location.assign('/login');
     }
-    throw new Error((data as any).error || `请求失败 (${res.status})`);
+    throw buildError(data, res.status);
   }
   return data as T;
 }
@@ -114,11 +139,11 @@ export const api = {
       body: JSON.stringify({ soft, hard }),
     }),
   listOrphanVolumes: () =>
-    req<{ volumes: { name: string; createdAt?: string; sizeBytes?: number }[] }>('/api/admin/orphan-volumes'),
+    req<{ volumes: OrphanVolume[] }>('/api/admin/orphan-volumes'),
   deleteOrphanVolume: (name: string) =>
     req(`/api/admin/orphan-volumes/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   listOrphanContainers: () =>
-    req<{ containers: { id: string; name: string; status: string; volumeName?: string }[] }>('/api/admin/orphan-containers'),
+    req<{ containers: OrphanContainer[] }>('/api/admin/orphan-containers'),
   deleteOrphanContainer: (idOrName: string) =>
     req(`/api/admin/orphan-containers/${encodeURIComponent(idOrName)}`, { method: 'DELETE' }),
   renameInstance: (id: string, name: string) =>
@@ -135,17 +160,9 @@ export const api = {
   instanceLogsUrl: (id: string) => `/api/admin/instances/${id}/logs`,
 
   // 文件中转
-  listFiles: (id: string) => req<{ files: { name: string; size: number }[] }>(`/api/instances/${id}/files`),
-  uploadFile: async (id: string, file: File) => {
-    const res = await fetch(`/api/instances/${id}/upload?name=${encodeURIComponent(file.name)}`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/octet-stream' },
-      body: file,
-    });
-    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as any).error || '上传失败');
-    return res.json();
-  },
+  listFiles: (id: string) => req<{ files: DesktopFile[] }>(`/api/instances/${id}/files`),
+  uploadFile: (id: string, file: File) =>
+    rawUpload(`/api/instances/${id}/upload?name=${encodeURIComponent(file.name)}`, file, '上传失败'),
   downloadFileUrl: (id: string, name: string) => `/api/instances/${id}/download?name=${encodeURIComponent(name)}`,
   deleteFile: (id: string, name: string) => req(`/api/instances/${id}/files?name=${encodeURIComponent(name)}`, { method: 'DELETE' }),
 

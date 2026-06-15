@@ -31,6 +31,12 @@ const FILE = '/data/accounts.json';
 
 let data: Data = { instances: [] };
 
+export function normalizeInstanceName(name: string): string {
+  const n = String(name || '').trim();
+  if (!n || n.length > 30) throw new Error('实例名称为 1-30 个字符');
+  return n;
+}
+
 function newInstanceId(): string {
   for (let i = 0; i < 20; i++) {
     const id = randomBytes(5).toString('hex');
@@ -58,10 +64,57 @@ function persist() {
   renameSync(tmp, FILE);
 }
 
+function asString(v: unknown, name: string): string {
+  if (typeof v !== 'string' || !v.trim()) throw new Error(`${name} 不能为空`);
+  return v.trim();
+}
+
+function asOptionalLimit(v: unknown, name: string): number | undefined {
+  if (v == null) return undefined;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 20480) {
+    throw new Error(`${name} 需为 1-20480 之间的整数（MiB）`);
+  }
+  return v;
+}
+
+function parseInstance(raw: any): Instance {
+  if (!raw || typeof raw !== 'object') throw new Error('实例数据格式不合法');
+  const id = asString(raw.id, '实例 ID');
+  const name = normalizeInstanceName(asString(raw.name, '实例名称'));
+  const containerName = asString(raw.containerName, '容器名');
+  const volumeName = asString(raw.volumeName, '数据卷名');
+  const kasmUser = asString(raw.kasmUser, 'Kasm 用户名');
+  const kasmPassword = asString(raw.kasmPassword, 'Kasm 密码');
+  const createdAt = new Date(asString(raw.createdAt, '创建时间')).toISOString();
+  const createdBy = asString(raw.createdBy, '创建者');
+  const memSoftLimitMB = asOptionalLimit(raw.memSoftLimitMB, 'soft 阈值');
+  const memHardLimitMB = asOptionalLimit(raw.memHardLimitMB, 'hard 阈值');
+  const inst: Instance = {
+    id,
+    name,
+    containerName,
+    volumeName,
+    kasmUser,
+    kasmPassword,
+    createdAt,
+    createdBy,
+    memSoftLimitMB,
+    memHardLimitMB,
+  };
+  assertResourceIdMatch(inst.id, inst.containerName, inst.volumeName);
+  if (inst.memSoftLimitMB != null && inst.memHardLimitMB != null && inst.memSoftLimitMB >= inst.memHardLimitMB) {
+    throw new Error('soft 阈值需小于 hard 阈值');
+  }
+  return inst;
+}
+
 export function initStore() {
   if (existsSync(FILE)) {
     const raw = JSON.parse(readFileSync(FILE, 'utf8'));
-    data = { instances: Array.isArray(raw.instances) ? raw.instances : [] };
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.instances)) {
+      throw new Error('账户数据文件格式不合法');
+    }
+    data = { instances: raw.instances.map(parseInstance) };
   } else {
     data = { instances: [] };
   }
@@ -127,9 +180,10 @@ export function createInstance(
     id = reusedId;
     volumeName = reuseVolumeName;
   }
+  const displayName = normalizeInstanceName(name);
   const inst: Instance = {
     id,
-    name: name.trim() || `微信-${id.slice(0, 4)}`,
+    name: displayName,
     containerName: `woc-wx-${id}`,
     volumeName,
     kasmUser: 'woc',
@@ -147,9 +201,7 @@ export function createInstance(
 export function renameInstance(id: string, name: string) {
   const inst = findInstance(id);
   if (!inst) throw new Error('实例不存在');
-  const n = (name || '').trim();
-  if (!n || n.length > 30) throw new Error('实例名称为 1-30 个字符');
-  inst.name = n;
+  inst.name = normalizeInstanceName(name);
   persist();
   return publicInstance(inst);
 }
@@ -181,7 +233,16 @@ export function registerExistingInstance(opts: {
   if (findInstance(containerId)) throw new Error('实例已存在');
   const id = containerId;
   assertResourceIdMatch(id, opts.containerName, opts.volumeName);
-  const inst: Instance = { id, createdAt: new Date().toISOString(), ...opts };
+  const inst: Instance = {
+    id,
+    name: normalizeInstanceName(opts.name),
+    containerName: opts.containerName,
+    volumeName: opts.volumeName,
+    kasmUser: asString(opts.kasmUser, 'Kasm 用户名'),
+    kasmPassword: asString(opts.kasmPassword, 'Kasm 密码'),
+    createdAt: new Date().toISOString(),
+    createdBy: asString(opts.createdBy, '创建者'),
+  };
   data.instances.push(inst);
   persist();
   return inst;

@@ -1,297 +1,51 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type InstanceWithStatus, type LoggedInDevice, type VolEntry } from '../api';
+import { api, type InstanceWithStatus, type VolEntry } from '../api';
+import { EmptyState } from '../components/EmptyState';
+import { Icons } from '../components/icons';
+import { adminCardState, type WechatInstallAction } from '../domain/instances';
+import { deviceName } from '../domain/devices';
+import { joinVolumePath } from '../domain/volumePaths';
+import { useCreateInstance } from '../features/admin/useCreateInstance';
+import { useAdminPanel } from '../features/admin/useAdminPanel';
+import { useDeleteInstance } from '../features/admin/useDeleteInstance';
+import { useInstanceRename } from '../features/admin/useInstanceRename';
+import { useInstanceSecurity } from '../features/admin/useInstanceSecurity';
+import { useVolumeManager } from '../features/admin/useVolumeManager';
 import { useUI } from '../ui';
-import { isVncKeepAliveEnabled, setVncKeepAliveEnabled } from '../vncKeepAlive';
-
-const BUSY_PHASES = ['downloading', 'extracting', 'installing'];
-
-function fmtBytes(n: number): string {
-  if (!n) return '0 B';
-  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${u[i]}`;
-}
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  const p = (x: number) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-function fmtIsoDate(s: string): string {
-  const ms = Date.parse(s);
-  return Number.isFinite(ms) ? fmtDate(ms) : '未知';
-}
-function browserName(ua: string): string {
-  if (/MicroMessenger/i.test(ua)) return '微信内置浏览器';
-  if (/Edg\//i.test(ua)) return 'Edge';
-  if (/Firefox\//i.test(ua)) return 'Firefox';
-  if (/CriOS\//i.test(ua) || /Chrome\//i.test(ua)) return 'Chrome';
-  if (/Safari\//i.test(ua)) return 'Safari';
-  return '未知浏览器';
-}
-function osName(ua: string): string {
-  if (/Windows NT/i.test(ua)) return 'Windows';
-  if (/Android/i.test(ua)) return 'Android';
-  if (/iPhone/i.test(ua)) return 'iPhone';
-  if (/iPad/i.test(ua)) return 'iPad';
-  if (/Mac OS X/i.test(ua)) return 'macOS';
-  if (/Linux/i.test(ua)) return 'Linux';
-  return '未知系统';
-}
-function deviceName(userAgent: string): string {
-  const ua = userAgent || '';
-  return `${browserName(ua)} · ${osName(ua)}`;
-}
-
-const MenuIcon = (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M4 6h16M4 12h16M4 18h16" />
-  </svg>
-);
-
-// 折叠菜单的展开箭头
-const CaretIcon = (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-);
-
-// 数据卷文件浏览器用的小图标（线性 SVG，统一描边风格，替代渲染不一致的 emoji）
-const svgIcon = (children: JSX.Element, size = 16) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    {children}
-  </svg>
-);
-const FolderIcon = svgIcon(<path d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />, 18);
-const FileIcon = svgIcon(
-  <>
-    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-    <path d="M14 3v5h5" />
-  </>,
-  18,
-);
-const DownloadIcon = svgIcon(
-  <>
-    <path d="M12 3v12" />
-    <path d="M7 11l5 5 5-5" />
-    <path d="M5 21h14" />
-  </>,
-);
-const EditIcon = svgIcon(
-  <>
-    <path d="M12 20h9" />
-    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
-  </>,
-);
-const TrashIcon = svgIcon(
-  <>
-    <path d="M3 6h18" />
-    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-    <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
-  </>,
-);
-
-// 友好空状态：圆形图标 + 标题 + 说明 + 可选引导按钮（沿用首页 .empty-state 样式）
-function EmptyState({ icon, title, sub, action }: { icon: string; title: string; sub?: string; action?: JSX.Element }) {
-  return (
-    <div className="empty-state">
-      <div className="empty-blob">{icon}</div>
-      <div className="empty-title">{title}</div>
-      {sub && <div className="empty-sub">{sub}</div>}
-      {action && <div className="empty-action">{action}</div>}
-    </div>
-  );
-}
+import { formatBytes, formatDate, formatIsoDate, formatMiB } from '../utils/format';
 
 export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const nav = useNavigate();
-  const { toast, confirm } = useUI();
-  const [instances, setInstances] = useState<InstanceWithStatus[]>([]);
-  const [err, setErr] = useState('');
+  const { toast } = useUI();
+  const {
+    instances,
+    devices,
+    orphanVolumes,
+    orphanContainers,
+    vncKeepAlive,
+    acting,
+    err,
+    load,
+    removeDevice,
+    removeOrphanContainer,
+    removeOrphanVolume,
+    triggerWechat,
+    startInstance,
+    runLifecycle,
+    toggleVncKeepAlive,
+  } = useAdminPanel();
   const [creatingInst, setCreatingInst] = useState(false);
   const [deleteInst, setDeleteInst] = useState<InstanceWithStatus | null>(null); // 删除实例弹窗
   const [renameInst, setRenameInst] = useState<InstanceWithStatus | null>(null); // 重命名实例弹窗
   const [securityInst, setSecurityInst] = useState<InstanceWithStatus | null>(null); // 安全（内存阈值）弹窗
   const [volumeInst, setVolumeInst] = useState<InstanceWithStatus | null>(null); // 数据卷管理弹窗
-  const [acting, setActing] = useState<Record<string, string>>({}); // 实例 id → 进行中的动作文案（启动中/升级中…）
-  const [vncKeepAlive, setVncKeepAlive] = useState<Record<string, boolean>>({});
-  // 未使用的旧数据卷（来自之前删实例时未勾选"彻底清除"）：允许复用以继承聊天记录，或显式删除。
-  const [orphanVols, setOrphanVols] = useState<{ name: string; createdAt?: string; sizeBytes?: number }[]>([]);
-  // 残留 woc-wx-* 容器（runInstance 启动失败遗留的 Created 容器等）：占着卷名让删卷报 409。
-  const [orphanConts, setOrphanConts] = useState<{ id: string; name: string; status: string; volumeName?: string }[]>([]);
-  const [devices, setDevices] = useState<LoggedInDevice[]>([]);
-  const setAct = (id: string, label: string | null) =>
-    setActing((a) => {
-      const n = { ...a };
-      if (label) n[id] = label;
-      else delete n[id];
-      return n;
-    });
-
-  const timer = useRef<number | undefined>(undefined);
-
-  const load = async () => {
-    try {
-      const { instances } = await api.listInstances();
-      setInstances(instances);
-      setVncKeepAlive(Object.fromEntries(instances.map((i) => [i.id, isVncKeepAliveEnabled(i.id)])));
-    } catch (e: any) {
-      setErr(e.message);
-    }
-    try {
-      const { devices } = await api.listLoggedInDevices();
-      setDevices(devices);
-    } catch {
-      /* ignore */
-    }
-    // 孤儿卷 / 残留容器独立 catch：docker 接口失败不应阻塞用户/实例视图
-    try {
-      const { volumes } = await api.listOrphanVolumes();
-      setOrphanVols(volumes);
-    } catch {
-      /* ignore */
-    }
-    try {
-      const { containers } = await api.listOrphanContainers();
-      setOrphanConts(containers);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const removeDevice = async (d: LoggedInDevice) => {
-    const ok = await confirm({
-      title: d.current ? '移除当前设备？' : `移除「${deviceName(d.userAgent)}」？`,
-      body: d.current ? '当前浏览器会立即退出登录，需要重新 OIDC 登录后才能继续访问面板。' : '该设备上的面板登录态会失效；如果仍在使用，下次操作时会回到登录页。',
-      danger: true,
-      confirmText: d.current ? '移除并退出' : '移除设备',
-    });
-    if (!ok) return;
-    try {
-      const r = await api.removeLoggedInDevice(d.id);
-      toast(d.current || r.current ? '已移除当前设备' : '已移除登录设备', 'ok');
-      if (d.current || r.current) {
-        location.assign('/login');
-        return;
-      }
-      setDevices((list) => list.filter((x) => x.id !== d.id));
-    } catch (e: any) {
-      toast(e.message || '移除失败', 'error');
-    }
-  };
-
-  const removeOrphanCont = async (c: { id: string; name: string }) => {
-    const ok = await confirm({
-      title: `删除残留容器「${c.name}」？`,
-      body: '此容器不属于任何登记实例（多为创建失败遗留）。删除不会动数据卷，删后才能继续清理同名旧数据卷。',
-      danger: true,
-      confirmText: '删除容器',
-    });
-    if (!ok) return;
-    try {
-      await api.deleteOrphanContainer(c.id);
-      toast('已删除残留容器，可继续清理数据卷', 'ok');
-      setOrphanConts((cs) => cs.filter((x) => x.id !== c.id));
-      // 容器走了之后，原本被它占着的卷可能从"被引用"翻成"孤儿"，刷新一次
-      try {
-        const { volumes } = await api.listOrphanVolumes();
-        setOrphanVols(volumes);
-      } catch {
-        /* ignore */
-      }
-    } catch (e: any) {
-      toast(e.message || '删除失败', 'error');
-    }
-  };
-
-  const removeOrphanVol = async (name: string) => {
-    const ok = await confirm({
-      title: `彻底删除数据卷「${name}」？`,
-      body: '该卷里保存的微信本地数据（聊天记录缓存等）将永久消失，无法恢复。',
-      danger: true,
-      confirmText: '彻底删除',
-    });
-    if (!ok) return;
-    try {
-      await api.deleteOrphanVolume(name);
-      toast('已删除数据卷', 'ok');
-      setOrphanVols((vs) => vs.filter((v) => v.name !== name));
-    } catch (e: any) {
-      toast(e.message || '删除失败', 'error');
-    }
-  };
-
-  useEffect(() => {
-    load();
-    return () => window.clearTimeout(timer.current);
-  }, []);
-
-  // 安装/更新进行中时轮询进度
-  useEffect(() => {
-    window.clearTimeout(timer.current);
-    if (instances.some((i) => BUSY_PHASES.includes(i.wechat.phase))) timer.current = window.setTimeout(load, 1500);
-    return () => window.clearTimeout(timer.current);
-  }, [instances]);
-
-  const trigger = async (inst: InstanceWithStatus, kind: 'install' | 'update') => {
-    try {
-      await (kind === 'install' ? api.instanceWechatInstall(inst.id) : api.instanceWechatUpdate(inst.id));
-      setInstances((list) =>
-        list.map((i) =>
-          i.id === inst.id ? { ...i, wechat: { ...i.wechat, phase: 'downloading', percent: -1, message: '正在准备…' } } : i,
-        ),
-      );
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(load, 1000);
-      toast(kind === 'install' ? '已开始下载微信' : '已开始更新', 'ok');
-    } catch (e: any) {
-      toast(e.message || '操作失败', 'error');
-    }
-  };
-
-  const start = async (inst: InstanceWithStatus) => {
-    setAct(inst.id, '启动中…');
-    try {
-      await api.instanceStart(inst.id);
-      toast('实例已启动', 'ok');
-      await load();
-    } catch (e: any) {
-      toast(e.message || '启动失败', 'error');
-    } finally {
-      setAct(inst.id, null);
-    }
-  };
-
-  const lifecycle = async (inst: InstanceWithStatus, kind: 'stop' | 'restart' | 'upgrade') => {
-    const label = kind === 'stop' ? '停止中…' : kind === 'upgrade' ? '升级中…' : '重启中…';
-    setAct(inst.id, label);
-    if (kind === 'upgrade') toast('正在升级实例：拉取最新镜像并重建，可能需要几分钟，请勿离开…', 'info');
-    try {
-      await (kind === 'stop' ? api.instanceStop(inst.id) : kind === 'upgrade' ? api.instanceUpgrade(inst.id) : api.instanceRestart(inst.id));
-      toast(kind === 'stop' ? '已停止' : kind === 'upgrade' ? '已升级到最新镜像并重启' : '已重启', 'ok');
-      await load();
-    } catch (e: any) {
-      toast(e.message || '操作失败', 'error');
-    } finally {
-      setAct(inst.id, null);
-    }
-  };
-
-  const toggleVncKeepAlive = (inst: InstanceWithStatus, enabled: boolean) => {
-    try {
-      setVncKeepAliveEnabled(inst.id, enabled);
-      setVncKeepAlive((prefs) => ({ ...prefs, [inst.id]: enabled }));
-      toast(enabled ? '已开启 VNC 常驻' : '已关闭 VNC 常驻', 'ok');
-    } catch (e: any) {
-      toast(e?.message || '保存 VNC 常驻设置失败', 'error');
-    }
-  };
 
   return (
     <div className="ws-page">
       <header className="ws-head">
         <button className="ws-menu" onClick={onOpenMenu} aria-label="菜单">
-          {MenuIcon}
+          {Icons.menu}
         </button>
         <span className="ws-title">管理</span>
       </header>
@@ -324,11 +78,11 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 inst={inst}
                 acting={acting[inst.id]}
                 onEnter={() => nav(`/i/${inst.id}`)}
-                onTrigger={trigger}
-                onStart={() => start(inst)}
-                onStop={() => lifecycle(inst, 'stop')}
-                onRestart={() => lifecycle(inst, 'restart')}
-                onUpgrade={() => lifecycle(inst, 'upgrade')}
+                onTrigger={triggerWechat}
+                onStart={() => startInstance(inst)}
+                onStop={() => runLifecycle(inst, 'stop')}
+                onRestart={() => runLifecycle(inst, 'restart')}
+                onUpgrade={() => runLifecycle(inst, 'upgrade')}
                 onRename={() => setRenameInst(inst)}
                 onDelete={() => setDeleteInst(inst)}
                 onSecurity={() => setSecurityInst(inst)}
@@ -358,9 +112,9 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 </div>
                 <div className="device-meta">
                   <div>IP：{d.ip || 'unknown'}</div>
-                  <div>最近活动：{fmtIsoDate(d.lastSeenAt)}</div>
-                  <div>登录时间：{fmtIsoDate(d.createdAt)}</div>
-                  <div>过期时间：{fmtIsoDate(d.expiresAt)}</div>
+                  <div>最近活动：{formatIsoDate(d.lastSeenAt)}</div>
+                  <div>登录时间：{formatIsoDate(d.createdAt)}</div>
+                  <div>过期时间：{formatIsoDate(d.expiresAt)}</div>
                   <div className="device-ua" title={d.userAgent}>{d.userAgent}</div>
                 </div>
                 <div className="inst-admin-links">
@@ -373,14 +127,14 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
           )}
         </div>
 
-        {orphanConts.length > 0 && (
+        {orphanContainers.length > 0 && (
           <>
             <div className="section-row" style={{ marginTop: 22 }}>
               <span className="section-title">残留容器</span>
               <span className="muted small">不属于任何登记实例（多为创建失败遗留）；它们占着数据卷名，需先清理它们才能删除同名数据卷。</span>
             </div>
             <div className="inst-grid">
-              {orphanConts.map((c) => (
+              {orphanContainers.map((c) => (
                 <div key={c.id} className="inst-card">
                   <div className="inst-head">
                     <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{c.name}</span>
@@ -392,7 +146,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                     </div>
                   )}
                   <div className="inst-admin-links">
-                    <button className="btn-text danger" onClick={() => removeOrphanCont(c)}>
+                    <button className="btn-text danger" onClick={() => removeOrphanContainer(c)}>
                       删除容器
                     </button>
                   </div>
@@ -401,27 +155,27 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
             </div>
           </>
         )}
-        {orphanVols.length > 0 && (
+        {orphanVolumes.length > 0 && (
           <>
             <div className="section-row" style={{ marginTop: 22 }}>
               <span className="section-title">未使用的数据卷</span>
               <span className="muted small">删除实例时未勾选「彻底清除」会保留下来；可在新建实例时复用以继承聊天记录。</span>
             </div>
             <div className="inst-grid">
-              {orphanVols.map((v) => (
+              {orphanVolumes.map((v) => (
                 <div key={v.name} className="inst-card">
                   <div className="inst-head">
                     <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{v.name}</span>
                   </div>
                   <div className="inst-sub">
                     {v.createdAt ? `创建于 ${v.createdAt.slice(0, 10)}` : '创建时间未知'}
-                    {typeof v.sizeBytes === 'number' ? `　·　${(v.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ''}
+                    {typeof v.sizeBytes === 'number' ? `　·　${formatMiB(v.sizeBytes)}` : ''}
                   </div>
                   <div className="inst-admin-links">
                     <button className="btn-text" onClick={() => setCreatingInst(true)} title="去「新建实例」对话框，在「数据卷」下拉里选择复用此卷">
                       复用为新实例
                     </button>
-                    <button className="btn-text danger" onClick={() => removeOrphanVol(v.name)}>
+                    <button className="btn-text danger" onClick={() => removeOrphanVolume(v.name)}>
                       彻底删除
                     </button>
                   </div>
@@ -481,33 +235,18 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
 }
 
 function RenameInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: () => void }) {
-  const [name, setName] = useState(inst.name);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr('');
-    setBusy(true);
-    try {
-      await api.renameInstance(inst.id, name.trim());
-      onDone();
-    } catch (e: any) {
-      setErr(e.message || '重命名失败');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const form = useInstanceRename(inst, onDone);
   return (
     <div className="modal-mask" onClick={onClose}>
-      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={form.submit}>
         <h2>重命名实例</h2>
-        <input className="input" placeholder="实例名称" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-        {err && <div className="error">{err}</div>}
+        <input className="input" placeholder="实例名称" value={form.name} onChange={(e) => form.setName(e.target.value)} autoFocus />
+        {form.err && <div className="error">{form.err}</div>}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
             取消
           </button>
-          <button className="btn btn-primary" disabled={busy || !name.trim() || name.trim() === inst.name}>
+          <button className="btn btn-primary" disabled={!form.canSubmit}>
             保存
           </button>
         </div>
@@ -521,113 +260,16 @@ function RenameInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
 // hard：超过即强制重启（无视会话，防止 OOM）
 // 留空 = 使用面板全局默认（来自 env）。
 function InstanceSecurity({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: () => void }) {
-  const { toast, confirm } = useUI();
-  const [data, setData] = useState<import('../api').MemLimits | null>(null);
-  // 输入字段：空串 = "使用默认"（→ 提交时映射为 null）
-  const [softStr, setSoftStr] = useState('');
-  const [hardStr, setHardStr] = useState('');
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [regenBusy, setRegenBusy] = useState(false);
-
-  const regenMachineId = async () => {
-    const ok = await confirm({
-      title: '重置该实例的设备 ID？',
-      body: '会生成一个全新的设备标识（machine-id）并重启实例，相当于"换一台新设备"。微信需要重新扫码登录。适用于该账号被微信判定设备风险、登录即被强制退出的情况。',
-      danger: true,
-      confirmText: '重置并重启',
-    });
-    if (!ok) return;
-    setRegenBusy(true);
-    try {
-      await api.regenMachineId(inst.id);
-      toast('已重置设备 ID，实例正在重启，请稍后重新扫码登录', 'ok');
-      onClose();
-      onDone();
-    } catch (e: any) {
-      toast(e.message || '重置失败', 'error');
-    } finally {
-      setRegenBusy(false);
-    }
-  };
-
-  // 首次加载 + 每 5s 刷新 currentMB（运行实例的实时内存）
-  useEffect(() => {
-    let alive = true;
-    const fetchOnce = async (initial: boolean) => {
-      try {
-        const d = await api.getInstanceMemLimits(inst.id);
-        if (!alive) return;
-        setData(d);
-        if (initial) {
-          setSoftStr(d.soft == null ? '' : String(d.soft));
-          setHardStr(d.hard == null ? '' : String(d.hard));
-          setLoaded(true);
-        }
-      } catch (e: any) {
-        if (alive && initial) {
-          setErr(e?.message || '读取失败');
-          setLoaded(true);
-        }
-      }
-    };
-    fetchOnce(true);
-    const t = window.setInterval(() => fetchOnce(false), 5000);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-    };
-  }, [inst.id]);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr('');
-    const parse = (s: string): number | null => {
-      const t = s.trim();
-      if (t === '') return null;
-      const n = Number(t);
-      if (!Number.isInteger(n)) throw new Error('阈值需为整数（MiB）');
-      return n;
-    };
-    let s: number | null;
-    let h: number | null;
-    try {
-      s = parse(softStr);
-      h = parse(hardStr);
-    } catch (e: any) {
-      setErr(e.message);
-      return;
-    }
-    if (s != null && h != null && s >= h) {
-      setErr('soft 阈值需小于 hard 阈值');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.setInstanceMemLimits(inst.id, s, h);
-      onDone();
-      onClose();
-    } catch (e: any) {
-      setErr(e.message || '保存失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resetToDefault = () => {
-    setSoftStr('');
-    setHardStr('');
-  };
+  const panel = useInstanceSecurity({ inst, onClose, onDone });
 
   return (
     <div className="modal-mask" onClick={onClose}>
-      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={submit} style={{ maxWidth: 460 }}>
+      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={panel.submit} style={{ maxWidth: 460 }}>
         <h2>安全 · {inst.name}</h2>
-        {!loaded ? (
+        {!panel.loaded ? (
           <div className="muted small" style={{ padding: '14px 0' }}>读取中…</div>
-        ) : !data ? (
-          <div className="error">{err || '读取失败'}</div>
+        ) : !panel.data ? (
+          <div className="error">{panel.err || '读取失败'}</div>
         ) : (
           <>
             <div className="muted small" style={{ lineHeight: 1.6 }}>
@@ -641,35 +283,35 @@ function InstanceSecurity({ inst, onClose, onDone }: { inst: InstanceWithStatus;
             <div className="security-status">
               <div className="security-row">
                 <span>当前内存</span>
-                <b>{data.currentMB > 0 ? `${data.currentMB} MiB` : '—'}</b>
+                <b>{panel.data.currentMB > 0 ? `${panel.data.currentMB} MiB` : '—'}</b>
               </div>
               <div className="security-row">
                 <span>面板默认</span>
-                <span className="muted">soft {data.defaultSoft} · hard {data.defaultHard}</span>
+                <span className="muted">soft {panel.data.defaultSoft} · hard {panel.data.defaultHard}</span>
               </div>
               <div className="security-row">
                 <span>巡检间隔</span>
                 <span className="muted">
-                  {data.watchdogEnabled ? `每 ${data.intervalSec}s` : 'watchdog 已关闭'}
+                  {panel.data.watchdogEnabled ? `每 ${panel.data.intervalSec}s` : 'watchdog 已关闭'}
                 </span>
               </div>
             </div>
 
-            <div className="field-label" style={{ marginTop: 12 }}>soft 阈值（留空 = 用默认 {data.defaultSoft}）</div>
+            <div className="field-label" style={{ marginTop: 12 }}>soft 阈值（留空 = 用默认 {panel.data.defaultSoft}）</div>
             <input
               className="input"
               inputMode="numeric"
-              placeholder={`${data.defaultSoft}`}
-              value={softStr}
-              onChange={(e) => setSoftStr(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder={`${panel.data.defaultSoft}`}
+              value={panel.softStr}
+              onChange={(e) => panel.setSoftStr(e.target.value.replace(/[^0-9]/g, ''))}
             />
-            <div className="field-label" style={{ marginTop: 8 }}>hard 阈值（留空 = 用默认 {data.defaultHard}）</div>
+            <div className="field-label" style={{ marginTop: 8 }}>hard 阈值（留空 = 用默认 {panel.data.defaultHard}）</div>
             <input
               className="input"
               inputMode="numeric"
-              placeholder={`${data.defaultHard}`}
-              value={hardStr}
-              onChange={(e) => setHardStr(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder={`${panel.data.defaultHard}`}
+              value={panel.hardStr}
+              onChange={(e) => panel.setHardStr(e.target.value.replace(/[^0-9]/g, ''))}
             />
             <div className="muted small" style={{ marginTop: 6 }}>
               提示：日常活跃内存约 1500 MiB；soft 建议略高于此（如 2000），hard 建议远低于宿主可用内存（如 3000~4000）。
@@ -684,23 +326,23 @@ function InstanceSecurity({ inst, onClose, onDone }: { inst: InstanceWithStatus;
               type="button"
               className="btn"
               style={{ marginTop: 8, alignSelf: 'flex-start' }}
-              onClick={regenMachineId}
-              disabled={regenBusy || busy}
+              onClick={panel.regenMachineId}
+              disabled={panel.regenBusy || panel.busy}
             >
-              {regenBusy ? '重置中…' : '↻ 重置设备 ID 并重启'}
+              {panel.regenBusy ? '重置中…' : '↻ 重置设备 ID 并重启'}
             </button>
 
-            {err && <div className="error">{err}</div>}
+            {panel.err && <div className="error">{panel.err}</div>}
           </>
         )}
         <div className="modal-actions">
-          <button type="button" className="btn-text" onClick={resetToDefault} disabled={busy}>
+          <button type="button" className="btn-text" onClick={panel.resetToDefault} disabled={panel.busy}>
             ↺ 恢复默认
           </button>
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+          <button type="button" className="btn" onClick={onClose} disabled={panel.busy}>
             取消
           </button>
-          <button className="btn btn-primary" disabled={busy || !loaded || !data}>
+          <button className="btn btn-primary" disabled={panel.busy || !panel.loaded || !panel.data}>
             保存
           </button>
         </div>
@@ -710,20 +352,7 @@ function InstanceSecurity({ inst, onClose, onDone }: { inst: InstanceWithStatus;
 }
 
 function DeleteInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; onClose: () => void; onDone: () => void }) {
-  const [purge, setPurge] = useState(false);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setErr('');
-    setBusy(true);
-    try {
-      await api.deleteInstance(inst.id, purge);
-      onDone();
-    } catch (e: any) {
-      setErr(e.message || '删除失败');
-      setBusy(false);
-    }
-  };
+  const form = useDeleteInstance(inst, onDone);
   return (
     <div className="modal-mask" onClick={onClose}>
       <div className="card modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 360 }}>
@@ -731,20 +360,20 @@ function DeleteInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
         <div className="muted" style={{ fontSize: 14, lineHeight: 1.5 }}>
           容器会被移除。默认保留聊天记录（数据卷），之后可重建同名实例恢复。
         </div>
-        <label className={'purge-opt' + (purge ? ' on' : '')} onClick={() => setPurge((v) => !v)}>
-          <span className="purge-check">{purge ? '✓' : ''}</span>
+        <label className={'purge-opt' + (form.purge ? ' on' : '')} onClick={() => form.setPurge((v) => !v)}>
+          <span className="purge-check">{form.purge ? '✓' : ''}</span>
           <span>
             同时永久删除聊天记录（数据卷）
             <span className="muted small" style={{ display: 'block' }}>不可恢复，请谨慎勾选</span>
           </span>
         </label>
-        {err && <div className="error">{err}</div>}
+        {form.err && <div className="error">{form.err}</div>}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
             取消
           </button>
-          <button type="button" className="btn btn-danger" disabled={busy} onClick={submit}>
-            {purge ? '连数据一起删除' : '删除实例'}
+          <button type="button" className="btn btn-danger" disabled={form.busy} onClick={form.submit}>
+            {form.purge ? '连数据一起删除' : '删除实例'}
           </button>
         </div>
       </div>
@@ -772,7 +401,7 @@ function InstanceAdminCard({
   inst: InstanceWithStatus;
   acting?: string;
   onEnter: () => void;
-  onTrigger: (inst: InstanceWithStatus, kind: 'install' | 'update') => void;
+  onTrigger: (inst: InstanceWithStatus, kind: WechatInstallAction) => void;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
@@ -785,26 +414,8 @@ function InstanceAdminCard({
   onToggleVncKeepAlive: (enabled: boolean) => void;
 }) {
   const wx = inst.wechat;
-  const busy = BUSY_PHASES.includes(wx.phase);
-  const installed = wx.installed && wx.phase !== 'downloading';
-  const offline = inst.runtime !== 'running';
-  const working = !!acting || busy; // 生命周期操作中 或 微信下载/更新中 → 锁住卡片
+  const { badge, sub, installed, offline, working } = adminCardState(inst, acting);
   const [menuOpen, setMenuOpen] = useState(false); // 「管理」折叠菜单是否展开
-
-  let badge: { text: string; cls: string };
-  if (acting) badge = { text: '处理中', cls: 'tag-busy' };
-  else if (offline) badge = { text: inst.runtime === 'missing' ? '未创建' : '已停止', cls: 'tag-off' };
-  else if (busy) badge = { text: '处理中', cls: 'tag-busy' };
-  else if (installed) badge = { text: '在线', cls: 'tag-on' };
-  else badge = { text: '待安装', cls: 'tag-warn' };
-
-  let sub: string;
-  if (acting) sub = acting;
-  else if (busy) sub = wx.percent >= 0 ? `${wx.message || '处理中'} ${wx.percent}%` : wx.message || '请稍候…';
-  else if (wx.phase === 'error') sub = wx.message || '操作失败，可重试';
-  else if (offline) sub = inst.runtime === 'missing' ? '容器尚未创建' : '容器已停止';
-  else if (installed) sub = wx.version ? `微信 ${wx.version}` : '微信已安装';
-  else sub = '微信尚未安装';
 
   return (
     <div className="inst-card">
@@ -842,7 +453,7 @@ function InstanceAdminCard({
 
           <button className={'inst-menu-toggle' + (menuOpen ? ' open' : '')} onClick={() => setMenuOpen((v) => !v)}>
             <span>管理</span>
-            <span className="inst-menu-caret">{CaretIcon}</span>
+            <span className="inst-menu-caret">{Icons.caret}</span>
           </button>
 
           {menuOpen && (
@@ -913,115 +524,8 @@ function InstanceAdminCard({
 // 主要场景：把 PC 微信数据迁移上来、跨实例迁移、离线备份。全程在「运行中」的实例上操作
 // （浏览/改名/删除靠 docker exec，需容器运行）。整卷恢复会覆盖全部数据，强提示并建议恢复后重启实例。
 function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus; onClose: () => void; onChanged: () => void }) {
-  const { toast, confirm } = useUI();
-  const [path, setPath] = useState('');
-  const [entries, setEntries] = useState<VolEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(''); // 进行中操作文案；非空即禁用界面
-  const [mkdirOpen, setMkdirOpen] = useState(false);
-  const [mkdirName, setMkdirName] = useState('');
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameVal, setRenameVal] = useState('');
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const extractRef = useRef<HTMLInputElement>(null);
-  const restoreRef = useRef<HTMLInputElement>(null);
-  const offline = inst.runtime !== 'running'; // 文件浏览需实例运行中
-
-  const join = (a: string, b: string) => (a ? a + '/' + b : b);
-
-  const load = async (p = path) => {
-    setLoading(true);
-    setErr('');
-    try {
-      const r = await api.volumeList(inst.id, p);
-      setEntries(r.entries);
-      setPath(r.path);
-    } catch (e: any) {
-      setErr(e?.message || '读取失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => {
-    if (offline) {
-      setLoading(false);
-      return;
-    }
-    load('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inst.id]);
-
-  const sorted = [...entries].sort((a, b) => {
-    if ((a.type === 'dir') !== (b.type === 'dir')) return a.type === 'dir' ? -1 : 1;
-    return a.name.localeCompare(b.name, 'zh');
-  });
-  const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-  const segs = path ? path.split('/') : [];
-
-  const run = async (label: string, fn: () => Promise<any>, okMsg?: string, skipReload = false) => {
-    setBusy(label);
-    try {
-      await fn();
-      if (okMsg) toast(okMsg, 'ok');
-      if (!skipReload) await load();
-    } catch (e: any) {
-      toast(e?.message || '操作失败', 'error');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const doMkdir = async () => {
-    const name = mkdirName.trim();
-    if (!name) return;
-    await run('新建中…', () => api.volumeMkdir(inst.id, join(path, name)), '已新建文件夹');
-    setMkdirName('');
-    setMkdirOpen(false);
-  };
-
-  const doRename = async (oldName: string) => {
-    const nv = renameVal.trim();
-    setRenaming(null);
-    if (!nv || nv === oldName) return;
-    // 含 / → 视为相对 /config 的目标路径（移动到子目录）；否则同目录改名
-    const to = nv.includes('/') ? nv.replace(/^\/+/, '') : join(path, nv);
-    await run('处理中…', () => api.volumeMove(inst.id, join(path, oldName), to), '已重命名 / 移动');
-  };
-
-  const doDelete = async (en: VolEntry) => {
-    const ok = await confirm({
-      title: `删除「${en.name}」？`,
-      body: en.type === 'dir' ? '将递归删除该文件夹下所有内容，不可恢复。' : '删除后不可恢复。',
-      danger: true,
-      confirmText: '删除',
-    });
-    if (!ok) return;
-    await run('删除中…', () => api.volumeDelete(inst.id, join(path, en.name)), '已删除');
-  };
-
-  const onPick = (kind: 'upload' | 'extract' | 'restore') => async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (kind === 'restore') {
-      const ok = await confirm({
-        title: '恢复整卷备份？',
-        body: `将用「${file.name}」覆盖该实例 /config 的全部数据（含登录态、聊天库），不可撤销。建议仅用于本系统导出的备份；恢复后请在卡片上「重启」实例以加载数据。`,
-        danger: true,
-        confirmText: '覆盖恢复',
-      });
-      if (!ok) return;
-      await run(`恢复 ${file.name}…`, () => api.volumeRestore(inst.id, file), '恢复完成，请重启实例以加载数据', true);
-      onChanged();
-      return;
-    }
-    if (kind === 'upload') await run(`上传 ${file.name}…`, () => api.volumeUpload(inst.id, path, file), '上传完成');
-    else await run(`解压 ${file.name}…`, () => api.volumeExtract(inst.id, path, file), '解压完成');
-  };
-
-  const disabled = !!busy;
-  const icon = (en: VolEntry) => (en.type === 'dir' ? FolderIcon : FileIcon);
+  const volume = useVolumeManager({ inst, onChanged });
+  const icon = (en: VolEntry) => (en.type === 'dir' ? Icons.folder : Icons.file);
 
   return (
     <div className="modal-mask" onClick={onClose}>
@@ -1030,16 +534,16 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
 
         {/* 整卷备份 / 恢复（运行/停止均可用） */}
         <div className="vol-sec">
-          <div className="vol-section-label">整卷备份 / 恢复</div>
-          <div className="vol-topbar">
-            <a className="btn" href={api.volumeBackupUrl(inst.id)} target="_blank" rel="noreferrer">下载整卷备份</a>
-            <button className="btn" disabled={disabled} onClick={() => restoreRef.current?.click()}>恢复备份…</button>
-            <input ref={restoreRef} type="file" accept=".gz,.tgz,.tar" hidden onChange={onPick('restore')} />
-          </div>
+            <div className="vol-section-label">整卷备份 / 恢复</div>
+            <div className="vol-topbar">
+              <a className="btn" href={api.volumeBackupUrl(inst.id)} target="_blank" rel="noreferrer">下载整卷备份</a>
+              <button className="btn" disabled={volume.disabled} onClick={() => volume.restoreRef.current?.click()}>恢复备份…</button>
+              <input ref={volume.restoreRef} type="file" accept=".gz,.tgz,.tar" hidden onChange={volume.onPick('restore')} />
+            </div>
           <div className="vol-hint">整卷含聊天记录，用于跨实例迁移 / 离线备份。</div>
         </div>
 
-        {offline ? (
+        {volume.offline ? (
           <div className="vol-warn">
             实例未运行，文件浏览不可用。可执行上方的整卷备份 / 恢复；要浏览或上传单个文件，请先在卡片上启动实例。
           </div>
@@ -1048,11 +552,11 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
             <div className="vol-section-label">文件浏览</div>
             {/* 面包屑 */}
             <div className="vol-crumbs">
-              <button className="vol-crumb" disabled={disabled} onClick={() => load('')}>/config</button>
-              {segs.map((s, i) => (
+              <button className="vol-crumb" disabled={volume.disabled} onClick={() => volume.load('')}>/config</button>
+              {volume.segs.map((s, i) => (
                 <span key={i}>
                   <span className="vol-sep">/</span>
-                  <button className="vol-crumb" disabled={disabled} onClick={() => load(segs.slice(0, i + 1).join('/'))}>
+                  <button className="vol-crumb" disabled={volume.disabled} onClick={() => volume.load(volume.segs.slice(0, i + 1).join('/'))}>
                     {s}
                   </button>
                 </span>
@@ -1061,71 +565,71 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
 
             {/* 工具条 */}
             <div className="vol-tools">
-              <button className="btn-text" disabled={disabled} onClick={() => uploadRef.current?.click()}>上传文件</button>
-              <button className="btn-text" disabled={disabled} onClick={() => extractRef.current?.click()}>上传并解压</button>
-              <button className="btn-text" disabled={disabled} onClick={() => setMkdirOpen((v) => !v)}>新建文件夹</button>
-              <button className="btn-text" disabled={disabled} onClick={() => load()}>刷新</button>
-              <input ref={uploadRef} type="file" hidden onChange={onPick('upload')} />
-              <input ref={extractRef} type="file" accept=".gz,.tgz,.tar" hidden onChange={onPick('extract')} />
+              <button className="btn-text" disabled={volume.disabled} onClick={() => volume.uploadRef.current?.click()}>上传文件</button>
+              <button className="btn-text" disabled={volume.disabled} onClick={() => volume.extractRef.current?.click()}>上传并解压</button>
+              <button className="btn-text" disabled={volume.disabled} onClick={() => volume.setMkdirOpen((v) => !v)}>新建文件夹</button>
+              <button className="btn-text" disabled={volume.disabled} onClick={volume.reload}>刷新</button>
+              <input ref={volume.uploadRef} type="file" hidden onChange={volume.onPick('upload')} />
+              <input ref={volume.extractRef} type="file" accept=".gz,.tgz,.tar" hidden onChange={volume.onPick('extract')} />
             </div>
-            {mkdirOpen && (
+            {volume.mkdirOpen && (
               <div className="vol-mkdir">
                 <input
                   className="input"
                   placeholder="文件夹名"
-                  value={mkdirName}
+                  value={volume.mkdirName}
                   autoFocus
-                  onChange={(e) => setMkdirName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && doMkdir()}
+                  onChange={(e) => volume.setMkdirName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && volume.doMkdir()}
                 />
-                <button className="btn btn-primary" disabled={disabled || !mkdirName.trim()} onClick={doMkdir}>创建</button>
+                <button className="btn btn-primary" disabled={volume.disabled || !volume.mkdirName.trim()} onClick={volume.doMkdir}>创建</button>
               </div>
             )}
 
-            {busy && <div className="vol-busy">{busy}</div>}
+            {volume.busy && <div className="vol-busy">{volume.busy}</div>}
 
             {/* 文件列表 */}
             <div className="vol-list">
-              {loading ? (
+              {volume.loading ? (
                 <div className="muted small" style={{ padding: 16 }}>读取中…</div>
-              ) : err ? (
-                <div className="error">{err}</div>
-              ) : sorted.length === 0 ? (
-                <div className="muted small" style={{ padding: 16 }}>{path ? '空目录' : '（无内容）'}</div>
+              ) : volume.err ? (
+                <div className="error">{volume.err}</div>
+              ) : volume.sorted.length === 0 ? (
+                <div className="muted small" style={{ padding: 16 }}>{volume.path ? '空目录' : '（无内容）'}</div>
               ) : (
                 <>
-                  {path && (
-                    <button className="vol-row vol-main vol-up" disabled={disabled} onClick={() => load(parent)}>
-                      <span className="vol-ic">{FolderIcon}</span>
+                  {volume.path && (
+                    <button className="vol-row vol-main vol-up" disabled={volume.disabled} onClick={() => volume.load(volume.parent)}>
+                      <span className="vol-ic">{Icons.folder}</span>
                       <span className="vol-nm">返回上一级</span>
                     </button>
                   )}
-                  {sorted.map((en) => (
+                  {volume.sorted.map((en) => (
                     <div className="vol-row" key={en.name}>
-                      {renaming === en.name ? (
+                      {volume.renaming === en.name ? (
                         <input
                           className="input vol-rename"
                           autoFocus
-                          value={renameVal}
-                          onChange={(e) => setRenameVal(e.target.value)}
+                          value={volume.renameVal}
+                          onChange={(e) => volume.setRenameVal(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') doRename(en.name);
-                            if (e.key === 'Escape') setRenaming(null);
+                            if (e.key === 'Enter') volume.doRename(en.name);
+                            if (e.key === 'Escape') volume.setRenaming(null);
                           }}
-                          onBlur={() => doRename(en.name)}
+                          onBlur={() => volume.doRename(en.name)}
                         />
                       ) : (
                         <button
                           className="vol-main"
-                          disabled={disabled}
-                          onClick={() => (en.type === 'dir' ? load(join(path, en.name)) : undefined)}
+                          disabled={volume.disabled}
+                          onClick={() => (en.type === 'dir' ? volume.load(joinVolumePath(volume.path, en.name)) : undefined)}
                           style={{ cursor: en.type === 'dir' ? 'pointer' : 'default' }}
                         >
                           <span className={'vol-ic' + (en.type === 'dir' ? ' dir' : '')}>{icon(en)}</span>
                           <span className="vol-nm">{en.name}</span>
                           <span className="vol-meta">
-                            {en.type === 'dir' ? '' : fmtBytes(en.size)}
-                            {en.mtime ? ` · ${fmtDate(en.mtime)}` : ''}
+                            {en.type === 'dir' ? '' : formatBytes(en.size)}
+                            {en.mtime ? ` · ${formatDate(en.mtime)}` : ''}
                           </span>
                         </button>
                       )}
@@ -1134,26 +638,26 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
                           <a
                             className="vol-act"
                             title="下载"
-                            href={api.volumeDownloadUrl(inst.id, join(path, en.name))}
+                            href={api.volumeDownloadUrl(inst.id, joinVolumePath(volume.path, en.name))}
                             target="_blank"
                             rel="noreferrer"
                           >
-                            {DownloadIcon}
+                            {Icons.download}
                           </a>
                         )}
                         <button
                           className="vol-act"
                           title="重命名 / 移动"
-                          disabled={disabled}
+                          disabled={volume.disabled}
                           onClick={() => {
-                            setRenameVal(en.name);
-                            setRenaming(en.name);
+                            volume.setRenameVal(en.name);
+                            volume.setRenaming(en.name);
                           }}
                         >
-                          {EditIcon}
+                          {Icons.edit}
                         </button>
-                        <button className="vol-act danger" title="删除" disabled={disabled} onClick={() => doDelete(en)}>
-                          {TrashIcon}
+                        <button className="vol-act danger" title="删除" disabled={volume.disabled} onClick={() => volume.doDelete(en)}>
+                          {Icons.trash}
                         </button>
                       </div>
                     </div>
@@ -1177,51 +681,19 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
 }
 
 function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [name, setName] = useState('');
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  // 未使用的旧数据卷（之前删除实例但未勾选「彻底清除」时保留下来的），允许在此复用以继承聊天记录。
-  const [orphans, setOrphans] = useState<{ name: string; createdAt?: string }[]>([]);
-  const [reuse, setReuse] = useState<string>(''); // '' = 不复用，新建空卷
-
-  useEffect(() => {
-    let alive = true;
-    api
-      .listOrphanVolumes()
-      .then(({ volumes }) => alive && setOrphans(volumes))
-      .catch(() => {
-        /* 读取失败时不阻塞创建：列表为空即可，照常新建空卷 */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr('');
-    setBusy(true);
-    try {
-      await api.createInstance(name.trim(), reuse || undefined);
-      onDone();
-    } catch (e: any) {
-      setErr(e.message || '创建失败');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const form = useCreateInstance(onDone);
 
   return (
     <div className="modal-mask" onClick={onClose}>
-      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={form.submit}>
         <h2>新建微信实例</h2>
-        <input className="input" placeholder="实例名称（如：我的微信 / 公司号）" value={name} onChange={(e) => setName(e.target.value)} />
-        {orphans.length > 0 && (
+        <input className="input" placeholder="实例名称（如：我的微信 / 公司号）" value={form.name} onChange={(e) => form.setName(e.target.value)} />
+        {form.orphans.length > 0 && (
           <>
             <div className="field-label" style={{ marginTop: 12 }}>数据卷（可选）</div>
-            <select className="input" value={reuse} onChange={(e) => setReuse(e.target.value)}>
+            <select className="input" value={form.reuse} onChange={(e) => form.setReuse(e.target.value)}>
               <option value="">新建空卷（全新登录）</option>
-              {orphans.map((v) => (
+              {form.orphans.map((v) => (
                 <option key={v.name} value={v.name}>
                   复用 · {v.name}
                   {v.createdAt ? `（${v.createdAt.slice(0, 10)} 创建）` : ''}
@@ -1233,13 +705,13 @@ function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () =
             </div>
           </>
         )}
-        {err && <div className="error">{err}</div>}
+        {form.err && <div className="error">{form.err}</div>}
         <div className="muted small" style={{ marginTop: 4 }}>创建后会拉起一个新的微信容器，进入后扫码登录。</div>
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
             取消
           </button>
-          <button className="btn btn-primary" disabled={busy || !name.trim()}>
+          <button className="btn btn-primary" disabled={!form.canSubmit}>
             创建
           </button>
         </div>

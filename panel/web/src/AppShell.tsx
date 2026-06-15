@@ -1,10 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './auth';
 import { useUI } from './ui';
-import { api, type InstanceWithStatus } from './api';
 import InstanceView from './pages/Desktop';
 import Admin from './pages/Admin';
+import { Icons } from './components/icons';
+import { routeInstanceId, sidebarStatus } from './domain/instances';
+import { useInstancesLoader, type InstancesState } from './features/instances/useInstancesLoader';
 import {
   idFromVncKeepAliveKey,
   isVncKeepAliveEnabled,
@@ -13,85 +15,9 @@ import {
   type VncKeepAliveChange,
 } from './vncKeepAlive';
 
-const BUSY = ['downloading', 'extracting', 'installing'];
-
 // ---- 实例数据：侧栏 / 主页 / 实例视图共享，安装中轮询 ----
-interface InstancesState {
-  instances: InstanceWithStatus[];
-  loaded: boolean;
-  reload: () => Promise<void>;
-}
 const InstancesCtx = createContext<InstancesState>({ instances: [], loaded: false, reload: async () => {} });
 export const useInstances = () => useContext(InstancesCtx);
-
-function useInstancesLoader(): InstancesState {
-  const [instances, setInstances] = useState<InstanceWithStatus[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-  const reload = async () => {
-    try {
-      const { instances } = await api.listInstances();
-      setInstances(instances);
-    } catch {
-      /* 401 会被 api 层重定向到登录 */
-    } finally {
-      setLoaded(true);
-    }
-  };
-  useEffect(() => {
-    reload();
-    return () => window.clearTimeout(timer.current);
-  }, []);
-  useEffect(() => {
-    window.clearTimeout(timer.current);
-    if (instances.some((i) => BUSY.includes(i.wechat.phase))) timer.current = window.setTimeout(reload, 1500);
-    return () => window.clearTimeout(timer.current);
-  }, [instances]);
-  return { instances, loaded, reload };
-}
-
-// 实例状态点（颜色 + 文案）
-export function statusOf(inst: InstanceWithStatus): { cls: string; text: string } {
-  const offline = inst.runtime !== 'running';
-  if (offline) return { cls: 'st-off', text: inst.runtime === 'missing' ? '未创建' : '已停止' };
-  if (BUSY.includes(inst.wechat.phase)) return { cls: 'st-busy', text: '处理中' };
-  if (inst.wechat.installed) return { cls: 'st-on', text: '在线' };
-  return { cls: 'st-warn', text: '待安装' };
-}
-
-function routeInstanceId(pathname: string): string | null {
-  const m = pathname.match(/^\/i\/([0-9a-f]{10})$/);
-  return m ? m[1] : null;
-}
-
-// ---- 图标 ----
-const Icon = {
-  home: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h14V9.5" /><path d="M9.5 20v-6h5v6" />
-    </svg>
-  ),
-  gear: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3.2" /><path d="M19.4 13a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1A2 2 0 1 1 6.9 4.5l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" />
-    </svg>
-  ),
-  logout: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" />
-    </svg>
-  ),
-  collapse: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M9 4v16" />
-    </svg>
-  ),
-  menu: (
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M4 6h16M4 12h16M4 18h16" />
-    </svg>
-  ),
-};
 
 export default function AppShell() {
   const state = useInstancesLoader();
@@ -120,8 +46,7 @@ export default function AppShell() {
   // 路由切换时刷新共享实例列表：管理页用的是独立列表，新建/安装实例后不会动到这个共享 context，
   // 否则进入实例页 / 回主页都读到陈旧列表（实例缺失），需手动刷新整页才出现。导航即拉一次最新即可。
   // 不清空旧数据，拉取期间沿用旧列表，无闪烁。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => void state.reload(), [loc.pathname]);
+  useEffect(() => void state.reload(), [loc.pathname, state.reload]);
 
   useEffect(() => {
     if (!activeInstanceId || !activeKeepAlive) return;
@@ -217,13 +142,13 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
           {!collapsed && <span className="sb-name">云微</span>}
         </div>
         <button className="sb-collapse" title="折叠侧栏 (⌘B)" onClick={onToggleCollapsed}>
-          {Icon.collapse}
+          {Icons.collapse}
         </button>
       </div>
 
       <nav className="sb-nav">
         <button className={'sb-item' + (loc.pathname === '/' ? ' on' : '')} onClick={() => go('/')} title="主页">
-          <span className="sb-ic">{Icon.home}</span>
+          <span className="sb-ic">{Icons.home}</span>
           {!collapsed && <span className="sb-label">主页</span>}
         </button>
       </nav>
@@ -233,7 +158,7 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
         {instances.length === 0 && !collapsed && <div className="sb-empty">暂无可用实例</div>}
         {instances.map((inst) => {
           const on = loc.pathname === `/i/${inst.id}`;
-          const st = statusOf(inst);
+          const st = sidebarStatus(inst);
           return (
             <button key={inst.id} className={'sb-item sb-inst' + (on ? ' on' : '')} onClick={() => go(`/i/${inst.id}`)} title={inst.name}>
               <span className="sb-avatar">
@@ -249,7 +174,7 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
 
       <div className="sb-footer">
         <button className={'sb-item' + (loc.pathname === '/admin' ? ' on' : '')} onClick={() => go('/admin')} title="管理">
-          <span className="sb-ic">{Icon.gear}</span>
+          <span className="sb-ic">{Icons.gear}</span>
           {!collapsed && <span className="sb-label">管理</span>}
         </button>
         <button
@@ -259,7 +184,7 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
             if (await confirm({ title: '退出登录？', confirmText: '退出' })) logout();
           }}
         >
-          <span className="sb-ic">{Icon.logout}</span>
+          <span className="sb-ic">{Icons.logout}</span>
           {!collapsed && <span className="sb-label">退出</span>}
         </button>
         {!collapsed && (
@@ -281,7 +206,7 @@ function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
     <div className="ws-page">
       <header className="ws-head">
         <button className="ws-menu" onClick={onOpenMenu} aria-label="菜单">
-          {Icon.menu}
+          {Icons.menu}
         </button>
         <span className="ws-title">主页</span>
       </header>
@@ -309,7 +234,7 @@ function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
         ) : (
           <div className="inst-grid">
             {instances.map((inst) => {
-              const st = statusOf(inst);
+              const st = sidebarStatus(inst);
               const meta = inst.wechat.installed
                 ? `微信 ${inst.wechat.version || ''}`.trim()
                 : inst.runtime === 'running'

@@ -14,19 +14,56 @@
 
 // kclient 服务端用的 socket.io 版本未知，为避免协议不匹配，动态加载它自带的 socket.io.js
 // （经反代取 /desktop/<id>/audio/socket.io/socket.io.js），用全局 io，而非打包我们自己的版本。
-function loadIo(id: string): Promise<any> {
-  const w = window as any;
+interface AudioSocket {
+  connected: boolean;
+  on(event: 'audio', handler: (data: ArrayBuffer) => void): void;
+  on(event: 'connect', handler: () => void): void;
+  emit(event: 'open' | 'close', payload: string): void;
+  emit(event: 'micdata', payload: ArrayBuffer): void;
+  disconnect(): void;
+}
+
+interface SocketIoFactory {
+  (
+    origin: string,
+    options: {
+      path: string;
+      transports: string[];
+      withCredentials: boolean;
+      reconnection: boolean;
+    },
+  ): AudioSocket;
+}
+
+interface SocketIoWindow extends Window {
+  io?: SocketIoFactory;
+  webkitAudioContext?: new (options?: AudioContextOptions) => AudioContext;
+}
+
+interface SocketIoScript extends HTMLScriptElement {
+  _wocPromise?: Promise<SocketIoFactory>;
+}
+
+function audioContextCtor(): new (options?: AudioContextOptions) => AudioContext {
+  const win = window as SocketIoWindow;
+  const Ctx = win.AudioContext || win.webkitAudioContext;
+  if (!Ctx) throw new Error('当前浏览器不支持 AudioContext');
+  return Ctx;
+}
+
+function loadIo(id: string): Promise<SocketIoFactory> {
+  const w = window as SocketIoWindow;
   if (w.io) return Promise.resolve(w.io);
-  const existing = document.getElementById('woc-socketio') as HTMLScriptElement | null;
-  if (existing && (existing as any)._wocPromise) return (existing as any)._wocPromise;
-  const s = document.createElement('script');
+  const existing = document.getElementById('woc-socketio') as SocketIoScript | null;
+  if (existing?._wocPromise) return existing._wocPromise;
+  const s = document.createElement('script') as SocketIoScript;
   s.id = 'woc-socketio';
   s.src = `/desktop/${encodeURIComponent(id)}/audio/socket.io/socket.io.js`;
-  const p = new Promise<any>((resolve, reject) => {
-    s.onload = () => ((window as any).io ? resolve((window as any).io) : reject(new Error('io 未就绪')));
+  const p = new Promise<SocketIoFactory>((resolve, reject) => {
+    s.onload = () => (w.io ? resolve(w.io) : reject(new Error('io 未就绪')));
     s.onerror = () => reject(new Error('加载 socket.io 失败'));
   });
-  (s as any)._wocPromise = p;
+  s._wocPromise = p;
   document.head.appendChild(s);
   return p;
 }
@@ -43,9 +80,9 @@ class PcmPlayer {
   private resetTimer: number | undefined;
 
   init() {
-    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    const Ctx = audioContextCtor();
     this.audioCtx = new Ctx({ sampleRate: 44100 });
-    this.audioCtx!.resume().catch(() => {});
+    void this.audioCtx.resume().catch((error) => console.warn('恢复音频播放失败', error));
     this.gain = this.audioCtx!.createGain();
     this.gain.gain.value = 1;
     this.gain.connect(this.audioCtx!.destination);
@@ -103,8 +140,8 @@ class PcmPlayer {
     this.playing = false;
     try {
       this.audioCtx?.close();
-    } catch {
-      /* ignore */
+    } catch (error) {
+      console.warn('关闭音频播放器失败', error);
     }
     this.audioCtx = null;
     this.gain = null;
@@ -113,7 +150,7 @@ class PcmPlayer {
 
 export class VncAudio {
   private id: string;
-  private socket: any = null;
+  private socket: AudioSocket | null = null;
   private player: PcmPlayer | null = null;
   private active = false; // 当前实例是否处于"焦点中"（应出声）
   private opened = false; // 是否已对服务端 emit('open')
@@ -177,8 +214,8 @@ export class VncAudio {
     if (this.socket && this.opened) {
       try {
         this.socket.emit('close', '');
-      } catch {
-        /* ignore */
+      } catch (error) {
+        console.warn('关闭 VNC 音频通道失败', error);
       }
     }
     this.opened = false;
@@ -194,7 +231,7 @@ export class VncAudio {
     if (ctx.state !== 'suspended' || this.gestureBound) return;
     this.gestureBound = true;
     const resume = () => {
-      this.player?.audioCtx?.resume().catch(() => {});
+      void this.player?.audioCtx?.resume().catch((error) => console.warn('恢复音频上下文失败', error));
       window.removeEventListener('pointerdown', resume, true);
       window.removeEventListener('keydown', resume, true);
       this.gestureBound = false;
@@ -215,7 +252,7 @@ export class VncAudio {
         return;
       }
       this.micStream = stream;
-      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const Ctx = audioContextCtor();
       this.micCtx = new Ctx();
       this.micSource = this.micCtx!.createMediaStreamSource(stream);
       this.micNode = this.micCtx!.createScriptProcessor(512, 1, 1);
@@ -234,20 +271,21 @@ export class VncAudio {
         const i16 = Int16Array.from(input, (x) => Math.max(-32768, Math.min(32767, x * 32767)));
         this.socket.emit('micdata', i16.buffer);
       };
-    } catch {
+    } catch (error) {
+      console.warn('启动麦克风桥接失败', error);
       this.stopMic();
     }
   }
 
   private stopMic() {
     try {
-      if (this.micNode) this.micNode.onaudioprocess = null as any;
+      if (this.micNode) this.micNode.onaudioprocess = null;
       this.micNode?.disconnect();
       this.micSource?.disconnect();
       this.micStream?.getTracks().forEach((t) => t.stop());
       this.micCtx?.close();
-    } catch {
-      /* ignore */
+    } catch (error) {
+      console.warn('停止麦克风桥接失败', error);
     }
     this.micNode = null;
     this.micSource = null;
@@ -261,8 +299,8 @@ export class VncAudio {
     this.stopMic();
     try {
       this.socket?.disconnect();
-    } catch {
-      /* ignore */
+    } catch (error) {
+      console.warn('断开 VNC 音频 socket 失败', error);
     }
     this.socket = null;
   }

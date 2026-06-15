@@ -1,0 +1,92 @@
+import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { VncAudio } from '../../vncAudio';
+import { blurVncFrame, disableKasmIme, focusVncFrame, injectVncStyle } from './desktopFrame';
+
+export function useVncFrame({
+  active,
+  showVnc,
+  id,
+  frameRef,
+}: {
+  active: boolean;
+  showVnc: boolean;
+  id: string | undefined;
+  frameRef: RefObject<HTMLIFrameElement>;
+}) {
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  const [loadStuck, setLoadStuck] = useState(false);
+  const [vncNonce, setVncNonce] = useState(0);
+
+  const focusFrame = useCallback(() => focusVncFrame(frameRef.current), [frameRef]);
+
+  const reconnect = useCallback(() => {
+    setLoadStuck(false);
+    setFrameLoaded(false);
+    setVncNonce((nonce) => nonce + 1);
+  }, []);
+
+  const handleFrameLoad = useCallback(() => {
+    setFrameLoaded(true);
+    window.setTimeout(() => {
+      if (active) focusVncFrame(frameRef.current);
+      injectVncStyle(frameRef.current);
+    }, 500);
+  }, [active, frameRef]);
+
+  useEffect(() => {
+    setFrameLoaded(false);
+    setLoadStuck(false);
+  }, [id]);
+
+  useEffect(() => {
+    setLoadStuck(false);
+    if (!showVnc || frameLoaded) return;
+    const timer = window.setTimeout(() => setLoadStuck(true), 12000);
+    return () => window.clearTimeout(timer);
+  }, [showVnc, frameLoaded, id, vncNonce]);
+
+  useEffect(() => {
+    disableKasmIme();
+  }, [id, vncNonce]);
+
+  useEffect(() => {
+    if (!active || !showVnc || !frameLoaded) return;
+    const timer = window.setTimeout(() => {
+      focusVncFrame(frameRef.current);
+      injectVncStyle(frameRef.current);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [active, showVnc, frameLoaded, id, frameRef]);
+
+  useEffect(() => {
+    if (active) return;
+    blurVncFrame(frameRef.current);
+  }, [active, frameRef]);
+
+  useEffect(() => {
+    if (!active || !showVnc || !id) return;
+    const audio = new VncAudio(id);
+    audio.connect();
+    const isFocused = () => !document.hidden && document.hasFocus();
+    const sync = () => audio.setActive(isFocused());
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('focus', sync);
+    window.addEventListener('blur', sync);
+    return () => {
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('focus', sync);
+      window.removeEventListener('blur', sync);
+      audio.destroy();
+    };
+  }, [active, showVnc, id]);
+
+  return {
+    frameLoaded,
+    loadStuck,
+    vncNonce,
+    reconnect,
+    focusFrame,
+    handleFrameLoad,
+  };
+}
