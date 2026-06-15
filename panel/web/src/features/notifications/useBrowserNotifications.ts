@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type DesktopClientReplacedEvent, type InstanceNotificationEvent } from '../../api';
 import { useUI } from '../../ui';
+import { ReconnectWatchdog } from '../../utils/connectionWatchdog';
 import { dispatchDesktopClientReplaced } from '../desktop/desktopClientEvents';
 
 const STORAGE_KEY = 'woc_browser_notifications';
@@ -152,17 +153,16 @@ export function useBrowserNotifications() {
     };
 
     let stream: EventSource | null = null;
-    let reconnectTimer: number | undefined;
-    let reconnectDelay = STREAM_RECONNECT_INITIAL_DELAY;
     let disposed = false;
+    const reconnectWatchdog = new ReconnectWatchdog({
+      name: 'notifications-stream',
+      initialDelayMs: STREAM_RECONNECT_INITIAL_DELAY,
+      maxDelayMs: STREAM_RECONNECT_MAX_DELAY,
+      reconnect: () => connect(),
+      shouldReconnect: () => !disposed,
+    });
 
-    const clearReconnectTimer = () => {
-      if (!reconnectTimer) return;
-      window.clearTimeout(reconnectTimer);
-      reconnectTimer = undefined;
-    };
-
-    const closeStream = () => {
+    function closeStream() {
       if (!stream) return;
       stream.removeEventListener('notification', onNotification as EventListener);
       stream.removeEventListener('desktop-client-replaced', onDesktopClientReplaced as EventListener);
@@ -170,38 +170,32 @@ export function useBrowserNotifications() {
       stream.onerror = null;
       stream.close();
       stream = null;
-    };
+    }
 
-    const scheduleReconnect = () => {
-      if (disposed || reconnectTimer) return;
+    function scheduleReconnect() {
+      if (disposed) return;
       closeStream();
-      const delay = reconnectDelay;
-      reconnectDelay = Math.min(reconnectDelay * 2, STREAM_RECONNECT_MAX_DELAY);
-      reconnectTimer = window.setTimeout(() => {
-        reconnectTimer = undefined;
-        connect();
-      }, delay);
-    };
+      reconnectWatchdog.schedule();
+    }
 
-    const connect = () => {
+    function connect() {
       if (disposed) return;
       closeStream();
       const next = new EventSource(api.notificationsStreamUrl());
       stream = next;
       next.onopen = () => {
-        reconnectDelay = STREAM_RECONNECT_INITIAL_DELAY;
-        clearReconnectTimer();
+        reconnectWatchdog.reset();
       };
       next.onerror = () => scheduleReconnect();
       next.addEventListener('notification', onNotification as EventListener);
       next.addEventListener('desktop-client-replaced', onDesktopClientReplaced as EventListener);
-    };
+    }
 
     connect();
 
     return () => {
       disposed = true;
-      clearReconnectTimer();
+      reconnectWatchdog.destroy();
       closeStream();
     };
   }, [showNotification]);

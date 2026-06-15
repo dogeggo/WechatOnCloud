@@ -56,9 +56,13 @@ export function isVncFrameDisconnected(frame: HTMLIFrameElement | null): boolean
     const doc = frame?.contentDocument;
     if (!win || !doc) return false;
 
+    if (hasKasmFatalError(doc) || hasNoVncDisconnectedClass(doc)) return true;
+
     const state = readNoVncConnectionState(win);
     if (state === 'disconnected' || state === 'disconnecting') return true;
     if (state === 'connected' || state === 'connecting') return false;
+
+    if (hasMissingRfbAfterLoad(win, doc)) return true;
 
     const status = doc.getElementById('noVNC_status')?.textContent?.trim().toLowerCase() || '';
     return /disconnected|disconnect|connection closed|failed|closed|已断开|断开|连接关闭|失败/.test(status);
@@ -101,6 +105,37 @@ function readNoVncConnectionState(win: Window): 'connecting' | 'connected' | 'di
   if (websocket.readyState === WebSocket.CLOSING) return 'disconnecting';
   if (websocket.readyState === WebSocket.CLOSED) return 'disconnected';
   return null;
+}
+
+function hasNoVncDisconnectedClass(doc: Document): boolean {
+  return doc.documentElement.classList.contains('noVNC_disconnected');
+}
+
+function hasKasmFatalError(doc: Document): boolean {
+  const text = [
+    doc.title,
+    doc.getElementById('noVNC_status')?.textContent || '',
+    (doc.body?.innerText || '').slice(0, 4000),
+  ].join('\n').toLowerCase();
+
+  return (
+    text.includes('kasmvnc 遇到错误') ||
+    text.includes('kasmvnc encountered an error') ||
+    text.includes('cannot read properties of undefined') ||
+    text.includes('lastactiveat') ||
+    text.includes('session disconnected') ||
+    text.includes('something went wrong, connection is closed') ||
+    text.includes('failed to connect to server')
+  );
+}
+
+function hasMissingRfbAfterLoad(win: Window, doc: Document): boolean {
+  if (doc.readyState !== 'complete') return false;
+  const frameWindow = win as Window & { UI?: unknown };
+  if (!isObjectRecord(frameWindow.UI)) return false;
+  if (!('rfb' in frameWindow.UI)) return false;
+  if (isObjectRecord(frameWindow.UI.rfb)) return false;
+  return frameWindow.UI.connected === false || hasNoVncDisconnectedClass(doc);
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {

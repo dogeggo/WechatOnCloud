@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { VncAudio } from '../../vncAudio';
+import { startProbeWatchdog } from '../../utils/connectionWatchdog';
 import { isVncKeepAliveEnabled } from '../../vncKeepAlive';
 import {
   blurVncFrame,
@@ -35,11 +36,12 @@ export function useVncFrame({
   }, []);
 
   const reconnectIfDisconnected = useCallback(() => {
-    if (!id || !showVnc || !frameLoaded || !isVncKeepAliveEnabled(id)) return false;
+    if (!id || !showVnc || !frameLoaded) return false;
+    if (!active && !isVncKeepAliveEnabled(id)) return false;
     if (!isVncFrameDisconnected(frameRef.current)) return false;
     reconnect();
     return true;
-  }, [frameLoaded, frameRef, id, reconnect, showVnc]);
+  }, [active, frameLoaded, frameRef, id, reconnect, showVnc]);
 
   const handleFrameLoad = useCallback(() => {
     setFrameLoaded(true);
@@ -89,6 +91,16 @@ export function useVncFrame({
     doc.addEventListener('pointerdown', onPointerDown, true);
     return () => doc.removeEventListener('pointerdown', onPointerDown, true);
   }, [frameLoaded, frameRef, id, reconnectIfDisconnected, showVnc]);
+
+  useEffect(() => {
+    if (!showVnc || !frameLoaded || !id) return;
+    if (!active && !isVncKeepAliveEnabled(id)) return;
+    return startProbeWatchdog({
+      name: `vnc:${id}`,
+      intervalMs: active ? 5000 : 10000,
+      probe: reconnectIfDisconnected,
+    });
+  }, [active, frameLoaded, id, reconnectIfDisconnected, showVnc]);
 
   useEffect(() => {
     if (active) return;

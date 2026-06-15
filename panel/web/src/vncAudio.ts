@@ -14,6 +14,8 @@
 
 // kclient 服务端用的 socket.io 版本未知，为避免协议不匹配，动态加载它自带的 socket.io.js
 // （经反代取 /desktop/<id>/audio/socket.io/socket.io.js），用全局 io，而非打包我们自己的版本。
+import { ReconnectWatchdog } from './utils/connectionWatchdog';
+
 interface AudioSocket {
   connected: boolean;
   on(event: 'audio', handler: (data: ArrayBuffer) => void): void;
@@ -207,14 +209,20 @@ export class VncAudio {
   private gestureBound = false;
   private destroyed = false;
   private connecting = false;
-  private reconnectTimer: number | undefined;
-  private reconnectDelay = AUDIO_RECONNECT_INITIAL_DELAY;
+  private reconnectWatchdog: ReconnectWatchdog;
   private readonly resetMicAvailability = () => {
     this.micUnavailable = false;
   };
 
   constructor(id: string) {
     this.id = id;
+    this.reconnectWatchdog = new ReconnectWatchdog({
+      name: `vnc-audio:${id}`,
+      initialDelayMs: AUDIO_RECONNECT_INITIAL_DELAY,
+      maxDelayMs: AUDIO_RECONNECT_MAX_DELAY,
+      reconnect: () => void this.connect(),
+      shouldReconnect: () => !this.destroyed && this.active,
+    });
   }
 
   // 建立 socket 连接（不自动出声，由 setActive 控制）。
@@ -240,7 +248,7 @@ export class VncAudio {
         path: `/desktop/${this.id}/audio/socket.io`,
         transports: ['websocket', 'polling'],
         withCredentials: true,
-        reconnection: true,
+        reconnection: false,
         reconnectionDelay: AUDIO_RECONNECT_INITIAL_DELAY,
         reconnectionDelayMax: AUDIO_RECONNECT_MAX_DELAY,
       });
@@ -248,8 +256,7 @@ export class VncAudio {
         if (this.active && this.player) this.player.feed(data);
       });
       this.socket.on('connect', () => {
-        this.clearReconnectTimer();
-        this.reconnectDelay = AUDIO_RECONNECT_INITIAL_DELAY;
+        this.reconnectWatchdog.reset();
         this.opened = false;
         if (this.active) {
           this.open();
@@ -282,6 +289,7 @@ export class VncAudio {
       this.open();
       void this.startMic();
     } else {
+      this.reconnectWatchdog.cancel();
       this.close();
       this.stopMic();
     }
@@ -423,24 +431,12 @@ export class VncAudio {
   }
 
   private scheduleReconnect() {
-    if (this.destroyed || this.reconnectTimer) return;
-    const delay = this.reconnectDelay;
-    this.reconnectDelay = Math.min(this.reconnectDelay * 2, AUDIO_RECONNECT_MAX_DELAY);
-    this.reconnectTimer = window.setTimeout(() => {
-      this.reconnectTimer = undefined;
-      void this.connect();
-    }, delay);
-  }
-
-  private clearReconnectTimer() {
-    if (!this.reconnectTimer) return;
-    window.clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = undefined;
+    this.reconnectWatchdog.schedule();
   }
 
   destroy() {
     this.destroyed = true;
-    this.clearReconnectTimer();
+    this.reconnectWatchdog.destroy();
     this.close();
     this.stopMic();
     this.unwatchMicDevices();

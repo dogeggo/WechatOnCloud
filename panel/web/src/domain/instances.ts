@@ -159,6 +159,8 @@ export function desktopUrl(id: string, clientId: string): string {
     autoconnect: '1',
     path: `desktop/${id}/websockify?wocClient=${clientId}`,
     resize: 'remote',
+    reconnect: 'true',
+    reconnect_delay: '2000',
     clipboard_up: 'true',
     clipboard_down: 'true',
     clipboard_seamless: 'true',
