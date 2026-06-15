@@ -32,8 +32,17 @@ const MenuIcon = (
   </svg>
 );
 
-export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void }) {
-  const { id } = useParams<{ id: string }>();
+export default function InstanceView({
+  onOpenMenu,
+  instanceId,
+  active = true,
+}: {
+  onOpenMenu: () => void;
+  instanceId?: string;
+  active?: boolean;
+}) {
+  const params = useParams<{ id: string }>();
+  const id = instanceId ?? params.id;
   const nav = useNavigate();
   const { toast, confirm } = useUI();
   const { instances, loaded, reload } = useInstances();
@@ -120,7 +129,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
 
   // 文件拖到窗口 → 弹出落区（覆盖 iframe 接住 drop）
   useEffect(() => {
-    if (!showVnc) return;
+    if (!active || !showVnc) return;
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
     const onEnter = (e: DragEvent) => {
       if (!hasFiles(e)) return;
@@ -149,11 +158,11 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
       window.removeEventListener('dragleave', onLeave);
       window.removeEventListener('drop', onDropWin);
     };
-  }, [showVnc]);
+  }, [active, showVnc]);
 
   // 控制权（交互驱动的心跳软锁）：每 3s 只读轮询当前操作者；超 TTL 自动释放。
   useEffect(() => {
-    if (!showVnc || !id) {
+    if (!active || !showVnc || !id) {
       setControl(null);
       return;
     }
@@ -175,12 +184,12 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
       alive = false;
       window.clearInterval(t);
     };
-  }, [showVnc, id]);
+  }, [active, showVnc, id]);
 
   // 用户在 VNC 内真实操作（鼠标/键盘/滚轮）时续约控制权（同源 iframe 可监听）。节流 2.5s。
   // 只读用户的操作已被遮罩拦截/失焦，不会误续约；空闲不操作则超时自动释放。
   useEffect(() => {
-    if (!showVnc || !id || !frameLoaded) return;
+    if (!active || !showVnc || !id || !frameLoaded) return;
     const win = frameRef.current?.contentWindow;
     if (!win) return;
     const onInteract = async () => {
@@ -207,7 +216,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
         /* ignore */
       }
     };
-  }, [showVnc, id, frameLoaded]);
+  }, [active, showVnc, id, frameLoaded]);
 
   // 每次进入/重连桌面前，强制把 KasmVNC 的 enable_ime 设为【关】。
   // 原因：开启 IME 模式后，noVNC 用隐藏 textarea + 合成事件还原中文，需要前端拦截/差分，环环相扣极脆，
@@ -233,7 +242,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
   // 音频/麦克风桥接：实例就绪即自动连接 kclient 的音频流（扬声器恒开，无需手动找工具条）；
   // 仅当本实例处于焦点（标签页可见且窗口聚焦）时出声/收音，失焦立即断开，避免多实例多端串音。
   useEffect(() => {
-    if (!showVnc || !id) return;
+    if (!active || !showVnc || !id) return;
     const audio = new VncAudio(id);
     audioRef.current = audio;
     audio.connect();
@@ -251,7 +260,27 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
       audioRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showVnc, id]);
+  }, [active, showVnc, id]);
+
+  useEffect(() => {
+    if (!active || !showVnc || !frameLoaded) return;
+    const t = window.setTimeout(() => {
+      focusFrame();
+      injectVncStyle();
+    }, 80);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, showVnc, frameLoaded, id]);
+
+  useEffect(() => {
+    if (active) return;
+    try {
+      frameRef.current?.contentWindow?.blur();
+      frameRef.current?.blur();
+    } catch {
+      /* ignore */
+    }
+  }, [active]);
 
   if (!id) {
     nav('/', { replace: true });
@@ -571,7 +600,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
             onLoad={() => {
               setFrameLoaded(true);
               setTimeout(() => {
-                focusFrame(); // 加载完把键盘焦点交给 VNC
+                if (active) focusFrame(); // 加载完把键盘焦点交给 VNC
                 injectVncStyle(); // 让原生控制条在深色背景下可见
                 // 注意：不再调用 patchVncIme —— enable_ime 已关，直接打字走纯 keysym（英文/数字正常）；
                 // 中文由底部「中文输入条」承担。那套合成拦截既脆弱又会损坏混合输入，已弃用。

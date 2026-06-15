@@ -5,6 +5,13 @@ import { useUI } from './ui';
 import { api, type InstanceWithStatus } from './api';
 import InstanceView from './pages/Desktop';
 import Admin from './pages/Admin';
+import {
+  idFromVncKeepAliveKey,
+  isVncKeepAliveEnabled,
+  isVncKeepAliveKey,
+  VNC_KEEP_ALIVE_EVENT,
+  type VncKeepAliveChange,
+} from './vncKeepAlive';
 
 const BUSY = ['downloading', 'extracting', 'installing'];
 
@@ -52,6 +59,11 @@ export function statusOf(inst: InstanceWithStatus): { cls: string; text: string 
   return { cls: 'st-warn', text: '待安装' };
 }
 
+function routeInstanceId(pathname: string): string | null {
+  const m = pathname.match(/^\/i\/([0-9a-f]{10})$/);
+  return m ? m[1] : null;
+}
+
 // ---- 图标 ----
 const Icon = {
   home: (
@@ -86,7 +98,15 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('woc_sb_collapsed') === '1');
   const [drawer, setDrawer] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  const [keepAliveIds, setKeepAliveIds] = useState<string[]>([]);
+  const [, setKeepAliveRev] = useState(0);
   const loc = useLocation();
+  const activeInstanceId = routeInstanceId(loc.pathname);
+  const activeKeepAlive = !!activeInstanceId && isVncKeepAliveEnabled(activeInstanceId);
+  const cachedIds = activeKeepAlive && activeInstanceId && !keepAliveIds.includes(activeInstanceId)
+    ? [...keepAliveIds, activeInstanceId]
+    : keepAliveIds;
+  const showingCachedInstance = !!activeInstanceId && cachedIds.includes(activeInstanceId);
 
   useEffect(() => {
     const m = window.matchMedia('(min-width: 768px)');
@@ -102,6 +122,37 @@ export default function AppShell() {
   // 不清空旧数据，拉取期间沿用旧列表，无闪烁。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void state.reload(), [loc.pathname]);
+
+  useEffect(() => {
+    if (!activeInstanceId || !activeKeepAlive) return;
+    setKeepAliveIds((ids) => (ids.includes(activeInstanceId) ? ids : [...ids, activeInstanceId]));
+  }, [activeInstanceId, activeKeepAlive]);
+
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const { id, enabled } = (e as CustomEvent<VncKeepAliveChange>).detail;
+      setKeepAliveRev((n) => n + 1);
+      if (!enabled) setKeepAliveIds((ids) => ids.filter((x) => x !== id));
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (!isVncKeepAliveKey(e.key)) return;
+      const id = idFromVncKeepAliveKey(e.key!);
+      setKeepAliveRev((n) => n + 1);
+      if (e.newValue !== '1') setKeepAliveIds((ids) => ids.filter((x) => x !== id));
+    };
+    window.addEventListener(VNC_KEEP_ALIVE_EVENT, onChanged as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(VNC_KEEP_ALIVE_EVENT, onChanged as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!state.loaded) return;
+    const live = new Set(state.instances.map((i) => i.id));
+    setKeepAliveIds((ids) => ids.filter((id) => live.has(id) && isVncKeepAliveEnabled(id)));
+  }, [state.loaded, state.instances]);
 
   // 移动端不收成窄栏（改用抽屉）；折叠仅桌面生效
   const railed = collapsed && isDesktop;
@@ -131,12 +182,19 @@ export default function AppShell() {
         <Sidebar collapsed={railed} onToggleCollapsed={toggleCollapsed} />
         <div className="shell-backdrop" onClick={() => setDrawer(false)} />
         <main className="workspace">
-          <Routes>
-            <Route path="/" element={<HomeView onOpenMenu={openMenu} />} />
-            <Route path="/admin" element={<Admin onOpenMenu={openMenu} />} />
-            <Route path="/i/:id" element={<InstanceView onOpenMenu={openMenu} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <div className={'workspace-route' + (showingCachedInstance ? ' hidden' : '')}>
+            <Routes>
+              <Route path="/" element={<HomeView onOpenMenu={openMenu} />} />
+              <Route path="/admin" element={<Admin onOpenMenu={openMenu} />} />
+              <Route path="/i/:id" element={showingCachedInstance ? null : <InstanceView onOpenMenu={openMenu} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
+          {cachedIds.map((id) => (
+            <div key={id} className={'workspace-keepalive' + (activeInstanceId === id ? ' active' : '')}>
+              <InstanceView instanceId={id} active={activeInstanceId === id} onOpenMenu={openMenu} />
+            </div>
+          ))}
         </main>
       </div>
     </InstancesCtx.Provider>

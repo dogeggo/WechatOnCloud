@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type InstanceWithStatus, type LoggedInDevice, type VolEntry } from '../api';
 import { useUI } from '../ui';
+import { isVncKeepAliveEnabled, setVncKeepAliveEnabled } from '../vncKeepAlive';
 
 const BUSY_PHASES = ['downloading', 'extracting', 'installing'];
 
@@ -113,6 +114,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [securityInst, setSecurityInst] = useState<InstanceWithStatus | null>(null); // 安全（内存阈值）弹窗
   const [volumeInst, setVolumeInst] = useState<InstanceWithStatus | null>(null); // 数据卷管理弹窗
   const [acting, setActing] = useState<Record<string, string>>({}); // 实例 id → 进行中的动作文案（启动中/升级中…）
+  const [vncKeepAlive, setVncKeepAlive] = useState<Record<string, boolean>>({});
   // 未使用的旧数据卷（来自之前删实例时未勾选"彻底清除"）：允许复用以继承聊天记录，或显式删除。
   const [orphanVols, setOrphanVols] = useState<{ name: string; createdAt?: string; sizeBytes?: number }[]>([]);
   // 残留 woc-wx-* 容器（runInstance 启动失败遗留的 Created 容器等）：占着卷名让删卷报 409。
@@ -132,6 +134,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
     try {
       const { instances } = await api.listInstances();
       setInstances(instances);
+      setVncKeepAlive(Object.fromEntries(instances.map((i) => [i.id, isVncKeepAliveEnabled(i.id)])));
     } catch (e: any) {
       setErr(e.message);
     }
@@ -274,6 +277,16 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
     }
   };
 
+  const toggleVncKeepAlive = (inst: InstanceWithStatus, enabled: boolean) => {
+    try {
+      setVncKeepAliveEnabled(inst.id, enabled);
+      setVncKeepAlive((prefs) => ({ ...prefs, [inst.id]: enabled }));
+      toast(enabled ? '已开启 VNC 常驻' : '已关闭 VNC 常驻', 'ok');
+    } catch (e: any) {
+      toast(e?.message || '保存 VNC 常驻设置失败', 'error');
+    }
+  };
+
   return (
     <div className="ws-page">
       <header className="ws-head">
@@ -320,6 +333,8 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 onDelete={() => setDeleteInst(inst)}
                 onSecurity={() => setSecurityInst(inst)}
                 onVolume={() => setVolumeInst(inst)}
+                vncKeepAlive={!!vncKeepAlive[inst.id]}
+                onToggleVncKeepAlive={(enabled) => toggleVncKeepAlive(inst, enabled)}
               />
             ))}
           </div>
@@ -751,6 +766,8 @@ function InstanceAdminCard({
   onDelete,
   onSecurity,
   onVolume,
+  vncKeepAlive,
+  onToggleVncKeepAlive,
 }: {
   inst: InstanceWithStatus;
   acting?: string;
@@ -764,6 +781,8 @@ function InstanceAdminCard({
   onDelete: () => void;
   onSecurity: () => void;
   onVolume: () => void;
+  vncKeepAlive: boolean;
+  onToggleVncKeepAlive: (enabled: boolean) => void;
 }) {
   const wx = inst.wechat;
   const busy = BUSY_PHASES.includes(wx.phase);
@@ -865,6 +884,13 @@ function InstanceAdminCard({
                   </button>
                   <button className="btn-text" onClick={onVolume} title="数据卷：备份/恢复、上传 PC 微信数据、文件管理">
                     数据卷
+                  </button>
+                  <button
+                    className={'btn-text' + (vncKeepAlive ? ' on' : '')}
+                    onClick={() => onToggleVncKeepAlive(!vncKeepAlive)}
+                    title="切换到主页或管理页时保留该浏览器标签页里的 VNC 连接"
+                  >
+                    {vncKeepAlive ? 'VNC常驻开' : 'VNC常驻关'}
                   </button>
                 </div>
               </div>
