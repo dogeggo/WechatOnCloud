@@ -723,7 +723,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
                     sendImeText(true);
                   }
                 }}
-                placeholder={imeLocked ? `「${control?.holder}」正在操作，申请控制后可输入` : '中文输入这里，Enter 发送。Shift+Enter 换行。'}
+                placeholder={imeLocked ? `「${control?.holder}」正在操作，申请控制后可输入` : '文本输入，Enter 发送。Shift+Enter 换行。'}
                 disabled={imeDisabled}
                 rows={1}
               />

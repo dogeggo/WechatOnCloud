@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "icons": "node scripts/gen-icons.mjs",
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0",
     "build": "npm run icons && vite build",
     "preview": "vite preview"
   },

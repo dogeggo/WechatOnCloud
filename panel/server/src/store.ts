@@ -27,7 +27,7 @@ interface Data {
   instances: Instance[];
 }
 
-const FILE = process.env.PANEL_DATA || '/data/panel/accounts.json';
+const FILE = '/data/accounts.json';
 
 let data: Data = { instances: [] };
 

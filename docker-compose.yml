@@ -14,7 +14,7 @@ services:
     environment:
       - PORT=8080
       # 新建微信实例时使用的镜像（多架构，amd64/arm64 自动匹配）；前缀同样跟随 WOC_IMAGE_PREFIX。
-      - WOC_WECHAT_IMAGE=${WOC_IMAGE_PREFIX:-ghcr.io/gloridust}/wechat-on-cloud:${WOC_VERSION:-latest}
+      - WOC_WECHAT_IMAGE=${WOC_IMAGE_PREFIX:-ghcr.io/dogeggo}/wechat-on-cloud:${WOC_VERSION:-latest}
       # 透传给每个微信实例容器（KasmVNC 基础镜像用它们降权运行）
       - PUID=${WOC_PUID:-1000}
       - PGID=${WOC_PGID:-1000}
@@ -31,9 +31,6 @@ services:
       - WOC_WATCHDOG_INTERVAL_SEC=${WOC_WATCHDOG_INTERVAL_SEC:-300}
       # 设备伪装：os-release 伪装成 deepin（默认开，=0 关恢复 Debian）。详见 .env.example / doc/设备伪装.md。
       - WOC_SPOOF_OS=${WOC_SPOOF_OS:-1}
-      # 面板 OIDC/Google 登录配置文件（容器内路径；默认 /data/auth.json）
-      - PANEL_AUTH_CONFIG=${PANEL_AUTH_CONFIG:-/data/auth.json}
-      - PANEL_DATA=/data/accounts.json
       # DNS-rebinding 防护：套 HTTPS 反代部署时把对外域名加进 .env（详见 .env.example）。
       # 默认仅放行 loopback + RFC1918 私网，直连 NAS / 局域网无需改动。
       - PANEL_ALLOWED_HOSTS=${PANEL_ALLOWED_HOSTS:-}

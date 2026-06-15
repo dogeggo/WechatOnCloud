@@ -16,7 +16,7 @@ export interface AuthConfig {
   oidc: OidcSettings;
 }
 
-const DEFAULT_FILE = process.env.PANEL_AUTH_CONFIG || '/data/auth.json';
+const DEFAULT_FILE = '/data/auth.json';
 
 function asString(v: unknown, name: string): string {
   if (typeof v !== 'string' || !v.trim()) throw new Error(`认证配置 ${name} 不能为空`);

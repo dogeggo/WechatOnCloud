@@ -8,7 +8,7 @@
 #   WOC_VERSION=v1.0.0 ./scripts/build-local.sh   # 指定标签（需与 .env 的 WOC_VERSION 一致）
 set -euo pipefail
 
-OWNER="${WOC_IMAGE_OWNER:-gloridust}"
+OWNER="${WOC_IMAGE_OWNER:-dogeggo}"
 TAG="${WOC_VERSION:-latest}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 

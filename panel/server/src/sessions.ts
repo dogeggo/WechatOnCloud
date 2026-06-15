@@ -1,4 +1,6 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 export interface AuthUser {
   sub: string;
@@ -43,11 +45,17 @@ export interface LoginFlow {
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 小时
 const FLOW_TTL_MS = 1000 * 60 * 10; // 10 分钟
+const TOUCH_PERSIST_INTERVAL_MS = 1000 * 60; // 最近活动最多延迟 1 分钟落盘
+const FILE = '/data/sessions.json';
 const sessions = new Map<string, Session>();
 const loginFlows = new Map<string, LoginFlow>();
 
 function token() {
   return randomBytes(32).toString('hex');
+}
+
+function sessionKey(t: string) {
+  return createHash('sha256').update(t).digest('hex');
 }
 
 function shortId() {
@@ -76,17 +84,76 @@ function toPublicSession(s: Session): PublicSession {
   };
 }
 
-function pruneExpired() {
+function persistSessions() {
+  mkdirSync(dirname(FILE), { recursive: true });
+  const tmp = `${FILE}.tmp`;
+  const data = {
+    version: 1,
+    sessions: [...sessions.entries()].map(([tokenHash, s]) => ({ tokenHash, ...s })),
+  };
+  writeFileSync(tmp, JSON.stringify(data, null, 2));
+  renameSync(tmp, FILE);
+}
+
+function asTimestamp(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+function asUser(v: any): AuthUser | null {
+  if (!v || typeof v !== 'object') return null;
+  const sub = String(v.sub || '').trim();
+  const email = String(v.email || '').trim().toLowerCase();
+  const username = String(v.username || v.name || email).trim();
+  if (!sub || !email || !username) return null;
+  const name = String(v.name || '').trim() || undefined;
+  const picture = String(v.picture || '').trim() || undefined;
+  return { sub, email, username, name, picture };
+}
+
+function loadSessions() {
+  if (!existsSync(FILE)) return;
+  const raw = JSON.parse(readFileSync(FILE, 'utf8'));
+  const rows = Array.isArray(raw?.sessions) ? raw.sessions : [];
   const now = Date.now();
-  for (const [t, s] of sessions) {
-    if (s.expires < now) sessions.delete(t);
+  for (const row of rows) {
+    const tokenHash = String(row?.tokenHash || '').trim();
+    const id = String(row?.id || '').trim();
+    const user = asUser(row?.user);
+    const createdAt = asTimestamp(row?.createdAt);
+    const lastSeenAt = asTimestamp(row?.lastSeenAt);
+    const expires = asTimestamp(row?.expires);
+    if (!/^[0-9a-f]{64}$/.test(tokenHash) || !/^[0-9a-f]{16}$/.test(id)) continue;
+    if (!user || createdAt == null || lastSeenAt == null || expires == null || expires < now) continue;
+    sessions.set(tokenHash, {
+      id,
+      user,
+      createdAt,
+      lastSeenAt,
+      expires,
+      ...cleanMeta({ ip: row?.ip, userAgent: row?.userAgent }),
+    });
   }
 }
+
+function pruneExpired(persist = true) {
+  const now = Date.now();
+  let changed = false;
+  for (const [t, s] of sessions) {
+    if (s.expires < now) {
+      sessions.delete(t);
+      changed = true;
+    }
+  }
+  if (changed && persist) persistSessions();
+}
+
+loadSessions();
 
 export function createSession(user: AuthUser, meta?: SessionMeta) {
   const t = token();
   const now = Date.now();
-  sessions.set(t, {
+  sessions.set(sessionKey(t), {
     id: shortId(),
     user,
     createdAt: now,
@@ -94,15 +161,18 @@ export function createSession(user: AuthUser, meta?: SessionMeta) {
     expires: now + SESSION_TTL_MS,
     ...cleanMeta(meta),
   });
+  persistSessions();
   return t;
 }
 
 export function getSession(t?: string) {
   if (!t) return null;
-  const s = sessions.get(t);
+  const key = sessionKey(t);
+  const s = sessions.get(key);
   if (!s) return null;
   if (s.expires < Date.now()) {
-    sessions.delete(t);
+    sessions.delete(key);
+    persistSessions();
     return null;
   }
   return s;
@@ -111,15 +181,20 @@ export function getSession(t?: string) {
 export function touchSession(t?: string, meta?: SessionMeta) {
   const s = getSession(t);
   if (!s) return null;
-  s.lastSeenAt = Date.now();
   const m = cleanMeta(meta);
-  s.ip = m.ip;
+  // 登录设备绑定首次登录 IP，换 IP 后必须重新登录并生成新的设备记录。
+  if (m.ip !== s.ip) return null;
+  const now = Date.now();
+  const shouldPersist = now - s.lastSeenAt >= TOUCH_PERSIST_INTERVAL_MS || m.userAgent !== s.userAgent;
+  s.lastSeenAt = now;
   s.userAgent = m.userAgent;
+  if (shouldPersist) persistSessions();
   return s;
 }
 
 export function destroySession(t?: string) {
-  if (t) sessions.delete(t);
+  if (!t) return;
+  if (sessions.delete(sessionKey(t))) persistSessions();
 }
 
 export function listSessions() {
@@ -140,6 +215,7 @@ export function destroySessionById(id: string) {
   for (const [t, s] of sessions) {
     if (s.id === id) {
       sessions.delete(t);
+      persistSessions();
       return toPublicSession(s);
     }
   }
