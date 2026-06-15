@@ -5,6 +5,11 @@
 
 set -u
 
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -z "${WOC_DBUS_SESSION_STARTED:-}" ]; then
+    export WOC_DBUS_SESSION_STARTED=1
+    exec dbus-run-session -- "$0" "$@"
+fi
+
 # 强制软件渲染
 export LIBGL_ALWAYS_SOFTWARE=1
 # 微信内置 WeChatAppEx/Qt WebEngine 和系统 Chromium 在容器里都不能依赖浏览器 sandbox。

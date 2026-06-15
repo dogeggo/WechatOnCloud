@@ -15,7 +15,7 @@ RUN set -eux; \
         curl ca-certificates locales dpkg \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
         libnss3 libgbm1 libasound2 libxss1 \
-        chromium xdg-utils \
+        chromium xdg-utils dbus dbus-x11 \
         xdotool xclip; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
@@ -101,6 +101,11 @@ RUN chmod +x /custom-cont-init.d/01-woc-autostart
 # 启动钩子（02）：把容器环境 WOC_APP_TYPE 写入 /config/.woc-app，供 autostart 选择启动哪个应用。
 COPY woc-app-init.sh /custom-cont-init.d/02-woc-app
 RUN chmod 755 /custom-cont-init.d/02-woc-app
+
+# 启动钩子（03）：容器里没有 systemd，不会自动拉起 D-Bus system bus。
+# Chromium 会访问 system/session bus 查询桌面、电源与通知能力；显式启动可避免外链浏览器启动时报连接失败。
+COPY woc-dbus.sh /custom-cont-init.d/03-woc-dbus
+RUN chmod 755 /custom-cont-init.d/03-woc-dbus
 
 # 3000 = HTTP web 客户端, 3001 = HTTPS
 EXPOSE 3000 3001
