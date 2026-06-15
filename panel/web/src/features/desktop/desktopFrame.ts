@@ -50,6 +50,23 @@ export function blurVncFrame(frame: HTMLIFrameElement | null): void {
   frame?.blur();
 }
 
+export function isVncFrameDisconnected(frame: HTMLIFrameElement | null): boolean {
+  try {
+    const win = frame?.contentWindow;
+    const doc = frame?.contentDocument;
+    if (!win || !doc) return false;
+
+    const state = readNoVncConnectionState(win);
+    if (state === 'disconnected' || state === 'disconnecting') return true;
+    if (state === 'connected' || state === 'connecting') return false;
+
+    const status = doc.getElementById('noVNC_status')?.textContent?.trim().toLowerCase() || '';
+    return /disconnected|disconnect|connection closed|failed|closed|已断开|断开|连接关闭|失败/.test(status);
+  } catch {
+    return false;
+  }
+}
+
 export function injectVncStyle(frame: HTMLIFrameElement | null): void {
   const doc = frame?.contentDocument;
   if (!doc || doc.getElementById(VNC_STYLE_ID)) return;
@@ -57,6 +74,37 @@ export function injectVncStyle(frame: HTMLIFrameElement | null): void {
   style.id = VNC_STYLE_ID;
   style.textContent = VNC_CONTROL_STYLE;
   (doc.head || doc.documentElement).appendChild(style);
+}
+
+function readNoVncConnectionState(win: Window): 'connecting' | 'connected' | 'disconnecting' | 'disconnected' | null {
+  const frameWindow = win as Window & {
+    UI?: { rfb?: unknown };
+    rfb?: unknown;
+  };
+  const rfb = frameWindow.UI?.rfb ?? frameWindow.rfb;
+  if (!isObjectRecord(rfb)) return null;
+
+  const rawState = rfb._rfbConnectionState ?? rfb._rfb_connection_state ?? rfb.connectionState;
+  if (typeof rawState === 'string') {
+    const state = rawState.toLowerCase();
+    if (state === 'connecting' || state === 'connected' || state === 'disconnecting' || state === 'disconnected') return state;
+  }
+
+  const sock = isObjectRecord(rfb._sock) ? rfb._sock : null;
+  const websocket = sock
+    ? sock._websocket ?? sock._webSocket ?? sock.websocket ?? sock.webSocket
+    : null;
+  if (!isObjectRecord(websocket) || typeof websocket.readyState !== 'number') return null;
+
+  if (websocket.readyState === WebSocket.OPEN) return 'connected';
+  if (websocket.readyState === WebSocket.CONNECTING) return 'connecting';
+  if (websocket.readyState === WebSocket.CLOSING) return 'disconnecting';
+  if (websocket.readyState === WebSocket.CLOSED) return 'disconnected';
+  return null;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object';
 }
 
 export function installImeCandidateAnchor(doc: Document): () => void {

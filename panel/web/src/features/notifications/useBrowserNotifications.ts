@@ -4,6 +4,8 @@ import { api, type InstanceNotificationEvent } from '../../api';
 import { useUI } from '../../ui';
 
 const STORAGE_KEY = 'woc_browser_notifications';
+const STREAM_RECONNECT_INITIAL_DELAY = 1000;
+const STREAM_RECONNECT_MAX_DELAY = 15000;
 
 export type BrowserNotificationStatus = 'unsupported' | 'blocked' | 'off' | 'on';
 
@@ -130,7 +132,6 @@ export function useBrowserNotifications() {
   );
 
   useEffect(() => {
-    const stream = new EventSource(api.notificationsStreamUrl());
     const onNotification = (e: MessageEvent) => {
       try {
         const event = JSON.parse(e.data) as InstanceNotificationEvent;
@@ -139,10 +140,57 @@ export function useBrowserNotifications() {
         /* ignore malformed notification event */
       }
     };
-    stream.addEventListener('notification', onNotification as EventListener);
-    return () => {
+
+    let stream: EventSource | null = null;
+    let reconnectTimer: number | undefined;
+    let reconnectDelay = STREAM_RECONNECT_INITIAL_DELAY;
+    let disposed = false;
+
+    const clearReconnectTimer = () => {
+      if (!reconnectTimer) return;
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+    };
+
+    const closeStream = () => {
+      if (!stream) return;
       stream.removeEventListener('notification', onNotification as EventListener);
+      stream.onopen = null;
+      stream.onerror = null;
       stream.close();
+      stream = null;
+    };
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer) return;
+      closeStream();
+      const delay = reconnectDelay;
+      reconnectDelay = Math.min(reconnectDelay * 2, STREAM_RECONNECT_MAX_DELAY);
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = undefined;
+        connect();
+      }, delay);
+    };
+
+    const connect = () => {
+      if (disposed) return;
+      closeStream();
+      const next = new EventSource(api.notificationsStreamUrl());
+      stream = next;
+      next.onopen = () => {
+        reconnectDelay = STREAM_RECONNECT_INITIAL_DELAY;
+        clearReconnectTimer();
+      };
+      next.onerror = () => scheduleReconnect();
+      next.addEventListener('notification', onNotification as EventListener);
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+      clearReconnectTimer();
+      closeStream();
     };
   }, [showNotification]);
 

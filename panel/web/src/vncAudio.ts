@@ -18,8 +18,11 @@ interface AudioSocket {
   connected: boolean;
   on(event: 'audio', handler: (data: ArrayBuffer) => void): void;
   on(event: 'connect', handler: () => void): void;
+  on(event: 'disconnect' | 'connect_error', handler: (reason?: unknown) => void): void;
   emit(event: 'open' | 'close', payload: string): void;
   emit(event: 'micdata', payload: ArrayBuffer): void;
+  connect?: () => void;
+  open?: () => void;
   disconnect(): void;
 }
 
@@ -31,6 +34,8 @@ interface SocketIoFactory {
       transports: string[];
       withCredentials: boolean;
       reconnection: boolean;
+      reconnectionDelay: number;
+      reconnectionDelayMax: number;
     },
   ): AudioSocket;
 }
@@ -44,6 +49,9 @@ interface SocketIoWindow extends Window {
 interface SocketIoScript extends HTMLScriptElement {
   _wocPromise?: Promise<SocketIoFactory>;
 }
+
+const AUDIO_RECONNECT_INITIAL_DELAY = 1000;
+const AUDIO_RECONNECT_MAX_DELAY = 10000;
 
 function audioContextCtor(): new (options?: AudioContextOptions) => AudioContext {
   const win = window as SocketIoWindow;
@@ -72,13 +80,31 @@ function loadIo(id: string): Promise<SocketIoFactory> {
   const w = window as SocketIoWindow;
   if (w.io) return Promise.resolve(w.io);
   const existing = document.getElementById('woc-socketio') as SocketIoScript | null;
-  if (existing?._wocPromise) return existing._wocPromise;
+  if (existing?._wocPromise) {
+    return existing._wocPromise.catch((error) => {
+      existing._wocPromise = undefined;
+      existing.remove();
+      throw error;
+    });
+  }
   const s = document.createElement('script') as SocketIoScript;
   s.id = 'woc-socketio';
   s.src = `/desktop/${encodeURIComponent(id)}/audio/socket.io/socket.io.js`;
   const p = new Promise<SocketIoFactory>((resolve, reject) => {
-    s.onload = () => (w.io ? resolve(w.io) : reject(new Error('io 未就绪')));
-    s.onerror = () => reject(new Error('加载 socket.io 失败'));
+    s.onload = () => {
+      if (w.io) {
+        resolve(w.io);
+        return;
+      }
+      s._wocPromise = undefined;
+      s.remove();
+      reject(new Error('io 未就绪'));
+    };
+    s.onerror = () => {
+      s._wocPromise = undefined;
+      s.remove();
+      reject(new Error('加载 socket.io 失败'));
+    };
   });
   s._wocPromise = p;
   document.head.appendChild(s);
@@ -180,6 +206,9 @@ export class VncAudio {
   private micDeviceChangeBound = false;
   private gestureBound = false;
   private destroyed = false;
+  private connecting = false;
+  private reconnectTimer: number | undefined;
+  private reconnectDelay = AUDIO_RECONNECT_INITIAL_DELAY;
   private readonly resetMicAvailability = () => {
     this.micUnavailable = false;
   };
@@ -190,21 +219,58 @@ export class VncAudio {
 
   // 建立 socket 连接（不自动出声，由 setActive 控制）。
   async connect() {
-    if (this.socket || this.destroyed) return;
-    const io = await loadIo(this.id);
-    if (this.destroyed) return;
-    this.socket = io(window.location.origin, {
-      path: `/desktop/${this.id}/audio/socket.io`,
-      transports: ['websocket', 'polling'],
-      withCredentials: true,
-      reconnection: true,
-    });
-    this.socket.on('audio', (data: ArrayBuffer) => {
-      if (this.active && this.player) this.player.feed(data);
-    });
-    this.socket.on('connect', () => {
-      if (this.active) this.open();
-    });
+    if (this.destroyed || this.connecting) return;
+    if (this.socket) {
+      if (this.socket.connected) {
+        if (this.active) {
+          this.open();
+          void this.startMic();
+        }
+      } else {
+        this.requestSocketConnect();
+      }
+      return;
+    }
+
+    this.connecting = true;
+    try {
+      const io = await loadIo(this.id);
+      if (this.destroyed) return;
+      this.socket = io(window.location.origin, {
+        path: `/desktop/${this.id}/audio/socket.io`,
+        transports: ['websocket', 'polling'],
+        withCredentials: true,
+        reconnection: true,
+        reconnectionDelay: AUDIO_RECONNECT_INITIAL_DELAY,
+        reconnectionDelayMax: AUDIO_RECONNECT_MAX_DELAY,
+      });
+      this.socket.on('audio', (data: ArrayBuffer) => {
+        if (this.active && this.player) this.player.feed(data);
+      });
+      this.socket.on('connect', () => {
+        this.clearReconnectTimer();
+        this.reconnectDelay = AUDIO_RECONNECT_INITIAL_DELAY;
+        this.opened = false;
+        if (this.active) {
+          this.open();
+          void this.startMic();
+        }
+      });
+      this.socket.on('disconnect', () => {
+        this.opened = false;
+        if (this.active) this.scheduleReconnect();
+      });
+      this.socket.on('connect_error', () => {
+        if (this.active) this.scheduleReconnect();
+      });
+    } catch (error) {
+      if (!this.destroyed) {
+        console.warn('连接 VNC 音频 socket 失败', error);
+        this.scheduleReconnect();
+      }
+    } finally {
+      this.connecting = false;
+    }
   }
 
   // 焦点变化时调用：true=本实例获得焦点（出声+收音），false=失焦（断开设备）。
@@ -212,8 +278,9 @@ export class VncAudio {
     if (this.destroyed) return;
     this.active = on;
     if (on) {
+      void this.connect();
       this.open();
-      this.startMic();
+      void this.startMic();
     } else {
       this.close();
       this.stopMic();
@@ -265,7 +332,7 @@ export class VncAudio {
 
   private async startMic() {
     // 麦克风需安全上下文（HTTPS / localhost）；http 局域网下静默跳过，只保留扬声器。
-    if (this.micCtx || this.micStarting || this.micUnavailable || !this.socket) return;
+    if (this.micCtx || this.micStarting || this.micUnavailable || !this.socket || !this.socket.connected) return;
     const md = navigator.mediaDevices;
     if (!window.isSecureContext || !md || !md.getUserMedia) return;
     this.watchMicDevices(md);
@@ -288,7 +355,7 @@ export class VncAudio {
       this.micSource.connect(this.micNode);
       this.micNode.connect(this.micCtx!.destination);
       this.micNode.onaudioprocess = (e) => {
-        if (!this.active || !this.socket) return;
+        if (!this.active || !this.socket?.connected) return;
         const input = e.inputBuffer.getChannelData(0);
         // 简单能量门限：近乎静音不上传，省带宽（替代 kclient 的 JSON.size 启发式）
         let peak = 0;
@@ -346,8 +413,34 @@ export class VncAudio {
     this.micCtx = null;
   }
 
+  private requestSocketConnect() {
+    try {
+      const connect = this.socket?.connect ?? this.socket?.open;
+      connect?.call(this.socket);
+    } catch (error) {
+      console.warn('重连 VNC 音频 socket 失败', error);
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.destroyed || this.reconnectTimer) return;
+    const delay = this.reconnectDelay;
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, AUDIO_RECONNECT_MAX_DELAY);
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.connect();
+    }, delay);
+  }
+
+  private clearReconnectTimer() {
+    if (!this.reconnectTimer) return;
+    window.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+  }
+
   destroy() {
     this.destroyed = true;
+    this.clearReconnectTimer();
     this.close();
     this.stopMic();
     this.unwatchMicDevices();

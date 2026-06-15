@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { VncAudio } from '../../vncAudio';
-import { blurVncFrame, focusVncFrame, injectVncStyle, readDesktopInputMode, writeKasmImeMode } from './desktopFrame';
+import { isVncKeepAliveEnabled } from '../../vncKeepAlive';
+import {
+  blurVncFrame,
+  focusVncFrame,
+  injectVncStyle,
+  isVncFrameDisconnected,
+  readDesktopInputMode,
+  writeKasmImeMode,
+} from './desktopFrame';
 
 export function useVncFrame({
   active,
@@ -16,6 +24,7 @@ export function useVncFrame({
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [loadStuck, setLoadStuck] = useState(false);
   const [vncNonce, setVncNonce] = useState(0);
+  const activeRef = useRef(active);
 
   const focusFrame = useCallback(() => focusVncFrame(frameRef.current), [frameRef]);
 
@@ -24,6 +33,13 @@ export function useVncFrame({
     setFrameLoaded(false);
     setVncNonce((nonce) => nonce + 1);
   }, []);
+
+  const reconnectIfDisconnected = useCallback(() => {
+    if (!id || !showVnc || !frameLoaded || !isVncKeepAliveEnabled(id)) return false;
+    if (!isVncFrameDisconnected(frameRef.current)) return false;
+    reconnect();
+    return true;
+  }, [frameLoaded, frameRef, id, reconnect, showVnc]);
 
   const handleFrameLoad = useCallback(() => {
     setFrameLoaded(true);
@@ -59,6 +75,22 @@ export function useVncFrame({
   }, [active, showVnc, frameLoaded, id, frameRef]);
 
   useEffect(() => {
+    const wasActive = activeRef.current;
+    activeRef.current = active;
+    if (!active || wasActive) return;
+    reconnectIfDisconnected();
+  }, [active, reconnectIfDisconnected]);
+
+  useEffect(() => {
+    if (!showVnc || !frameLoaded || !id) return;
+    const doc = frameRef.current?.contentDocument;
+    if (!doc) return;
+    const onPointerDown = () => reconnectIfDisconnected();
+    doc.addEventListener('pointerdown', onPointerDown, true);
+    return () => doc.removeEventListener('pointerdown', onPointerDown, true);
+  }, [frameLoaded, frameRef, id, reconnectIfDisconnected, showVnc]);
+
+  useEffect(() => {
     if (active) return;
     blurVncFrame(frameRef.current);
   }, [active, frameRef]);
@@ -66,7 +98,7 @@ export function useVncFrame({
   useEffect(() => {
     if (!active || !showVnc || !id) return;
     const audio = new VncAudio(id);
-    audio.connect();
+    void audio.connect();
     const isFocused = () => !document.hidden && document.hasFocus();
     const sync = () => audio.setActive(isFocused());
     sync();
@@ -86,6 +118,7 @@ export function useVncFrame({
     loadStuck,
     vncNonce,
     reconnect,
+    reconnectIfDisconnected,
     focusFrame,
     handleFrameLoad,
   };

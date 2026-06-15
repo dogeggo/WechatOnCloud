@@ -208,6 +208,8 @@ export default function InstanceView({
             title={`${profile.label}桌面`}
             allow="clipboard-read; clipboard-write; microphone; camera; autoplay"
             onLoad={vnc.handleFrameLoad}
+            onFocus={() => vnc.reconnectIfDisconnected()}
+            onMouseDown={() => vnc.reconnectIfDisconnected()}
           />
 
           {!vnc.frameLoaded && !vnc.loadStuck && (
