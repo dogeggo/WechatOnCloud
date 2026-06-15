@@ -1,17 +1,20 @@
 #!/bin/bash
 # 多应用安装/状态控制（面板经 docker exec --user abc 调用）：
 #   app-ctl.sh <appType> <install|update|status>
-# 微信委托给原 wechat-ctl.sh；Chromium 随镜像内置，状态格式与微信复用。
+# 微信/QQ 委托给各自的 deb 安装脚本；Chromium 随镜像内置，状态格式复用。
 set -u
 
 APP="${1:-wechat}"
 ACTION="${2:-status}"
 
-if [ "$APP" = "wechat" ]; then exec /woc/wechat-ctl.sh "$ACTION"; fi
+case "$APP" in
+  wechat) exec /woc/wechat-ctl.sh "$ACTION" ;;
+  qq) exec /woc/qq-ctl.sh "$ACTION" ;;
+esac
 
 # shellcheck source=/dev/null
 . /woc/app-defs.sh
-woc_app_def "$APP"
+woc_app_def "$APP" || exit 1
 
 STATE_DIR="${WOC_STATE_DIR:-/config/.woc-state}"
 STATUS_FILE="$STATE_DIR/status.json"

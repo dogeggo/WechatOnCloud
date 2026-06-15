@@ -23,8 +23,8 @@ function assertDockerImageRef(image: string): string {
   return ref;
 }
 
-const WECHAT_IMAGE = assertDockerImageRef(
-  process.env.WOC_WECHAT_IMAGE || "docker.io/dogeggo/wechat-on-cloud:latest",
+const INSTANCE_IMAGE = assertDockerImageRef(
+  process.env.WOC_INSTANCE_IMAGE || "docker.io/dogeggo/wechat-on-cloud:latest",
 );
 const PUID = process.env.PUID || "1000";
 const PGID = process.env.PGID || "1000";
@@ -37,13 +37,13 @@ const INSTANCE_MEM_GB = Number(process.env.WOC_INSTANCE_MEM_GB) || 0;
 const INSTANCE_MEM =
   INSTANCE_MEM_GB > 0 ? Math.floor(INSTANCE_MEM_GB * 1024 * 1024 * 1024) : 0;
 
-// 设备伪装：把 /etc/os-release 伪装成 deepin（微信官方支持的发行版，且 Deepin 本就基于 Debian，
+// 设备伪装：把 /etc/os-release 伪装成 deepin（部分客户端官方支持的发行版，且 Deepin 本就基于 Debian，
 // 与本镜像的 Debian 用户态一致，不会自相矛盾）。默认开启；设 WOC_SPOOF_OS=0 关闭恢复 Debian。
 // 配合 00-woc-identity 钩子里的 machine-id 唯一化 + 真实 hostname，整体让容器更像一台普通 Linux 桌面，
 // 降低被腾讯按"非真实设备/设备农场"判风险的概率。注意：尽力而为，非保证；详见 doc/设备伪装.md。
 const SPOOF_OS = process.env.WOC_SPOOF_OS !== "0";
 
-// 给实例容器派生一个"像个人电脑"的内部 hostname（替代 woc-wx-<hex> 这种容器/服务器特征）。
+// 给实例容器派生一个"像个人电脑"的内部 hostname（替代 woc-app-<hex> 这种容器/服务器特征）。
 // 从 inst.id 稳定派生：同一实例每次重建得到相同名字、不同实例不同。仅作伪装，不参与寻址
 // （反代用容器名 containerName，不用此 hostname）。
 function realisticHostname(id: string): string {
@@ -138,7 +138,7 @@ export async function ensureNetwork(): Promise<string | null> {
 }
 
 // 摄像头直通：把宿主的 v4l2 视频设备映射进实例容器
-// （浏览器摄像头 → KasmVNC → 容器内 /dev/videoN(v4l2loopback) → 微信）。
+// （浏览器摄像头 → KasmVNC → 容器内 /dev/videoN(v4l2loopback) → 应用实例）。
 // 来源优先级：
 //   1) WOC_VIDEO_DEVICES 显式指定（逗号分隔，如 /dev/video0,/dev/video1）——Ubuntu/无法自动探测时用；
 //   2) 自动探测：把宿主 /dev 以只读挂到面板的 /host-dev（compose 可选），扫描其中的 videoN。
@@ -175,15 +175,15 @@ function envList(inst: Instance): string[] {
   env.push("DISABLE_DRI=1");
   // 透传 os 伪装开关给容器内的 00-woc-identity 钩子（决定是否把 /etc/os-release 改成 deepin）。
   env.push(`WOC_SPOOF_OS=${SPOOF_OS ? "1" : "0"}`);
-  // 多应用实例类型，由 02-woc-app 写入数据卷，autostart 据此启动微信或 Chromium。
+  // 多应用实例类型，由 02-woc-app 写入数据卷，autostart 据此启动目标应用。
   env.push(`WOC_APP_TYPE=${inst.appType}`);
   return env;
 }
 
-// 确保微信镜像在本地存在；缺失则从 GHCR 拉取（首次新建实例时镜像通常还没拉过）。
+// 确保实例镜像在本地存在；缺失则拉取（首次新建实例时镜像通常还没拉过）。
 async function ensureImage(): Promise<void> {
   try {
-    await docker.getImage(WECHAT_IMAGE).inspect();
+    await docker.getImage(INSTANCE_IMAGE).inspect();
     return;
   } catch {
     /* 本地没有，下面拉取 */
@@ -191,7 +191,7 @@ async function ensureImage(): Promise<void> {
   await pullImage();
 }
 
-// 创建并启动一个微信实例容器。若同名容器已存在则先移除（仅容器，不动卷）。
+// 创建并启动一个应用实例容器。若同名容器已存在则先移除（仅容器，不动卷）。
 export async function runInstance(inst: Instance): Promise<void> {
   assertProjectInstance(inst);
   const net = await ensureNetwork();
@@ -239,8 +239,8 @@ export async function runInstance(inst: Instance): Promise<void> {
   const mac = realisticMac(inst.id);
   const createOpts: Docker.ContainerCreateOptions = {
     name: inst.containerName,
-    Image: WECHAT_IMAGE,
-    // 内部 hostname 伪装成"个人电脑"名（不再用 woc-wx-<hex>，那是容器/服务器特征）。
+    Image: INSTANCE_IMAGE,
+    // 内部 hostname 伪装成"个人电脑"名（不再用 woc-app-<hex>，那是容器/服务器特征）。
     // 反代靠容器名 name 寻址，与此 hostname 无关。
     Hostname: realisticHostname(inst.id),
     Env: envList(inst),
@@ -281,7 +281,7 @@ export async function ensureRunning(inst: Instance): Promise<void> {
   }
 }
 
-// 升级实例：拉取最新微信镜像后重建容器（保留数据卷 → 登录态不丢）。
+// 升级实例：拉取最新实例镜像后重建容器（保留数据卷 → 登录态不丢）。
 // 拉取失败（本地自构建 / 离线 / 仓库不可达）则用本地现有镜像重建，不阻断。
 export async function upgradeInstance(inst: Instance): Promise<void> {
   try {
@@ -390,7 +390,7 @@ export async function removeVolume(name: string): Promise<void> {
   await projectVolume(name).remove({ force: true } as any);
 }
 
-// 列出"残留的 woc-wx-* 容器"：在 docker 里存在但 store 没登记的（多为 runInstance 失败时
+// 列出"残留的 woc-app-* 容器"：在 docker 里存在但 store 没登记的（多为 runInstance 失败时
 // 留下的 Created 状态容器，或用户手动 docker run 出来的）。供面板一键清理。
 export async function listOrphanContainers(
   knownContainerNames: Set<string>,
@@ -423,7 +423,7 @@ export async function listOrphanContainers(
   return out;
 }
 
-// 强制删除一个残留容器（按短/全 id 或容器名都行），但实际目标必须是未登记的 woc-wx-* 容器。
+// 强制删除一个残留容器（按短/全 id 或容器名都行），但实际目标必须是未登记的 woc-app-* 容器。
 export async function removeContainerById(
   idOrName: string,
   knownContainerNames = new Set<string>(),
@@ -528,8 +528,8 @@ async function execCapture(inst: Instance, cmd: string[]): Promise<string> {
   });
 }
 
-// 触发下载/安装（detached，立即返回，后台下载）。
-export async function triggerWechat(
+// 触发应用下载/安装（detached，立即返回，后台下载）。
+export async function triggerAppInstall(
   inst: Instance,
   cmd: "install" | "update",
 ): Promise<void> {
@@ -539,7 +539,7 @@ export async function triggerWechat(
     Cmd: [
       "bash",
       "-c",
-      `if [ -x /woc/app-ctl.sh ]; then /woc/app-ctl.sh ${inst.appType} ${action}; else /woc/wechat-ctl.sh ${action}; fi`,
+      `/woc/app-ctl.sh ${inst.appType} ${action}`,
     ],
     AttachStdout: false,
     AttachStderr: false,
@@ -548,7 +548,7 @@ export async function triggerWechat(
   await exec.start({ Detach: true });
 }
 
-export interface WechatStatus {
+export interface AppStatus {
   phase: string;
   percent: number;
   installed: boolean;
@@ -557,7 +557,7 @@ export interface WechatStatus {
   updatedAt: number;
 }
 
-const DEFAULT_STATUS: WechatStatus = {
+const DEFAULT_STATUS: AppStatus = {
   phase: "idle",
   percent: 0,
   installed: false,
@@ -566,12 +566,12 @@ const DEFAULT_STATUS: WechatStatus = {
   updatedAt: 0,
 };
 
-export async function wechatStatus(inst: Instance): Promise<WechatStatus> {
+export async function appStatus(inst: Instance): Promise<AppStatus> {
   try {
     const raw = await execCapture(inst, [
       "bash",
       "-c",
-      `if [ -x /woc/app-ctl.sh ]; then /woc/app-ctl.sh ${inst.appType} status; else /woc/wechat-ctl.sh status; fi`,
+      `/woc/app-ctl.sh ${inst.appType} status`,
     ]);
     const json = JSON.parse(raw.trim());
     return { ...DEFAULT_STATUS, ...json };
@@ -580,12 +580,12 @@ export async function wechatStatus(inst: Instance): Promise<WechatStatus> {
   }
 }
 
-// 拉取微信镜像（首次部署/更新镜像用）。返回拉取日志的最后状态。
+// 拉取实例镜像（首次部署/更新镜像用）。返回拉取日志的最后状态。
 export async function pullImage(
   onProgress?: (line: any) => void,
 ): Promise<void> {
   return await new Promise((resolve, reject) => {
-    docker.pull(WECHAT_IMAGE, (err: any, stream: NodeJS.ReadableStream) => {
+    docker.pull(INSTANCE_IMAGE, (err: any, stream: NodeJS.ReadableStream) => {
       if (err) return reject(err);
       docker.modem.followProgress(
         stream,
@@ -597,8 +597,8 @@ export async function pullImage(
 }
 
 // ---------- 文件中转（上传/下载） ----------
-// 中转目录 = abc 家目录下的 Desktop（/config 持久卷）。上传落这里，微信文件选择器可直接选到；
-// 反向：把微信收到的文件另存到桌面，即可在面板里下载。
+// 中转目录 = abc 家目录下的 Desktop（/config 持久卷）。上传落这里，应用文件选择器可直接选到；
+// 反向：把应用收到的文件另存到桌面，即可在面板里下载。
 const TRANSFER_DIR = "/config/Desktop";
 
 function tarHeader(name: string, size: number): Buffer {
@@ -821,8 +821,8 @@ export async function keyInInstance(inst: Instance, key: string): Promise<void> 
 }
 
 // ---------- 数据卷管理（路由层要求已登录） ----------
-// 数据卷 = 容器内 /config 持久卷，含微信全部数据（登录态、加密聊天库等）。提供浏览/上传/解压/下载/
-// 改名/移动/删除 + 整卷备份/恢复。主要场景：把 PC 微信数据迁移上来、跨实例迁移、离线备份。
+// 数据卷 = 容器内 /config 持久卷，含应用全部数据（登录态、加密数据、缓存等）。提供浏览/上传/解压/下载/
+// 改名/移动/删除 + 整卷备份/恢复。主要场景：把 PC 应用数据迁移上来、跨实例迁移、离线备份。
 // 路径安全：所有相对路径经 safeVolPath 归一化并严格限制在 /config 内，禁止 .. 穿越。
 const VOL_ROOT = "/config";
 
@@ -935,7 +935,7 @@ export async function volDelete(inst: Instance, rel: string): Promise<void> {
   await execCapture(inst, ["rm", "-rf", abs]);
 }
 
-// 上传单个文件到指定目录（流式 tar 写入 uid/gid 1000，落地即 abc 属主，微信可读）。
+// 上传单个文件到指定目录（流式 tar 写入 uid/gid 1000，落地即 abc 属主，应用可读）。
 export async function volUploadFile(
   inst: Instance,
   rel: string,
@@ -952,7 +952,7 @@ export async function volUploadFile(
   );
 }
 
-// 上传压缩包并解压到指定目录（PC 微信数据迁移：用户把文件夹打成 .tar/.tar.gz 上传）。
+// 上传压缩包并解压到指定目录（PC 应用数据迁移：用户把文件夹打成 .tar/.tar.gz 上传）。
 // putArchive 把 tar 内容解到 dir 下，Docker 解包限制在 dir 内、防 .. 穿越。
 export async function volExtractArchive(
   inst: Instance,
@@ -1043,4 +1043,4 @@ export function instanceTarget(inst: Instance): string {
   return `http://${inst.containerName}:3000`;
 }
 
-export { WECHAT_IMAGE };
+export { INSTANCE_IMAGE };

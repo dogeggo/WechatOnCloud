@@ -28,7 +28,7 @@ import {
   removeVolume,
   runInstance,
   stopInstance,
-  triggerWechat,
+  triggerAppInstall,
   typeInInstance,
   upgradeInstance,
   uploadToInstance,
@@ -41,7 +41,7 @@ import {
   volRestoreArchive,
   volUploadFile,
   ensureNetwork,
-  wechatStatus,
+  appStatus,
 } from '../docker/docker.js';
 import { httpError } from '../http/http-error.js';
 import { INSTANCE_ID_RE, VOLUME_NAME_RE } from './resource-guard.js';
@@ -71,8 +71,8 @@ export class InstanceManager {
   async listWithStatus() {
     const rows = await Promise.all(
       listInstances().map(async (inst) => {
-        const [runtime, wx] = await Promise.all([instanceRuntime(inst), wechatStatus(inst)]);
-        return { ...publicInstance(inst), runtime, wechat: wx };
+        const [runtime, status] = await Promise.all([instanceRuntime(inst), appStatus(inst)]);
+        return { ...publicInstance(inst), runtime, app: status };
       }),
     );
     return { instances: rows };
@@ -301,12 +301,12 @@ export class InstanceManager {
     return { ok: true };
   }
 
-  async getWechatStatus(id: unknown) {
-    return { status: await wechatStatus(this.requireInstance(id)) };
+  async getAppStatus(id: unknown) {
+    return { status: await appStatus(this.requireInstance(id)) };
   }
 
-  async triggerWechat(id: unknown, command: 'install' | 'update') {
-    await triggerWechat(this.requireInstance(id), command);
+  async triggerAppInstall(id: unknown, command: 'install' | 'update') {
+    await triggerAppInstall(this.requireInstance(id), command);
     return { ok: true };
   }
 

@@ -90,7 +90,7 @@ export function useDesktopFiles({
       }
       setUploading(false);
       if (successCount) {
-        toast(`已上传 ${successCount} 个文件到桌面，微信里可直接选取`, 'ok');
+        toast(`已上传 ${successCount} 个文件到桌面，应用里可直接选取`, 'ok');
         await refreshFiles();
       }
     },
@@ -112,7 +112,7 @@ export function useDesktopFiles({
       if (!id) return;
       const ok = await confirm({
         title: `删除「${name}」？`,
-        body: '将从微信桌面（~/Desktop）移除该文件。',
+        body: '将从应用桌面（~/Desktop）移除该文件。',
         danger: true,
         confirmText: '删除',
       });

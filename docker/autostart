@@ -1,7 +1,7 @@
 #!/bin/bash
 # 由 KasmVNC base 的 openbox 会话在桌面就绪后执行（以 app 用户身份）。
 # 多应用：实例承载的应用由面板注入 WOC_APP_TYPE，再由 02-woc-app 钩子落到 /config/.woc-app。
-# 本脚本据此等待对应应用就绪并常驻拉起；读不到类型则回退微信，老实例零改动。
+# 本脚本据此等待对应应用就绪并常驻拉起；读不到类型则使用默认微信。
 
 set -u
 
@@ -33,7 +33,7 @@ APP_TYPE=wechat
 APP_TYPE="${WOC_APP_TYPE:-wechat}"
 # shellcheck source=/dev/null
 . /woc/app-defs.sh
-woc_app_def "$APP_TYPE"
+woc_app_def "$APP_TYPE" || exit 1
 
 # 防“最小化后丢失”：本桌面（openbox）无任务栏，窗口被最小化就无处恢复 → 黑屏。
 # 看守进程：每 2s 把“被最小化（不可见）”的顶层窗口重新激活，相当于禁用最小化。
@@ -48,7 +48,7 @@ woc_app_def "$APP_TYPE"
     done
 ) &
 
-# 1) 等待应用安装就绪（微信首次需在面板点「下载并安装」；Chromium 随镜像就绪）
+# 1) 等待应用安装就绪（需要安装的应用首次需在面板点「下载并安装」；Chromium 随镜像就绪）
 notified=0
 while [ -n "${APP_BIN:-}" ] && [ ! -x "${APP_BIN}" ]; do
     if [ "${notified}" -eq 0 ]; then

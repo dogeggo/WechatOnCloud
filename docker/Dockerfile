@@ -1,11 +1,10 @@
-# WechatOnCloud —— 在浏览器里访问服务端微信
+# WechatOnCloud —— 在浏览器里访问服务端应用实例
 # 基于 linuxserver 的 KasmVNC 基础镜像（多架构 amd64/arm64）：
 # 自带 Xvfb + openbox + KasmVNC + web 客户端(3000/3001)
 FROM lscr.io/linuxserver/baseimage-kasmvnc:debianbookworm
 
-# 微信本体不再在构建时下载/安装，改为运行时由面板点击下载、解压到数据卷 /config
-#（见 wechat-ctl.sh）。构建时只装：中文字体、语言环境、下载工具，以及微信运行所
-# 需的全部系统库（这些需 root/apt，必须 bake 进镜像）。
+# 应用本体不再在构建时下载/安装，改为运行时由面板点击下载、解压到数据卷 /config。
+# 构建时只装：中文字体、语言环境、下载工具，以及桌面客户端运行所需的系统库。
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN set -eux; \
@@ -77,11 +76,11 @@ RUN chmod 755 /usr/local/bin/woc-browser && \
 COPY woc-www-patch.sh woc-ime.pl /woc/
 RUN chmod +x /woc/woc-www-patch.sh && /woc/woc-www-patch.sh
 
-# 微信下载/解压控制脚本（运行时由面板经 docker exec 触发，状态写入数据卷 /config/.woc-state）
-COPY wechat-ctl.sh /woc/wechat-ctl.sh
-RUN chmod +x /woc/wechat-ctl.sh
+# 应用下载/解压控制脚本（运行时由面板经 docker exec 触发，状态写入数据卷 /config/.woc-state）
+COPY deb-app-ctl.sh wechat-ctl.sh qq-ctl.sh /woc/
+RUN chmod 755 /woc/deb-app-ctl.sh /woc/wechat-ctl.sh /woc/qq-ctl.sh
 
-# 多应用：应用定义 + 通用安装/状态控制。微信委托回 wechat-ctl.sh，Chromium 随镜像就绪。
+# 多应用：应用定义 + 通用安装/状态控制。deb 应用委托各自 ctl，Chromium 随镜像就绪。
 COPY app-defs.sh app-ctl.sh /woc/
 RUN chmod 644 /woc/app-defs.sh && chmod 755 /woc/app-ctl.sh
 
@@ -90,7 +89,7 @@ COPY autostart /defaults/autostart
 RUN chmod +x /defaults/autostart
 
 # 启动钩子（00）：给每个实例唯一且持久的 machine-id，避免所有实例共用镜像里烤死的同一个，
-# 触发腾讯"设备农场"风控导致登录即被强制退出。须在 autostart（拉起微信）之前执行，故用 00 前缀。
+# 触发客户端"设备农场"风控导致登录即被强制退出。须在 autostart（拉起应用）之前执行，故用 00 前缀。
 COPY woc-identity.sh /custom-cont-init.d/00-woc-identity
 RUN chmod +x /custom-cont-init.d/00-woc-identity
 

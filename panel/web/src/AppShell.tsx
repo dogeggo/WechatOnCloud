@@ -140,7 +140,7 @@ function Sidebar({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggl
       <div className="sb-top">
         <div className="sb-brand">
           <img src="/favicon.svg" className="sb-logo" alt="" />
-          {!collapsed && <span className="sb-name">云微</span>}
+          {!collapsed && <span className="sb-name">云应用</span>}
         </div>
         <button className="sb-collapse" title="折叠侧栏 (⌘B)" onClick={onToggleCollapsed}>
           {Icons.collapse}
@@ -230,15 +230,15 @@ function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
               <img src="/favicon.svg" alt="" />
             </div>
             <div className="empty-title">还没有应用实例</div>
-            <div className="empty-sub">去「管理」新建微信或 Chromium 实例</div>
+            <div className="empty-sub">去「管理」新建微信、QQ 或 Chromium 实例</div>
           </div>
         ) : (
           <div className="inst-grid">
             {instances.map((inst) => {
               const st = sidebarStatus(inst);
               const profile = appProfile(inst.appType);
-              const meta = inst.wechat.installed
-                ? `${profile.label} ${inst.wechat.version || ''}`.trim()
+              const meta = inst.app.installed
+                ? `${profile.label} ${inst.app.version || ''}`.trim()
                 : inst.runtime === 'running'
                   ? profile.needsInstall ? `待下载安装${profile.label}` : `${profile.label} 尚未就绪`
                   : '';

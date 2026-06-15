@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type InstanceWithStatus, type LoggedInDevice, type OrphanContainer, type OrphanVolume } from '../../api';
 import {
-  isWechatBusy,
+  isAppBusy,
   lifecycleBusyLabel,
   lifecycleDoneMessage,
   type LifecycleAction,
-  type WechatInstallAction,
-  wechatActionDoneMessage,
+  type AppInstallAction,
+  appActionDoneMessage,
 } from '../../domain/instances';
 import { deviceName } from '../../domain/devices';
 import { errorMessage } from '../../utils/errors';
@@ -66,7 +66,7 @@ export function useAdminPanel() {
 
   useEffect(() => {
     window.clearTimeout(timer.current);
-    if (instances.some((inst) => isWechatBusy(inst.wechat.phase))) {
+    if (instances.some((inst) => isAppBusy(inst.app.phase))) {
       timer.current = window.setTimeout(() => void load(), 1500);
     }
     return () => window.clearTimeout(timer.current);
@@ -123,7 +123,7 @@ export function useAdminPanel() {
     async (name: string) => {
       const ok = await confirm({
         title: `彻底删除数据卷「${name}」？`,
-        body: '该卷里保存的微信本地数据（聊天记录缓存等）将永久消失，无法恢复。',
+        body: '该卷里保存的应用本地数据（聊天记录、登录态、缓存等）将永久消失，无法恢复。',
         danger: true,
         confirmText: '彻底删除',
       });
@@ -139,21 +139,21 @@ export function useAdminPanel() {
     [confirm, toast],
   );
 
-  const triggerWechat = useCallback(
-    async (inst: InstanceWithStatus, action: WechatInstallAction) => {
+  const triggerAppInstall = useCallback(
+    async (inst: InstanceWithStatus, action: AppInstallAction) => {
       try {
-        if (action === 'install') await api.instanceWechatInstall(inst.id);
-        else await api.instanceWechatUpdate(inst.id);
+        if (action === 'install') await api.instanceAppInstall(inst.id);
+        else await api.instanceAppUpdate(inst.id);
         setInstances((list) =>
           list.map((item) =>
             item.id === inst.id
-              ? { ...item, wechat: { ...item.wechat, phase: 'downloading', percent: -1, message: '正在准备...' } }
+              ? { ...item, app: { ...item.app, phase: 'downloading', percent: -1, message: '正在准备...' } }
               : item,
           ),
         );
         window.clearTimeout(timer.current);
         timer.current = window.setTimeout(() => void load(), 1000);
-        toast(wechatActionDoneMessage(action), 'ok');
+        toast(appActionDoneMessage(action, inst.appType), 'ok');
       } catch (error) {
         toast(errorMessage(error, '操作失败'), 'error');
       }
@@ -221,7 +221,7 @@ export function useAdminPanel() {
     removeDevice,
     removeOrphanContainer,
     removeOrphanVolume,
-    triggerWechat,
+    triggerAppInstall,
     startInstance,
     runLifecycle,
     toggleVncKeepAlive,

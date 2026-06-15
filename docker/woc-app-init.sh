@@ -1,11 +1,11 @@
 #!/bin/bash
 # /custom-cont-init.d 钩子（02）：把容器环境里的应用类型写入数据卷 /config/.woc-app，
-# 供 autostart（桌面会话）读取。缺 WOC_APP_TYPE 时不写文件，autostart 回退微信。
+# 供 autostart（桌面会话）读取。缺 WOC_APP_TYPE 时不写文件，autostart 使用默认应用。
 APP_TYPE="${WOC_APP_TYPE:-}"
 [ -z "$APP_TYPE" ] && exit 0
 
 case "$APP_TYPE" in
-  wechat | chromium) ;;
+  wechat | chromium | qq) ;;
   *) exit 0 ;;
 esac
 

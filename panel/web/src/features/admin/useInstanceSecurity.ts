@@ -52,7 +52,7 @@ export function useInstanceSecurity({
   const regenMachineId = async () => {
     const ok = await confirm({
       title: '重置该实例的设备 ID？',
-      body: '会生成一个全新的设备标识（machine-id）并重启实例，相当于"换一台新设备"。微信需要重新扫码登录。适用于该账号被微信判定设备风险、登录即被强制退出的情况。',
+      body: '会生成一个全新的设备标识（machine-id）并重启实例，相当于"换一台新设备"。需要重新扫码或重新登录。适用于账号被客户端判定设备风险、登录即被强制退出的情况。',
       danger: true,
       confirmText: '重置并重启',
     });
@@ -60,7 +60,7 @@ export function useInstanceSecurity({
     setRegenBusy(true);
     try {
       await api.regenMachineId(inst.id);
-      toast('已重置设备 ID，实例正在重启，请稍后重新扫码登录', 'ok');
+      toast('已重置设备 ID，实例正在重启，请稍后重新登录', 'ok');
       onClose();
       onDone();
     } catch (error) {

@@ -346,19 +346,19 @@ app.post('/api/admin/instances/:id/volume/restore', { bodyLimit: panelConfig.upl
   }, 400, '恢复失败');
 });
 
-app.get('/api/instances/:id/wechat/status', async (req, reply) => {
+app.get('/api/instances/:id/app/status', async (req, reply) => {
   if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.getWechatStatus(routeParams(req).id), 500, '读取微信状态失败');
+  return handle(reply, () => instances.getAppStatus(routeParams(req).id), 500, '读取应用状态失败');
 });
 
-app.post('/api/admin/instances/:id/wechat/install', async (req, reply) => {
+app.post('/api/admin/instances/:id/app/install', async (req, reply) => {
   if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.triggerWechat(routeParams(req).id, 'install'), 500, '无法触发安装');
+  return handle(reply, () => instances.triggerAppInstall(routeParams(req).id, 'install'), 500, '无法触发安装');
 });
 
-app.post('/api/admin/instances/:id/wechat/update', async (req, reply) => {
+app.post('/api/admin/instances/:id/app/update', async (req, reply) => {
   if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.triggerWechat(routeParams(req).id, 'update'), 500, '无法触发更新');
+  return handle(reply, () => instances.triggerAppInstall(routeParams(req).id, 'update'), 500, '无法触发更新');
 });
 
 registerDesktopProxy(app, auth, panelConfig);

@@ -1,5 +1,5 @@
-# WechatOnCloud —— 面板为唯一服务；微信实例由面板按需动态创建（docker run）。
-# 面板挂载 docker.sock 来创建/启动/删除微信实例容器，并反向代理到它们的 KasmVNC。
+# WechatOnCloud —— 面板为唯一服务；应用实例由面板按需动态创建（docker run）。
+# 面板挂载 docker.sock 来创建/启动/删除应用实例容器，并反向代理到它们的 KasmVNC。
 # 镜像默认从 Docker Hub 拉取，无需本地构建。要改配置：复制 .env.example 为 .env 后修改。
 services:
   panel:
@@ -9,9 +9,9 @@ services:
     container_name: woc-panel
     environment:
       - PORT=8080
-      # 新建微信实例时使用的镜像（多架构，amd64/arm64 自动匹配）；前缀同样跟随 WOC_IMAGE_PREFIX。
-      - WOC_WECHAT_IMAGE=${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/wechat-on-cloud:${WOC_VERSION:-latest}
-      # 透传给每个微信实例容器（KasmVNC 基础镜像用它们降权运行）
+      # 新建应用实例时使用的镜像（多架构，amd64/arm64 自动匹配）；前缀同样跟随 WOC_IMAGE_PREFIX。
+      - WOC_INSTANCE_IMAGE=${WOC_IMAGE_PREFIX:-docker.io/dogeggo}/wechat-on-cloud:${WOC_VERSION:-latest}
+      # 透传给每个应用实例容器（KasmVNC 基础镜像用它们降权运行）
       - PUID=${WOC_PUID:-1000}
       - PGID=${WOC_PGID:-1000}
       - TZ=${WOC_TZ:-Asia/Shanghai}
@@ -38,14 +38,14 @@ services:
       - PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB=${PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB:-1024}
       - PANEL_RATE_LIMIT_API_PER_MIN=${PANEL_RATE_LIMIT_API_PER_MIN:-600}
       - PANEL_RATE_LIMIT_AUTH_PER_MIN=${PANEL_RATE_LIMIT_AUTH_PER_MIN:-30}
-      # 面板通过容器名反代到动态创建的微信实例；必须使用用户自定义网络，
+      # 面板通过容器名反代到动态创建的应用实例；必须使用用户自定义网络，
       # 不能用 Docker 默认 bridge，否则容器名 DNS 不可用。
       - WOC_DOCKER_NETWORK=${WOC_DOCKER_NETWORK:-woc_internal}
 
     volumes:
       # 面板数据（实例元信息）与 OIDC 配置文件（auth.json）
-      - /mnt/wechat/data-panel:/data
-      # 面板经 docker 引擎创建/启动/删除微信实例容器、exec 触发下载、读取进度。
+      - /mnt/woc/data-panel:/data
+      # 面板经 docker 引擎创建/启动/删除应用实例容器、exec 触发下载、读取进度。
       # 注意：docker.sock 等同宿主 root 权限；仅允许 auth.json 白名单邮箱登录，docker API 绝不暴露给前端。
       - /var/run/docker.sock:/var/run/docker.sock
       # 摄像头自动探测（可选）：把宿主 /dev 只读挂进来，面板据此发现 /dev/videoN 并映射给实例。

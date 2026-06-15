@@ -23,9 +23,9 @@ export interface DesktopFile {
   size: number;
 }
 
-export type WechatPhase = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error';
-export interface WechatStatus {
-  phase: WechatPhase;
+export type AppPhase = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error';
+export interface AppStatus {
+  phase: AppPhase;
   percent: number; // -1 表示进度不确定
   installed: boolean;
   version: string;
@@ -34,7 +34,7 @@ export interface WechatStatus {
 }
 
 export type RuntimeState = 'running' | 'stopped' | 'missing';
-export type AppType = 'wechat' | 'chromium';
+export type AppType = 'wechat' | 'chromium' | 'qq';
 export interface PanelInstance {
   id: string;
   name: string;
@@ -67,7 +67,7 @@ export interface MemLimits {
 }
 export interface InstanceWithStatus extends PanelInstance {
   runtime: RuntimeState;
-  wechat: WechatStatus;
+  app: AppStatus;
 }
 
 export interface VolEntry {
@@ -155,9 +155,9 @@ export const api = {
     req<{ instance: PanelInstance }>(`/api/admin/instances/${id}/rename`, { method: 'POST', body: JSON.stringify({ name }) }),
   deleteInstance: (id: string, purge = false) =>
     req(`/api/admin/instances/${id}${purge ? '?purge=1' : ''}`, { method: 'DELETE' }),
-  instanceWechatStatus: (id: string) => req<{ status: WechatStatus }>(`/api/instances/${id}/wechat/status`),
-  instanceWechatInstall: (id: string) => req(`/api/admin/instances/${id}/wechat/install`, { method: 'POST' }),
-  instanceWechatUpdate: (id: string) => req(`/api/admin/instances/${id}/wechat/update`, { method: 'POST' }),
+  instanceAppStatus: (id: string) => req<{ status: AppStatus }>(`/api/instances/${id}/app/status`),
+  instanceAppInstall: (id: string) => req(`/api/admin/instances/${id}/app/install`, { method: 'POST' }),
+  instanceAppUpdate: (id: string) => req(`/api/admin/instances/${id}/app/update`, { method: 'POST' }),
   instanceStart: (id: string) => req(`/api/admin/instances/${id}/start`, { method: 'POST' }),
   instanceStop: (id: string) => req(`/api/admin/instances/${id}/stop`, { method: 'POST' }),
   instanceRestart: (id: string) => req(`/api/admin/instances/${id}/restart`, { method: 'POST' }),

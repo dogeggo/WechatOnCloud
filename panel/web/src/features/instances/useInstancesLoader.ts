@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type InstanceWithStatus } from '../../api';
-import { isWechatBusy } from '../../domain/instances';
+import { isAppBusy } from '../../domain/instances';
 import { useUI } from '../../ui';
 import { errorMessage } from '../../utils/errors';
 
@@ -34,7 +34,7 @@ export function useInstancesLoader(): InstancesState {
 
   useEffect(() => {
     window.clearTimeout(timer.current);
-    if (instances.some((inst) => isWechatBusy(inst.wechat.phase))) {
+    if (instances.some((inst) => isAppBusy(inst.app.phase))) {
       timer.current = window.setTimeout(() => void reload(), 1500);
     }
     return () => window.clearTimeout(timer.current);

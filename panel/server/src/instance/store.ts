@@ -14,7 +14,7 @@ export interface Instance {
   name: string; // 显示名
   appType: AppType; // 承载的应用类型
   icon?: string; // 自定义图标：data:image/... 或 builtin:<key>
-  containerName: string; // woc-wx-<id>
+  containerName: string; // woc-app-<id>
   volumeName: string; // woc-data-<id>
   kasmUser: string; // 随机生成，服务端注入反代，永不下发前端
   kasmPassword: string;
@@ -33,8 +33,8 @@ const FILE = '/data/accounts.json';
 
 let data: Data = { instances: [] };
 
-export type AppType = 'wechat' | 'chromium';
-export const APP_TYPES: AppType[] = ['wechat', 'chromium'];
+export type AppType = 'wechat' | 'chromium' | 'qq';
+export const APP_TYPES: AppType[] = ['wechat', 'qq', 'chromium'];
 
 export function normalizeAppType(value: unknown): AppType {
   if (typeof value === 'string' && APP_TYPES.includes(value as AppType)) return value as AppType;
@@ -136,13 +136,7 @@ function normalizeStoreData(raw: unknown): Data {
   if (!raw || typeof raw !== 'object' || !Array.isArray((raw as any).instances)) {
     throw new Error('账户数据文件格式不合法');
   }
-  const instances = (raw as any).instances.map((item: any) => {
-    if (item && typeof item === 'object' && !Object.prototype.hasOwnProperty.call(item, 'appType')) {
-      return { ...item, appType: 'wechat' };
-    }
-    return item;
-  });
-  data = { instances: instances.map(parseInstance) };
+  data = { instances: (raw as any).instances.map(parseInstance) };
   return data;
 }
 
@@ -204,7 +198,7 @@ export function createInstance(
   name: string,
   createdBy: string,
   reuseVolumeName?: string,
-  appType?: AppType,
+  appType: AppType = 'wechat',
 ) {
   const type = normalizeAppType(appType);
   let id = newInstanceId(); // 10 hex chars
@@ -224,7 +218,7 @@ export function createInstance(
     id,
     name: displayName,
     appType: type,
-    containerName: `woc-wx-${id}`,
+    containerName: `woc-app-${id}`,
     volumeName,
     kasmUser: 'woc',
     // 用 hex（仅 0-9a-f）：容器内 init 脚本以 `openssl passwd -apr1 ${PASSWORD}` 未加引号方式生成 .htpasswd。

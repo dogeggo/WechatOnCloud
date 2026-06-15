@@ -19,7 +19,7 @@ export function useInstanceRuntimeActions({
     if (!id) return;
     const ok = await confirm({
       title: '重启该实例？',
-      body: '会重建容器（聊天记录保留），微信重新启动，约十几秒；用于修复卡死/最小化丢失等。',
+      body: '会重建容器（应用数据保留），应用重新启动，约十几秒；用于修复卡死/最小化丢失等。',
       confirmText: '重启',
     });
     if (!ok) return;

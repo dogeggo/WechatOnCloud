@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useInstances } from '../AppShell';
 import { Icons } from '../components/icons';
-import { appProfile, desktopUrl, isRuntimeOffline, isWechatBusy, isWechatInstalled } from '../domain/instances';
+import { appProfile, desktopUrl, isAppBusy, isAppInstalled, isRuntimeOffline } from '../domain/instances';
 import { useClipboardBridge } from '../features/desktop/useClipboardBridge';
 import { useDesktopControl } from '../features/desktop/useDesktopControl';
 import { useDesktopFiles } from '../features/desktop/useDesktopFiles';
@@ -35,7 +35,7 @@ export default function InstanceView({
   // 等列表刷新到该实例或超时后再判定是否真的不存在，避免从管理页跳转时误报"实例不存在"。
   const [probing, setProbing] = useState(true);
   const offline = inst ? isRuntimeOffline(inst.runtime) : false;
-  const installed = !!inst && isWechatInstalled(inst);
+  const installed = !!inst && isAppInstalled(inst);
   const showVnc = !!inst && !offline && installed;
   const vnc = useVncFrame({ active, showVnc, id, frameRef });
   const desktopFiles = useDesktopFiles({ active, showVnc, id });
@@ -116,7 +116,7 @@ export default function InstanceView({
             <div className="ws-mode" role="group" aria-label="输入模式">
               <button
                 className={'ws-mode-btn' + (ime.inputMode === 'seamless' ? ' on' : '')}
-                title="无感输入：直接在微信里打中文，候选提交后转发到远端"
+                title="无感输入：直接在应用里打中文，候选提交后转发到远端"
                 onClick={() => ime.switchInputMode('seamless')}
               >
                 无感
@@ -169,28 +169,28 @@ export default function InstanceView({
             </button>
           </div>
         </div>
-      ) : isWechatBusy(inst.wechat.phase) ? (
+      ) : isAppBusy(inst.app.phase) ? (
         <div className="iv-stage iv-center">
           <div className="iv-notice">
             <div className="spinner" />
             <div className="iv-notice-title">{profile.label}就绪中…</div>
             <div className="iv-notice-sub">
-              {inst.wechat.message || '请稍候'}
-              {inst.wechat.percent >= 0 ? ` · ${inst.wechat.percent}%` : ''} ——完成后自动进入，无需刷新
+              {inst.app.message || '请稍候'}
+              {inst.app.percent >= 0 ? ` · ${inst.app.percent}%` : ''} ——完成后自动进入，无需刷新
             </div>
           </div>
         </div>
       ) : !installed ? (
         <div className="iv-stage iv-center">
           <div className="iv-notice">
-            <div className="iv-notice-title">{inst.wechat.phase === 'error' ? `${profile.label}就绪出错` : profile.installTitle}</div>
+            <div className="iv-notice-title">{inst.app.phase === 'error' ? `${profile.label}就绪出错` : profile.installTitle}</div>
             <div className="iv-notice-sub">
-              {inst.wechat.phase === 'error'
-                ? inst.wechat.message || '就绪失败，可在「管理」重试'
+              {inst.app.phase === 'error'
+                ? inst.app.message || '就绪失败，可在「管理」重试'
                 : `该实例容器已就绪，但${profile.needsInstall ? '尚未下载安装' : '尚未完成初始化'}${profile.label}`}
             </div>
             <button className="btn btn-primary iv-notice-btn" onClick={() => nav('/admin')}>
-              去「管理」{inst.wechat.phase === 'error' ? '重试 / 处理' : profile.needsInstall ? '下载安装' : '查看状态'}
+              去「管理」{inst.app.phase === 'error' ? '重试 / 处理' : profile.needsInstall ? '下载安装' : '查看状态'}
             </button>
             <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
               查看日志
@@ -247,8 +247,8 @@ export default function InstanceView({
             <div className="iv-drop" onDrop={desktopFiles.onDrop} onDragOver={(e) => e.preventDefault()}>
               <div className="drop-card">
                 <div className="drop-icon">⬇</div>
-                <div className="drop-title">松开上传到微信桌面</div>
-                <div className="drop-sub">上传后在微信里「+ / 文件」选择即可</div>
+                <div className="drop-title">松开上传到应用桌面</div>
+                <div className="drop-sub">上传后在应用里选择即可</div>
               </div>
             </div>
           )}
@@ -286,7 +286,7 @@ export default function InstanceView({
               <button className="btn btn-primary files-upload" disabled={desktopFiles.uploading} onClick={() => desktopFiles.fileInput.current?.click()}>
                 {desktopFiles.uploading ? '上传中…' : '＋ 选择文件上传'}
               </button>
-              <div className="files-hint">也可直接把文件拖进来。下方为桌面（~/Desktop）里的文件，微信收到的文件另存到桌面即可在此下载。</div>
+              <div className="files-hint">也可直接把文件拖进来。下方为桌面（~/Desktop）里的文件，应用收到的文件另存到桌面即可在此下载。</div>
               <div className="files-list">
                 {desktopFiles.files.length === 0 && (
                   <div className="muted small" style={{ padding: '10px 2px' }}>
@@ -320,17 +320,17 @@ export default function InstanceView({
                 className="clip-area"
                 value={clipboard.clipText}
                 onChange={(e) => clipboard.setClipText(e.target.value)}
-                placeholder="在此输入或粘贴文本，点「发送到微信」后到微信输入框按 Ctrl+V 粘贴"
+                placeholder="在此输入或粘贴文本，点「发送到应用」后到应用输入框按 Ctrl+V 粘贴"
                 rows={5}
               />
               <button className="btn btn-primary files-upload" onClick={clipboard.sendClip}>
-                发送到微信（容器剪贴板）
+                发送到应用（容器剪贴板）
               </button>
               <button className="btn-text" style={{ alignSelf: 'flex-start', marginTop: 6 }} onClick={clipboard.pullClip}>
                 ↓ 读取容器剪贴板到此框
               </button>
               <div className="files-hint">
-                局域网 http 访问时浏览器会禁用系统级剪贴板同步，故用此框中转：文本→容器剪贴板，再在微信里 Ctrl+V。
+                局域网 http 访问时浏览器会禁用系统级剪贴板同步，故用此框中转：文本→容器剪贴板，再在应用里 Ctrl+V。
               </div>
             </div>
           )}
@@ -359,7 +359,7 @@ export default function InstanceView({
                 value={ime.imeSubmitKey}
                 onChange={(e) => ime.setImeSubmitKey(e.target.value === 'ctrlEnter' ? 'ctrlEnter' : 'enter')}
                 disabled={ime.imeDisabled}
-                title="微信发送快捷键"
+                title="应用发送快捷键"
               >
                 <option value="enter">Enter发送</option>
                 <option value="ctrlEnter">Ctrl+Enter发送</option>
@@ -368,7 +368,7 @@ export default function InstanceView({
                 className="btn iv-imebar-input-only"
                 disabled={ime.imeDisabled || !ime.imeText.trim()}
                 onClick={() => void ime.sendImeText(false)}
-                title="只粘贴到微信输入框，不发送"
+                title="只粘贴到应用输入框，不发送"
               >
                 {ime.imeSending === 'input' ? '输入中' : '输入'}
               </button>
@@ -376,7 +376,7 @@ export default function InstanceView({
                 className="btn btn-primary iv-imebar-send"
                 disabled={ime.imeDisabled || !ime.imeText.trim()}
                 onClick={() => void ime.sendImeText(true)}
-                title="粘贴到微信输入框并发送"
+                title="粘贴到应用输入框并发送"
               >
                 {ime.imeSending === 'send' ? '发送中' : '发送'}
               </button>

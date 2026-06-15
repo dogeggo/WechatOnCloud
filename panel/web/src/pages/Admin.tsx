@@ -5,7 +5,7 @@ import { api, type InstanceWithStatus, type VolEntry } from '../api';
 import { ICON_CHOICES, InstanceIcon } from '../AppIcon';
 import { EmptyState } from '../components/EmptyState';
 import { Icons } from '../components/icons';
-import { APP_TYPES, adminCardState, appProfile, type WechatInstallAction } from '../domain/instances';
+import { APP_TYPES, adminCardState, appProfile, type AppInstallAction } from '../domain/instances';
 import { deviceName } from '../domain/devices';
 import { joinVolumePath } from '../domain/volumePaths';
 import { useCreateInstance } from '../features/admin/useCreateInstance';
@@ -33,7 +33,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
     removeDevice,
     removeOrphanContainer,
     removeOrphanVolume,
-    triggerWechat,
+    triggerAppInstall,
     startInstance,
     runLifecycle,
     toggleVncKeepAlive,
@@ -67,7 +67,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
           <EmptyState
             icon="🖥️"
             title="还没有应用实例"
-            sub="新建微信或 Chromium 实例，进入后即可在浏览器里使用"
+            sub="新建微信、QQ 或 Chromium 实例，进入后即可在浏览器里使用"
             action={
               <button className="btn btn-primary" onClick={() => setCreatingInst(true)}>
                 ＋ 新建实例
@@ -82,7 +82,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 inst={inst}
                 acting={acting[inst.id]}
                 onEnter={() => nav(`/i/${inst.id}`)}
-                onTrigger={triggerWechat}
+                onTrigger={triggerAppInstall}
                 onStart={() => startInstance(inst)}
                 onStop={() => runLifecycle(inst, 'stop')}
                 onRestart={() => runLifecycle(inst, 'restart')}
@@ -164,7 +164,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
           <>
             <div className="section-row" style={{ marginTop: 22 }}>
               <span className="section-title">未使用的数据卷</span>
-              <span className="muted small">删除实例时未勾选「彻底清除」会保留下来；可在新建实例时复用以继承聊天记录。</span>
+              <span className="muted small">删除实例时未勾选「彻底清除」会保留下来；可在新建实例时复用以继承应用数据。</span>
             </div>
             <div className="inst-grid">
               {orphanVolumes.map((v) => (
@@ -331,8 +331,8 @@ function InstanceSecurity({ inst, onClose, onDone }: { inst: InstanceWithStatus;
 
             <div className="field-label" style={{ marginTop: 16 }}>设备身份（machine-id）</div>
             <div className="muted small" style={{ lineHeight: 1.6 }}>
-              微信会用设备标识做风控。若该账号被判定<b>设备风险</b>、登录后被强制退出且反复循环，
-              可重置为一个全新的唯一设备 ID（相当于换台新设备），再重新扫码登录。会重启该实例。
+              客户端可能会用设备标识做风控。若该账号被判定<b>设备风险</b>、登录后被强制退出且反复循环，
+              可重置为一个全新的唯一设备 ID（相当于换台新设备），再重新登录。会重启该实例。
             </div>
             <button
               type="button"
@@ -370,12 +370,12 @@ function DeleteInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
       <div className="card modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 360 }}>
         <h2>删除实例「{inst.name}」？</h2>
         <div className="muted" style={{ fontSize: 14, lineHeight: 1.5 }}>
-          容器会被移除。默认保留聊天记录（数据卷），之后可重建同名实例恢复。
+          容器会被移除。默认保留应用数据（数据卷），之后可重建同名实例恢复。
         </div>
         <label className={'purge-opt' + (form.purge ? ' on' : '')} onClick={() => form.setPurge((v) => !v)}>
           <span className="purge-check">{form.purge ? '✓' : ''}</span>
           <span>
-            同时永久删除聊天记录（数据卷）
+            同时永久删除应用数据（数据卷）
             <span className="muted small" style={{ display: 'block' }}>不可恢复，请谨慎勾选</span>
           </span>
         </label>
@@ -393,7 +393,7 @@ function DeleteInstance({ inst, onClose, onDone }: { inst: InstanceWithStatus; o
   );
 }
 
-// 管理页的实例卡片：含微信版本管理（下载/更新）+ 重命名/分配/删除
+// 管理页的实例卡片：含应用安装管理（下载/更新）+ 重命名/分配/删除
 function InstanceAdminCard({
   inst,
   acting,
@@ -414,7 +414,7 @@ function InstanceAdminCard({
   inst: InstanceWithStatus;
   acting?: string;
   onEnter: () => void;
-  onTrigger: (inst: InstanceWithStatus, kind: WechatInstallAction) => void;
+  onTrigger: (inst: InstanceWithStatus, kind: AppInstallAction) => void;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
@@ -427,7 +427,7 @@ function InstanceAdminCard({
   vncKeepAlive: boolean;
   onToggleVncKeepAlive: (enabled: boolean) => void;
 }) {
-  const wx = inst.wechat;
+  const appStatus = inst.app;
   const profile = appProfile(inst.appType);
   const { badge, sub, installed, offline, working } = adminCardState(inst, acting);
   const [menuOpen, setMenuOpen] = useState(false); // 「管理」折叠菜单是否展开
@@ -448,10 +448,10 @@ function InstanceAdminCard({
       </div>
 
       {working && (
-        <div className="wx-progress">
+        <div className="app-progress">
           <div
-            className={'wx-progress-bar' + (acting || wx.percent < 0 ? ' indeterminate' : '')}
-            style={!acting && wx.percent >= 0 ? { width: `${wx.percent}%` } : undefined}
+            className={'app-progress-bar' + (acting || appStatus.percent < 0 ? ' indeterminate' : '')}
+            style={!acting && appStatus.percent >= 0 ? { width: `${appStatus.percent}%` } : undefined}
           />
         </div>
       )}
@@ -486,7 +486,7 @@ function InstanceAdminCard({
                       {installed ? profile.updateLabel : '下载安装'}
                     </button>
                   )}
-                  <button className="btn-text" onClick={onUpgrade} title="拉取最新镜像并重建（保留聊天记录）">
+                  <button className="btn-text" onClick={onUpgrade} title="拉取最新镜像并重建（保留应用数据）">
                     升级实例
                   </button>
                   {!offline && (
@@ -516,7 +516,7 @@ function InstanceAdminCard({
                   <button className="btn-text" onClick={onSecurity} title="内存阈值自愈">
                     安全
                   </button>
-                  <button className="btn-text" onClick={onVolume} title="数据卷：备份/恢复、上传 PC 微信数据、文件管理">
+                  <button className="btn-text" onClick={onVolume} title="数据卷：备份/恢复、上传应用数据、文件管理">
                     数据卷
                   </button>
                   <button
@@ -699,7 +699,7 @@ function InstanceIconEditor({ inst, onClose, onDone }: { inst: InstanceWithStatu
 }
 
 // 数据卷管理：整卷备份/恢复 + 文件浏览器（浏览/上传/解压/下载/改名/移动/删除）。
-// 主要场景：把 PC 微信数据迁移上来、跨实例迁移、离线备份。全程在「运行中」的实例上操作
+// 主要场景：把 PC 应用数据迁移上来、跨实例迁移、离线备份。全程在「运行中」的实例上操作
 // （浏览/改名/删除靠 docker exec，需容器运行）。整卷恢复会覆盖全部数据，强提示并建议恢复后重启实例。
 function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus; onClose: () => void; onChanged: () => void }) {
   const volume = useVolumeManager({ inst, onChanged });
@@ -718,7 +718,7 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
               <button className="btn" disabled={volume.disabled} onClick={() => volume.restoreRef.current?.click()}>恢复备份…</button>
               <input ref={volume.restoreRef} type="file" accept=".gz,.tgz,.tar" hidden onChange={volume.onPick('restore')} />
             </div>
-          <div className="vol-hint">整卷含聊天记录，用于跨实例迁移 / 离线备份。</div>
+          <div className="vol-hint">整卷含登录态、聊天记录和缓存，用于跨实例迁移 / 离线备份。</div>
         </div>
 
         {volume.offline ? (
@@ -847,7 +847,7 @@ function VolumeManager({ inst, onClose, onChanged }: { inst: InstanceWithStatus;
         )}
 
         <div className="muted small" style={{ marginTop: 10, lineHeight: 1.6 }}>
-          PC 微信数据迁移：把数据文件夹打包成 <b>.tar.gz</b>，用「上传并解压」放到对应目录；改动微信正在使用的数据后，重启实例方可生效。能否解密取决于微信版本与设备绑定，请自行测试。
+          PC 应用数据迁移：把数据文件夹打包成 <b>.tar.gz</b>，用「上传并解压」放到对应目录；改动应用正在使用的数据后，重启实例方可生效。能否解密取决于客户端版本、账号和设备绑定，请自行测试。
         </div>
 
         <div className="modal-actions">
@@ -881,7 +881,7 @@ function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () =
             );
           })}
         </div>
-        <input className="input" placeholder="实例名称（如：我的微信 / 工作浏览器）" value={form.name} onChange={(e) => form.setName(e.target.value)} />
+        <input className="input" placeholder="实例名称（如：我的微信 / 我的 QQ / 工作浏览器）" value={form.name} onChange={(e) => form.setName(e.target.value)} />
         {form.orphans.length > 0 && (
           <>
             <div className="field-label" style={{ marginTop: 12 }}>数据卷（可选）</div>
@@ -895,7 +895,7 @@ function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () =
               ))}
             </select>
             <div className="muted small" style={{ marginTop: 4 }}>
-              复用旧微信卷需用原微信号扫码登录才能解密历史消息；浏览器实例建议使用新卷。
+              复用旧应用数据卷需使用原应用账号登录；浏览器实例建议使用新卷。
             </div>
           </>
         )}

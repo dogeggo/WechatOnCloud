@@ -53,6 +53,7 @@ const play = <path fill="#fff" d="M20 17l12 7-12 7z" />;
 export const BUILTIN_ICONS: Record<string, Glyph> = {
   wechat: glyph('#07c160', chat),
   chromium: glyph('#4285f4', globe),
+  qq: glyph('#12b7f5', txt('Q', 26)),
   telegram: glyph('#2aabee', plane),
   xiaohongshu: glyph('#ff2442', txt('书')),
   douyin: glyph('#111111', txt('抖')),
@@ -67,6 +68,7 @@ export const BUILTIN_ICONS: Record<string, Glyph> = {
 export const ICON_CHOICES: { key: string; label: string }[] = [
   { key: 'wechat', label: '微信' },
   { key: 'chromium', label: 'Chromium' },
+  { key: 'qq', label: 'QQ' },
   { key: 'telegram', label: 'Telegram' },
   { key: 'xiaohongshu', label: '小红书' },
   { key: 'douyin', label: '抖音' },
@@ -80,6 +82,7 @@ export const ICON_CHOICES: { key: string; label: string }[] = [
 const DEFAULT_BY_APP: Record<AppType, string> = {
   wechat: 'wechat',
   chromium: 'chromium',
+  qq: 'qq',
 };
 
 export function InstanceIcon({

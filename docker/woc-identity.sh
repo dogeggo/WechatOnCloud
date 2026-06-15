@@ -4,7 +4,7 @@
 # 目的：给每个实例一个【唯一且持久】的设备身份，避免所有实例共用镜像里烤死的同一个 machine-id。
 #
 # 背景（P0）：Debian/基础镜像把 machine-id 固化在镜像层里，于是全世界每个 wechat-on-cloud
-# 实例的 /etc/machine-id 都相同。machine-id 是 Linux 上最接近"设备指纹"的标识，微信会读它做
+# 实例的 /etc/machine-id 都相同。machine-id 是 Linux 上最接近"设备指纹"的标识，桌面客户端可能会读它做
 # 风控；成千上万个账号共用同一个 machine-id = 典型"设备农场"特征 → 被腾讯批量判风险 → 登录即
 # 被强制退出、反复循环。
 #
@@ -37,10 +37,10 @@ printf '%s\n' "$MID" > /etc/machine-id 2>/dev/null || true
 mkdir -p /var/lib/dbus
 printf '%s\n' "$MID" > /var/lib/dbus/machine-id 2>/dev/null || true
 
-# 抹掉最明显的容器标记（微信可能据此判定非真实桌面）。/.dockerenv 由 docker 注入，删掉无副作用。
+# 抹掉最明显的容器标记（客户端可能据此判定非真实桌面）。/.dockerenv 由 docker 注入，删掉无副作用。
 rm -f /.dockerenv 2>/dev/null || true
 
-# 设备伪装：把 /etc/os-release 改成 deepin（微信官方支持的发行版；Deepin 本就基于 Debian，
+# 设备伪装：把 /etc/os-release 改成 deepin（部分客户端官方支持的发行版；Deepin 本就基于 Debian，
 # 与本镜像的 Debian 用户态一致，不自相矛盾）。面板按 WOC_SPOOF_OS 控制（默认开，=0 关）。
 # /etc/os-release 是指向 /usr/lib/os-release 的软链，重定向会写穿到目标，故直接写它即可。
 if [ "${WOC_SPOOF_OS:-1}" = "1" ]; then

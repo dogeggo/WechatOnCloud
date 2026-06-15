@@ -24,7 +24,7 @@ export function useClipboardBridge({
       return;
     }
     if (pushClipboardToRemote(frameRef.current, clipText)) {
-      toast('已发送到容器剪贴板，请在微信输入框按 Ctrl+V 粘贴', 'ok');
+      toast('已发送到容器剪贴板，请在应用输入框按 Ctrl+V 粘贴', 'ok');
       return;
     }
     toast('发送失败：桌面尚未连接', 'error');

@@ -1,5 +1,5 @@
 export const INSTANCE_ID_RE = /^[0-9a-f]{10}$/;
-export const CONTAINER_NAME_RE = /^woc-wx-[0-9a-f]{10}$/;
+export const CONTAINER_NAME_RE = /^woc-app-[0-9a-f]{10}$/;
 export const VOLUME_NAME_RE = /^woc-data-[0-9a-f]{10}$/;
 export const NETWORK_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 export const VIDEO_DEVICE_RE = /^\/dev\/video\d+$/;
@@ -33,7 +33,7 @@ export function parseIdFromVolumeName(name: string): string | null {
 }
 
 export function parseIdFromContainerName(name: string): string | null {
-  const m = /^woc-wx-([0-9a-f]{10})$/.exec(name);
+  const m = /^woc-app-([0-9a-f]{10})$/.exec(name);
   return m ? m[1] : null;
 }
 
