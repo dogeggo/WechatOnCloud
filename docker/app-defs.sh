@@ -3,6 +3,30 @@
 #   APP_LAUNCH — 启动命令（可带参数；autostart 以 word-split 方式执行）
 #   APP_NAME   — 显示名（日志用）
 # 缺省类型为微信；未知类型直接报错。
+woc_chromium_software_flags() {
+  printf '%s\n' \
+    --no-sandbox \
+    --disable-gpu \
+    --disable-gpu-compositing \
+    --disable-gpu-rasterization \
+    --disable-vulkan \
+    --disable-accelerated-video-decode \
+    --disable-accelerated-video-encode \
+    --disable-features=VaapiVideoDecoder,VaapiVideoEncoder,Vulkan \
+    --enable-unsafe-swiftshader \
+    --use-gl=swiftshader \
+    --use-angle=swiftshader
+}
+
+woc_chromium_software_flags_inline() {
+  local flags=()
+  local flag
+  while IFS= read -r flag; do
+    flags+=("$flag")
+  done < <(woc_chromium_software_flags)
+  printf '%s' "${flags[*]}"
+}
+
 woc_app_def() {
   case "${1:-wechat}" in
     wechat)
@@ -19,7 +43,7 @@ woc_app_def() {
       ;;
     qq)
       APP_BIN=/config/qq/opt/QQ/qq
-      APP_LAUNCH="$APP_BIN --no-sandbox"
+      APP_LAUNCH="$APP_BIN $(woc_chromium_software_flags_inline)"
       APP_NAME=QQ
       ;;
     *)

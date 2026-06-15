@@ -9,11 +9,13 @@
 set -euo pipefail
 
 PATCH_PL="$(dirname "$0")/woc-ime.pl"
+CANVAS_PATCH_PL="$(dirname "$0")/woc-canvas.pl"
 patched=0
 
 for f in /usr/share/kasmvnc/www/dist/*.bundle.js /usr/local/share/kasmvnc/www/dist/*.bundle.js; do
     [ -f "$f" ] || continue
     changed=0
+    optional_changed=0
 
     # (1) enable_ime 默认开启
     if grep -q "initSetting('enable_ime', false)" "$f"; then
@@ -35,7 +37,20 @@ for f in /usr/share/kasmvnc/www/dist/*.bundle.js /usr/local/share/kasmvnc/www/di
         changed=1
     fi
 
-    [ "$changed" = "1" ] && { echo "woc-www-patch: patched $f"; patched=1; }
+    # (3) Chromium Canvas2D 读回性能提示：只补单参数 getContext('2d')，不覆盖已有自定义选项。
+    if grep -Eq "getContext\\((\"2d\"|'2d')\\)" "$f" && ! grep -q "WOC-CANVAS" "$f"; then
+        perl -0777 -i -pe "$(cat "$CANVAS_PATCH_PL")" "$f"
+        if ! grep -q "WOC-CANVAS" "$f"; then
+            echo "FATAL: canvas patch mismatch on $f" >&2
+            exit 1
+        fi
+        optional_changed=1
+    fi
+
+    [ "$changed" = "1" ] && patched=1
+    if [ "$changed" = "1" ] || [ "$optional_changed" = "1" ]; then
+        echo "woc-www-patch: patched $f"
+    fi
 done
 
 [ "$patched" = "1" ] || { echo "FATAL: no bundle patched" >&2; exit 1; }

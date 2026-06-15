@@ -52,6 +52,22 @@ function audioContextCtor(): new (options?: AudioContextOptions) => AudioContext
   return Ctx;
 }
 
+function isExpectedMicUnavailableError(error: unknown): boolean {
+  const name =
+    error instanceof DOMException
+      ? error.name
+      : error && typeof error === 'object' && 'name' in error
+        ? String((error as { name: unknown }).name)
+        : '';
+  return (
+    name === 'NotFoundError' ||
+    name === 'DevicesNotFoundError' ||
+    name === 'NotAllowedError' ||
+    name === 'PermissionDeniedError' ||
+    name === 'SecurityError'
+  );
+}
+
 function loadIo(id: string): Promise<SocketIoFactory> {
   const w = window as SocketIoWindow;
   if (w.io) return Promise.resolve(w.io);
@@ -159,8 +175,14 @@ export class VncAudio {
   private micCtx: AudioContext | null = null;
   private micNode: ScriptProcessorNode | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
+  private micStarting = false;
+  private micUnavailable = false;
+  private micDeviceChangeBound = false;
   private gestureBound = false;
   private destroyed = false;
+  private readonly resetMicAvailability = () => {
+    this.micUnavailable = false;
+  };
 
   constructor(id: string) {
     this.id = id;
@@ -243,10 +265,16 @@ export class VncAudio {
 
   private async startMic() {
     // 麦克风需安全上下文（HTTPS / localhost）；http 局域网下静默跳过，只保留扬声器。
-    if (this.micCtx || !this.socket) return;
+    if (this.micCtx || this.micStarting || this.micUnavailable || !this.socket) return;
     const md = navigator.mediaDevices;
     if (!window.isSecureContext || !md || !md.getUserMedia) return;
+    this.watchMicDevices(md);
+    this.micStarting = true;
     try {
+      if (!(await this.hasAudioInputDevice(md))) {
+        this.micUnavailable = true;
+        return;
+      }
       const stream = await md.getUserMedia({ audio: true });
       if (this.destroyed || !this.active) {
         stream.getTracks().forEach((t) => t.stop());
@@ -273,9 +301,33 @@ export class VncAudio {
         this.socket.emit('micdata', i16.buffer);
       };
     } catch (error) {
+      if (isExpectedMicUnavailableError(error)) {
+        this.micUnavailable = true;
+        return;
+      }
       console.warn('启动麦克风桥接失败', error);
       this.stopMic();
+    } finally {
+      this.micStarting = false;
     }
+  }
+
+  private async hasAudioInputDevice(md: MediaDevices): Promise<boolean> {
+    if (!md.enumerateDevices) return true;
+    const devices = await md.enumerateDevices();
+    return devices.some((device) => device.kind === 'audioinput');
+  }
+
+  private watchMicDevices(md: MediaDevices) {
+    if (this.micDeviceChangeBound) return;
+    md.addEventListener('devicechange', this.resetMicAvailability);
+    this.micDeviceChangeBound = true;
+  }
+
+  private unwatchMicDevices() {
+    if (!this.micDeviceChangeBound) return;
+    navigator.mediaDevices?.removeEventListener('devicechange', this.resetMicAvailability);
+    this.micDeviceChangeBound = false;
   }
 
   private stopMic() {
@@ -298,6 +350,7 @@ export class VncAudio {
     this.destroyed = true;
     this.close();
     this.stopMic();
+    this.unwatchMicDevices();
     try {
       this.socket?.disconnect();
     } catch (error) {

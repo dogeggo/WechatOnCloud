@@ -1,5 +1,6 @@
 import { useEffect, type RefObject } from 'react';
 import { api } from '../../api';
+import { installImeCandidateAnchor } from './desktopFrame';
 import type { DesktopInputMode } from './desktopFrame';
 
 type SeamlessJob = { kind: 'text'; data: string } | { kind: 'key'; data: string };
@@ -91,6 +92,11 @@ export function useSeamlessIme({
     const win = frameRef.current?.contentWindow;
     const doc = frameRef.current?.contentDocument;
     if (!win || !doc) return;
-    return installSeamlessIme(win, doc, id);
+    const cleanupSeamlessIme = installSeamlessIme(win, doc, id);
+    const cleanupImeAnchor = installImeCandidateAnchor(doc);
+    return () => {
+      cleanupImeAnchor();
+      cleanupSeamlessIme();
+    };
   }, [active, inputMode, showVnc, frameLoaded, id, frameRef]);
 }

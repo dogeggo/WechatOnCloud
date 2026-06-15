@@ -4,12 +4,18 @@ export type DesktopInputMode = 'forward' | 'seamless';
 const IME_SUBMIT_KEY = 'woc_ime_submit_key';
 const DESKTOP_INPUT_MODE_KEY = 'woc_input_mode';
 const VNC_STYLE_ID = 'woc-vnc-style';
+const VNC_KEYBOARD_INPUT_ID = 'noVNC_keyboardinput';
+const IME_ANCHOR_MARGIN = 8;
+const IME_ANCHOR_WIDTH = 2;
+const IME_ANCHOR_HEIGHT = 24;
+const DEFAULT_IME_ANCHOR_X = 24;
+const DEFAULT_IME_ANCHOR_Y = 24;
 
 const VNC_CONTROL_STYLE =
   '#noVNC_control_bar_anchor{z-index:2147483647!important;}' +
   '#noVNC_control_bar{background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.55)!important;box-shadow:0 0 24px rgba(0,0,0,.55)!important;}' +
   '#noVNC_control_bar_handle{opacity:1!important;background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.5)!important;}' +
-  '#noVNC_keyboardinput{width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;}';
+  '#noVNC_keyboardinput{position:fixed!important;left:24px!important;top:24px!important;width:2px!important;height:24px!important;min-width:2px!important;min-height:24px!important;margin:0!important;padding:0!important;border:0!important;outline:0!important;opacity:.01!important;overflow:hidden!important;resize:none!important;background:transparent!important;color:transparent!important;caret-color:transparent!important;pointer-events:none!important;}';
 
 export function readImeSubmitKey(): ImeSubmitKey {
   return window.localStorage.getItem(IME_SUBMIT_KEY) === 'ctrlEnter' ? 'ctrlEnter' : 'enter';
@@ -35,7 +41,7 @@ export function writeKasmImeMode(value: DesktopInputMode): void {
 export function focusVncFrame(frame: HTMLIFrameElement | null): void {
   frame?.focus();
   frame?.contentWindow?.focus();
-  const keyboardInput = frame?.contentDocument?.getElementById('noVNC_keyboardinput') as HTMLElement | null;
+  const keyboardInput = frame?.contentDocument?.getElementById(VNC_KEYBOARD_INPUT_ID) as HTMLElement | null;
   keyboardInput?.focus();
 }
 
@@ -51,6 +57,78 @@ export function injectVncStyle(frame: HTMLIFrameElement | null): void {
   style.id = VNC_STYLE_ID;
   style.textContent = VNC_CONTROL_STYLE;
   (doc.head || doc.documentElement).appendChild(style);
+}
+
+export function installImeCandidateAnchor(doc: Document): () => void {
+  let anchor = clampImeAnchor(doc, DEFAULT_IME_ANCHOR_X, DEFAULT_IME_ANCHOR_Y);
+
+  const applyAnchor = () => {
+    const input = doc.getElementById(VNC_KEYBOARD_INPUT_ID) as HTMLElement | null;
+    if (!input) return;
+    setImeAnchorStyle(input, anchor.x, anchor.y);
+  };
+
+  const moveAnchor = (clientX: number, clientY: number) => {
+    anchor = clampImeAnchor(doc, clientX, clientY);
+    applyAnchor();
+  };
+
+  const onPointerDown = (event: Event) => {
+    const pointerEvent = event as PointerEvent;
+    moveAnchor(pointerEvent.clientX, pointerEvent.clientY);
+  };
+  const onReapply = () => applyAnchor();
+  const win = doc.defaultView;
+
+  applyAnchor();
+  doc.addEventListener('pointerdown', onPointerDown, true);
+  doc.addEventListener('focusin', onReapply, true);
+  doc.addEventListener('compositionstart', onReapply, true);
+  win?.addEventListener('resize', onReapply);
+
+  return () => {
+    doc.removeEventListener('pointerdown', onPointerDown, true);
+    doc.removeEventListener('focusin', onReapply, true);
+    doc.removeEventListener('compositionstart', onReapply, true);
+    win?.removeEventListener('resize', onReapply);
+  };
+}
+
+function clampImeAnchor(doc: Document, clientX: number, clientY: number): { x: number; y: number } {
+  const win = doc.defaultView;
+  const viewportWidth = doc.documentElement.clientWidth || win?.innerWidth || 0;
+  const viewportHeight = doc.documentElement.clientHeight || win?.innerHeight || 0;
+  const maxX = viewportWidth
+    ? Math.max(IME_ANCHOR_MARGIN, viewportWidth - IME_ANCHOR_MARGIN - IME_ANCHOR_WIDTH)
+    : clientX;
+  const maxY = viewportHeight
+    ? Math.max(IME_ANCHOR_MARGIN, viewportHeight - IME_ANCHOR_MARGIN - IME_ANCHOR_HEIGHT)
+    : clientY;
+  return {
+    x: Math.round(Math.min(Math.max(clientX, IME_ANCHOR_MARGIN), maxX)),
+    y: Math.round(Math.min(Math.max(clientY, IME_ANCHOR_MARGIN), maxY)),
+  };
+}
+
+function setImeAnchorStyle(input: HTMLElement, x: number, y: number): void {
+  input.style.setProperty('position', 'fixed', 'important');
+  input.style.setProperty('left', `${x}px`, 'important');
+  input.style.setProperty('top', `${y}px`, 'important');
+  input.style.setProperty('width', `${IME_ANCHOR_WIDTH}px`, 'important');
+  input.style.setProperty('height', `${IME_ANCHOR_HEIGHT}px`, 'important');
+  input.style.setProperty('min-width', `${IME_ANCHOR_WIDTH}px`, 'important');
+  input.style.setProperty('min-height', `${IME_ANCHOR_HEIGHT}px`, 'important');
+  input.style.setProperty('margin', '0', 'important');
+  input.style.setProperty('padding', '0', 'important');
+  input.style.setProperty('border', '0', 'important');
+  input.style.setProperty('outline', '0', 'important');
+  input.style.setProperty('opacity', '.01', 'important');
+  input.style.setProperty('overflow', 'hidden', 'important');
+  input.style.setProperty('resize', 'none', 'important');
+  input.style.setProperty('background', 'transparent', 'important');
+  input.style.setProperty('color', 'transparent', 'important');
+  input.style.setProperty('caret-color', 'transparent', 'important');
+  input.style.setProperty('pointer-events', 'none', 'important');
 }
 
 export function pushClipboardToRemote(frame: HTMLIFrameElement | null, text: string): boolean {

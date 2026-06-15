@@ -6,8 +6,11 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -z "${WOC_BROWSER_DBUS_SESSION_ST
   exec dbus-run-session -- "$0" "$@"
 fi
 
-chromium_flags=(
-  --no-sandbox
+# shellcheck source=/dev/null
+. /woc/app-defs.sh
+mapfile -t chromium_flags < <(woc_chromium_software_flags)
+
+chromium_flags+=(
   --no-first-run
   --no-default-browser-check
   --start-maximized
@@ -16,8 +19,6 @@ chromium_flags=(
   --disable-component-update
   --disable-sync
   --disable-domain-reliability
-  --disable-gpu
-  --disable-vulkan
   --user-data-dir=/config/chromium
 )
 
