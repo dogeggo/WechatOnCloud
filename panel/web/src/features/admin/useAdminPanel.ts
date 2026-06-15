@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type InstanceWithStatus, type LoggedInDevice, type OrphanContainer, type OrphanVolume } from '../../api';
 import {
-  isAppBusy,
   lifecycleBusyLabel,
   lifecycleDoneMessage,
   type LifecycleAction,
@@ -10,6 +9,7 @@ import {
 } from '../../domain/instances';
 import { deviceName } from '../../domain/devices';
 import { errorMessage } from '../../utils/errors';
+import { useInstances } from '../instances/instances-context';
 import { isVncKeepAliveEnabled, setVncKeepAliveEnabled } from '../../vncKeepAlive';
 import { useUI } from '../../ui';
 
@@ -22,34 +22,31 @@ function patchActionLabel(actions: Record<string, string>, id: string, label: st
 
 export function useAdminPanel() {
   const { toast, confirm } = useUI();
-  const [instances, setInstances] = useState<InstanceWithStatus[]>([]);
+  const { instances, reload: reloadInstances, updateInstances } = useInstances();
   const [devices, setDevices] = useState<LoggedInDevice[]>([]);
   const [orphanVolumes, setOrphanVolumes] = useState<OrphanVolume[]>([]);
   const [orphanContainers, setOrphanContainers] = useState<OrphanContainer[]>([]);
   const [vncKeepAlive, setVncKeepAlive] = useState<Record<string, boolean>>({});
   const [acting, setActing] = useState<Record<string, string>>({});
   const [err, setErr] = useState('');
-  const timer = useRef<number | undefined>(undefined);
 
   const setAct = useCallback((id: string, label: string | null) => {
     setActing((actions) => patchActionLabel(actions, id, label));
   }, []);
 
-  const loadInstances = useCallback(async () => {
-    const result = await api.listInstances();
-    setInstances(result.instances);
-    setVncKeepAlive(Object.fromEntries(result.instances.map((inst) => [inst.id, isVncKeepAliveEnabled(inst.id)])));
-  }, []);
+  useEffect(() => {
+    setVncKeepAlive(Object.fromEntries(instances.map((inst) => [inst.id, isVncKeepAliveEnabled(inst.id)])));
+  }, [instances]);
 
   const refreshOrphanVolumes = useCallback(async () => {
     const { volumes } = await api.listOrphanVolumes();
     setOrphanVolumes(volumes);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (refreshInstances = true) => {
     setErr('');
     const tasks = [
-      loadInstances(),
+      refreshInstances ? reloadInstances() : Promise.resolve(),
       api.listLoggedInDevices().then(({ devices }) => setDevices(devices)),
       refreshOrphanVolumes(),
       api.listOrphanContainers().then(({ containers }) => setOrphanContainers(containers)),
@@ -57,20 +54,11 @@ export function useAdminPanel() {
     const results = await Promise.allSettled(tasks);
     const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (rejected) setErr(errorMessage(rejected.reason, '读取管理数据失败'));
-  }, [loadInstances, refreshOrphanVolumes]);
+  }, [refreshOrphanVolumes, reloadInstances]);
 
   useEffect(() => {
-    void load();
-    return () => window.clearTimeout(timer.current);
+    void load(false);
   }, [load]);
-
-  useEffect(() => {
-    window.clearTimeout(timer.current);
-    if (instances.some((inst) => isAppBusy(inst.app.phase))) {
-      timer.current = window.setTimeout(() => void load(), 1500);
-    }
-    return () => window.clearTimeout(timer.current);
-  }, [instances, load]);
 
   const removeDevice = useCallback(
     async (device: LoggedInDevice) => {
@@ -144,21 +132,24 @@ export function useAdminPanel() {
       try {
         if (action === 'install') await api.instanceAppInstall(inst.id);
         else await api.instanceAppUpdate(inst.id);
-        setInstances((list) =>
+        updateInstances((list) =>
           list.map((item) =>
             item.id === inst.id
               ? { ...item, app: { ...item.app, phase: 'downloading', percent: -1, message: '正在准备...' } }
               : item,
           ),
         );
-        window.clearTimeout(timer.current);
-        timer.current = window.setTimeout(() => void load(), 1000);
         toast(appActionDoneMessage(action, inst.appType), 'ok');
       } catch (error) {
         toast(errorMessage(error, '操作失败'), 'error');
       }
     },
-    [load, toast],
+    [toast, updateInstances],
+  );
+
+  const forgetInstance = useCallback(
+    (id: string) => updateInstances((list) => list.filter((item) => item.id !== id)),
+    [updateInstances],
   );
 
   const startInstance = useCallback(
@@ -211,6 +202,7 @@ export function useAdminPanel() {
 
   return {
     instances,
+    forgetInstance,
     devices,
     orphanVolumes,
     orphanContainers,

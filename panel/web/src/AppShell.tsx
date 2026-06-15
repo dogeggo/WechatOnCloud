@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './auth';
 import { useUI } from './ui';
@@ -7,7 +7,8 @@ import Admin from './pages/Admin';
 import { InstanceIcon } from './AppIcon';
 import { Icons } from './components/icons';
 import { appProfile, routeInstanceId, sidebarStatus } from './domain/instances';
-import { useInstancesLoader, type InstancesState } from './features/instances/useInstancesLoader';
+import { InstancesCtx, useInstances } from './features/instances/instances-context';
+import { useInstancesLoader } from './features/instances/useInstancesLoader';
 import {
   idFromVncKeepAliveKey,
   isVncKeepAliveEnabled,
@@ -17,9 +18,6 @@ import {
 } from './vncKeepAlive';
 
 // ---- 实例数据：侧栏 / 主页 / 实例视图共享，安装中轮询 ----
-const InstancesCtx = createContext<InstancesState>({ instances: [], loaded: false, reload: async () => {} });
-export const useInstances = () => useContext(InstancesCtx);
-
 export default function AppShell() {
   const state = useInstancesLoader();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('woc_sb_collapsed') === '1');

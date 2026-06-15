@@ -3,12 +3,7 @@ import { api, type InstanceWithStatus } from '../../api';
 import { isAppBusy } from '../../domain/instances';
 import { useUI } from '../../ui';
 import { errorMessage } from '../../utils/errors';
-
-export interface InstancesState {
-  instances: InstanceWithStatus[];
-  loaded: boolean;
-  reload: () => Promise<void>;
-}
+import type { InstancesState } from './instances-context';
 
 export function useInstancesLoader(): InstancesState {
   const { toast } = useUI();
@@ -40,5 +35,5 @@ export function useInstancesLoader(): InstancesState {
     return () => window.clearTimeout(timer.current);
   }, [instances, reload]);
 
-  return { instances, loaded, reload };
+  return { instances, loaded, reload, updateInstances: setInstances };
 }

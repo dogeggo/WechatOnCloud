@@ -23,6 +23,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const { toast } = useUI();
   const {
     instances,
+    forgetInstance,
     devices,
     orphanVolumes,
     orphanContainers,
@@ -44,6 +45,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [securityInst, setSecurityInst] = useState<InstanceWithStatus | null>(null); // 安全（内存阈值）弹窗
   const [volumeInst, setVolumeInst] = useState<InstanceWithStatus | null>(null); // 数据卷管理弹窗
   const [iconInst, setIconInst] = useState<InstanceWithStatus | null>(null); // 图标编辑弹窗
+  const deletingInstId = deleteInst?.id;
 
   return (
     <div className="ws-page">
@@ -205,6 +207,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
           inst={deleteInst}
           onClose={() => setDeleteInst(null)}
           onDone={() => {
+            if (deletingInstId) forgetInstance(deletingInstId);
             setDeleteInst(null);
             toast('实例已删除', 'ok');
             load();

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
-import { useInstances } from '../AppShell';
 import { Icons } from '../components/icons';
 import { appProfile, desktopUrl, isAppBusy, isAppInstalled, isRuntimeOffline } from '../domain/instances';
 import { useClipboardBridge } from '../features/desktop/useClipboardBridge';
@@ -11,6 +10,7 @@ import { useImeComposer } from '../features/desktop/useImeComposer';
 import { useInstanceRuntimeActions } from '../features/desktop/useInstanceRuntimeActions';
 import { useSeamlessIme } from '../features/desktop/useSeamlessIme';
 import { useVncFrame } from '../features/desktop/useVncFrame';
+import { useInstances } from '../features/instances/instances-context';
 import { formatBytes } from '../utils/format';
 
 export default function InstanceView({
