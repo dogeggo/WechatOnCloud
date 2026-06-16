@@ -14,6 +14,8 @@ import {
 } from './desktopFrame';
 import type { VncStreamSettings } from '../../domain/vncStream';
 
+const INACTIVE_VNC_STREAM_SETTINGS = { quality: 2, compression: 9 } as const;
+
 export function useVncFrame({
   active,
   showVnc,
@@ -33,12 +35,13 @@ export function useVncFrame({
   const activeRef = useRef(active);
 
   const focusFrame = useCallback(() => focusVncFrame(frameRef.current), [frameRef]);
+  const frameStream = active ? stream : INACTIVE_VNC_STREAM_SETTINGS;
 
   const syncFrame = useCallback((shouldFocus: boolean) => {
     if (shouldFocus) focusVncFrame(frameRef.current);
     injectVncStyle(frameRef.current);
-    applyVncStreamSettings(frameRef.current, stream);
-    syncVncFrameSize(frameRef.current);
+    applyVncStreamSettings(frameRef.current, shouldFocus ? stream : INACTIVE_VNC_STREAM_SETTINGS);
+    if (shouldFocus) syncVncFrameSize(frameRef.current);
   }, [frameRef, stream]);
 
   const reconnect = useCallback(() => {
@@ -86,8 +89,8 @@ export function useVncFrame({
 
   useEffect(() => {
     if (!showVnc || !frameLoaded) return;
-    applyVncStreamSettings(frameRef.current, stream);
-  }, [frameLoaded, frameRef, showVnc, stream]);
+    applyVncStreamSettings(frameRef.current, frameStream);
+  }, [frameLoaded, frameRef, frameStream, showVnc]);
 
   useEffect(() => {
     const wasActive = activeRef.current;

@@ -10,10 +10,14 @@ woc_chromium_software_flags() {
     --disable-gpu \
     --disable-gpu-compositing \
     --disable-gpu-rasterization \
+    --disable-accelerated-2d-canvas \
     --disable-vulkan \
     --disable-accelerated-video-decode \
     --disable-accelerated-video-encode \
-    --disable-features=VaapiVideoDecoder,VaapiVideoEncoder,Vulkan \
+    --disable-zero-copy \
+    --disable-oop-rasterization \
+    --disable-native-gpu-memory-buffers \
+    --disable-features=CanvasOopRasterization,VaapiVideoDecoder,VaapiVideoEncoder,Vulkan \
     --enable-unsafe-swiftshader \
     --use-gl=swiftshader \
     --use-angle=swiftshader
@@ -26,6 +30,30 @@ woc_chromium_software_flags_inline() {
     flags+=("$flag")
   done < <(woc_chromium_software_flags)
   printf '%s' "${flags[*]}"
+}
+
+woc_append_env_word() {
+  local name="$1"
+  local word="$2"
+  local current="${!name:-}"
+  case " ${current} " in
+    *" ${word} "*) ;;
+    *) export "${name}=${current:+$current }$word" ;;
+  esac
+}
+
+woc_apply_software_rendering_env() {
+  local flag
+  export LIBGL_ALWAYS_SOFTWARE=1
+  export GALLIUM_DRIVER=llvmpipe
+  export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+  export QT_OPENGL=software
+  export QT_QUICK_BACKEND=software
+  export QT_XCB_FORCE_SOFTWARE_OPENGL=1
+  export QTWEBENGINE_DISABLE_SANDBOX=1
+  while IFS= read -r flag; do
+    woc_append_env_word QTWEBENGINE_CHROMIUM_FLAGS "$flag"
+  done < <(woc_chromium_software_flags)
 }
 
 woc_app_def() {
