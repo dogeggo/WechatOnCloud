@@ -45,8 +45,8 @@ const FILE = '/data/accounts.json';
 
 let data: Data = { instances: [] };
 
-export type AppType = 'wechat' | 'chromium' | 'qq';
-export const APP_TYPES: AppType[] = ['wechat', 'qq', 'chromium'];
+export type AppType = 'wechat' | 'chromium' | 'qq' | 'telegram';
+export const APP_TYPES: AppType[] = ['wechat', 'qq', 'telegram', 'chromium'];
 
 export function normalizeAppType(value: unknown): AppType {
   if (typeof value === 'string' && APP_TYPES.includes(value as AppType)) return value as AppType;

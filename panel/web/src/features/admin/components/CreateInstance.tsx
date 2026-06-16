@@ -26,7 +26,7 @@ export function CreateInstance({ onClose, onDone }: { onClose: () => void; onDon
             );
           })}
         </div>
-        <input className="input" placeholder="实例名称（如：我的微信 / 我的 QQ / 工作浏览器）" value={form.name} onChange={(e) => form.setName(e.target.value)} />
+        <input className="input" placeholder="实例名称（如：我的微信 / 我的 QQ / 我的 Telegram / 工作浏览器）" value={form.name} onChange={(e) => form.setName(e.target.value)} />
         {form.orphans.length > 0 && (
           <>
             <div className="field-label" style={{ marginTop: 12 }}>数据卷（可选）</div>

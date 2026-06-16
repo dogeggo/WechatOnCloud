@@ -5,7 +5,7 @@ APP_TYPE="${WOC_APP_TYPE:-}"
 [ -z "$APP_TYPE" ] && exit 0
 
 case "$APP_TYPE" in
-  wechat | chromium | qq) ;;
+  wechat | chromium | qq | telegram) ;;
   *) exit 0 ;;
 esac
 

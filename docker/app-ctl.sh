@@ -10,6 +10,7 @@ ACTION="${2:-status}"
 case "$APP" in
   wechat) exec /woc/wechat-ctl.sh "$ACTION" ;;
   qq) exec /woc/qq-ctl.sh "$ACTION" ;;
+  telegram) exec /woc/telegram-ctl.sh "$ACTION" ;;
 esac
 
 # shellcheck source=/dev/null

@@ -50,7 +50,7 @@ export interface AppStatus {
 }
 
 export type RuntimeState = 'running' | 'stopped' | 'missing';
-export type AppType = 'wechat' | 'chromium' | 'qq';
+export type AppType = 'wechat' | 'chromium' | 'qq' | 'telegram';
 export type VncServerProfile = 'speed' | 'balanced' | 'quality';
 export interface PanelInstance {
   id: string;

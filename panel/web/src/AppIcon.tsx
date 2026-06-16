@@ -83,6 +83,7 @@ const DEFAULT_BY_APP: Record<AppType, string> = {
   wechat: 'wechat',
   chromium: 'chromium',
   qq: 'qq',
+  telegram: 'telegram',
 };
 
 export function InstanceIcon({

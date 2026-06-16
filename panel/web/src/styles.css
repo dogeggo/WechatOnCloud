@@ -787,6 +787,16 @@ button {
   color: #c6ccd7;
   font-size: 13px;
 }
+.logs-modal .modal-actions {
+  justify-content: flex-end;
+}
+.logs-modal .modal-actions .btn {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 14px;
+}
 
 /* ── 桌面 ──────────────────────────────────────────────── */
 .desktop-wrap {

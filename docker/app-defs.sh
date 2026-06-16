@@ -50,6 +50,12 @@ woc_app_def() {
       APP_NAME=QQ
       APP_WINDOW_CLASS_RE='QQ|qq'
       ;;
+    telegram)
+      APP_BIN=/config/telegram/Telegram/Telegram
+      APP_LAUNCH="$APP_BIN"
+      APP_NAME=Telegram
+      APP_WINDOW_CLASS_RE='Telegram|telegram-desktop'
+      ;;
     *)
       echo "未知应用类型: ${1:-}" >&2
       return 1

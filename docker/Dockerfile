@@ -12,6 +12,7 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         curl ca-certificates locales dpkg \
+        xz-utils \
         fontconfig \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
         libnss3 libgbm1 libasound2 libxss1 \
@@ -97,8 +98,8 @@ COPY woc-notifyd.py /usr/local/bin/woc-notifyd
 RUN chmod 755 /usr/local/bin/woc-notifyd
 
 # 应用下载/解压控制脚本（运行时由面板经 docker exec 触发，状态写入数据卷 /config/.woc-state）
-COPY deb-app-ctl.sh wechat-ctl.sh qq-ctl.sh /woc/
-RUN chmod 755 /woc/deb-app-ctl.sh /woc/wechat-ctl.sh /woc/qq-ctl.sh
+COPY deb-app-ctl.sh wechat-ctl.sh qq-ctl.sh telegram-ctl.sh /woc/
+RUN chmod 755 /woc/deb-app-ctl.sh /woc/wechat-ctl.sh /woc/qq-ctl.sh /woc/telegram-ctl.sh
 
 # 多应用：应用定义 + 通用安装/状态控制。deb 应用委托各自 ctl，Chromium 随镜像就绪。
 COPY app-defs.sh app-ctl.sh /woc/

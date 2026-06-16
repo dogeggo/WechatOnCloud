@@ -2,7 +2,7 @@ import type { AppPhase, AppStatus, AppType, InstanceWithStatus, RuntimeState } f
 import type { VncStreamSettings } from './vncStream';
 
 export const BUSY_APP_PHASES: AppPhase[] = ['downloading', 'extracting', 'installing'];
-export const APP_TYPES: AppType[] = ['wechat', 'qq', 'chromium'];
+export const APP_TYPES: AppType[] = ['wechat', 'qq', 'telegram', 'chromium'];
 const OPTIMISTIC_APP_STATUS_HOLD_SECONDS = 30;
 
 export type LifecycleAction = 'stop' | 'restart' | 'upgrade';
@@ -53,6 +53,17 @@ export const APP_PROFILES: Record<AppType, AppProfile> = {
     installTitle: 'QQ 尚未安装',
     installButtonTitle: '需先下载安装 QQ',
     updateLabel: '更新 QQ',
+  },
+  telegram: {
+    label: 'Telegram',
+    createLabel: 'Telegram',
+    needsInstall: true,
+    enterHint: '首次进入请扫码登录 Telegram',
+    installedText: 'Telegram 已安装',
+    notInstalledText: 'Telegram 尚未安装',
+    installTitle: 'Telegram 尚未安装',
+    installButtonTitle: '需先下载安装 Telegram',
+    updateLabel: '更新 Telegram',
   },
 };
 

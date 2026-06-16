@@ -48,6 +48,7 @@ const MAX_TEXT = {
 const APP_LABELS: Record<Instance['appType'], string> = {
   wechat: '微信',
   qq: 'QQ',
+  telegram: 'Telegram',
   chromium: 'Chromium',
 };
 

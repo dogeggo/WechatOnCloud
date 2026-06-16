@@ -14,6 +14,9 @@ const IME_ANCHOR_WIDTH = 2;
 const IME_ANCHOR_HEIGHT = 24;
 const DEFAULT_IME_ANCHOR_X = 24;
 const DEFAULT_IME_ANCHOR_Y = 24;
+const IME_REFOCUS_DELAYS = [0, 80, 240] as const;
+const IME_FOCUS_SKIP_SELECTOR =
+  'input,textarea,select,button,[contenteditable="true"],#noVNC_control_bar_anchor,#noVNC_control_bar,#noVNC_control_bar_handle';
 
 const VNC_CONTROL_STYLE =
   '#noVNC_control_bar_anchor{z-index:2147483647!important;}' +
@@ -45,8 +48,7 @@ export function writeKasmImeMode(value: DesktopInputMode): void {
 export function focusVncFrame(frame: HTMLIFrameElement | null): void {
   frame?.focus();
   frame?.contentWindow?.focus();
-  const keyboardInput = frame?.contentDocument?.getElementById(VNC_KEYBOARD_INPUT_ID) as HTMLElement | null;
-  keyboardInput?.focus();
+  focusVncKeyboardInput(frame?.contentDocument || null);
 }
 
 export function blurVncFrame(frame: HTMLIFrameElement | null): void {
@@ -213,11 +215,16 @@ function clampVncLevel(value: number): number {
 
 export function installImeCandidateAnchor(doc: Document): () => void {
   let anchor = clampImeAnchor(doc, DEFAULT_IME_ANCHOR_X, DEFAULT_IME_ANCHOR_Y);
+  let keyboardInput: HTMLElement | null = null;
+  let focusTimers: number[] = [];
+  const win = doc.defaultView;
 
   const applyAnchor = () => {
-    const input = doc.getElementById(VNC_KEYBOARD_INPUT_ID) as HTMLElement | null;
-    if (!input) return;
+    const input = readVncKeyboardInput(doc);
+    keyboardInput = input;
+    if (!input) return false;
     setImeAnchorStyle(input, anchor.x, anchor.y);
+    return true;
   };
 
   const moveAnchor = (clientX: number, clientY: number) => {
@@ -225,25 +232,89 @@ export function installImeCandidateAnchor(doc: Document): () => void {
     applyAnchor();
   };
 
+  const clearFocusTimers = () => {
+    if (!win) return;
+    focusTimers.forEach((timer) => win.clearTimeout(timer));
+    focusTimers = [];
+  };
+
+  const focusKeyboardInput = () => {
+    applyAnchor();
+    focusVncKeyboardInput(doc);
+  };
+
+  const scheduleKeyboardFocus = () => {
+    if (!win) return;
+    clearFocusTimers();
+    focusTimers = IME_REFOCUS_DELAYS.map((delay) =>
+      win.setTimeout(() => {
+        focusKeyboardInput();
+      }, delay),
+    );
+  };
+
   const onPointerDown = (event: Event) => {
     const pointerEvent = event as PointerEvent;
     moveAnchor(pointerEvent.clientX, pointerEvent.clientY);
+    if (shouldFocusImeFromPointer(pointerEvent.target)) {
+      focusKeyboardInput();
+      scheduleKeyboardFocus();
+    }
   };
   const onReapply = () => applyAnchor();
-  const win = doc.defaultView;
+  const onFrameFocus = () => scheduleKeyboardFocus();
+  const onVisibilityChange = () => {
+    if (!doc.hidden) scheduleKeyboardFocus();
+  };
+  const MutationObserverCtor = win?.MutationObserver ?? MutationObserver;
+  const observer = new MutationObserverCtor(() => {
+    if (readVncKeyboardInput(doc) === keyboardInput) return;
+    applyAnchor();
+    scheduleKeyboardFocus();
+  });
 
   applyAnchor();
+  scheduleKeyboardFocus();
+  observer.observe(doc.documentElement, { childList: true, subtree: true });
   doc.addEventListener('pointerdown', onPointerDown, true);
   doc.addEventListener('focusin', onReapply, true);
   doc.addEventListener('compositionstart', onReapply, true);
+  doc.addEventListener('visibilitychange', onVisibilityChange);
+  win?.addEventListener('focus', onFrameFocus);
   win?.addEventListener('resize', onReapply);
 
   return () => {
+    clearFocusTimers();
+    observer.disconnect();
     doc.removeEventListener('pointerdown', onPointerDown, true);
     doc.removeEventListener('focusin', onReapply, true);
     doc.removeEventListener('compositionstart', onReapply, true);
+    doc.removeEventListener('visibilitychange', onVisibilityChange);
+    win?.removeEventListener('focus', onFrameFocus);
     win?.removeEventListener('resize', onReapply);
   };
+}
+
+function readVncKeyboardInput(doc: Document | null): HTMLElement | null {
+  return doc?.getElementById(VNC_KEYBOARD_INPUT_ID) as HTMLElement | null;
+}
+
+function focusVncKeyboardInput(doc: Document | null): boolean {
+  const input = readVncKeyboardInput(doc);
+  if (!input) return false;
+
+  input.focus({ preventScroll: true });
+  const textarea = input as HTMLTextAreaElement;
+  if (typeof textarea.setSelectionRange === 'function') {
+    const end = textarea.value.length;
+    textarea.setSelectionRange(end, end);
+  }
+  return doc?.activeElement === input;
+}
+
+function shouldFocusImeFromPointer(target: EventTarget | null): boolean {
+  if (!target || typeof (target as Element).closest !== 'function') return true;
+  return !(target as Element).closest(IME_FOCUS_SKIP_SELECTOR);
 }
 
 function clampImeAnchor(doc: Document, clientX: number, clientY: number): { x: number; y: number } {
