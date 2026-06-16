@@ -3,6 +3,7 @@ import { VncAudio } from '../../vncAudio';
 import { startProbeWatchdog } from '../../utils/connectionWatchdog';
 import { isVncKeepAliveEnabled } from '../../vncKeepAlive';
 import {
+  applyVncStreamSettings,
   blurVncFrame,
   focusVncFrame,
   injectVncStyle,
@@ -10,17 +11,20 @@ import {
   readDesktopInputMode,
   writeKasmImeMode,
 } from './desktopFrame';
+import type { VncStreamSettings } from '../../domain/vncStream';
 
 export function useVncFrame({
   active,
   showVnc,
   id,
   frameRef,
+  stream,
 }: {
   active: boolean;
   showVnc: boolean;
   id: string | undefined;
   frameRef: RefObject<HTMLIFrameElement>;
+  stream: VncStreamSettings;
 }) {
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [loadStuck, setLoadStuck] = useState(false);
@@ -48,8 +52,9 @@ export function useVncFrame({
     window.setTimeout(() => {
       if (active) focusVncFrame(frameRef.current);
       injectVncStyle(frameRef.current);
+      applyVncStreamSettings(frameRef.current, stream);
     }, 500);
-  }, [active, frameRef]);
+  }, [active, frameRef, stream]);
 
   useEffect(() => {
     setFrameLoaded(false);
@@ -72,9 +77,15 @@ export function useVncFrame({
     const timer = window.setTimeout(() => {
       focusVncFrame(frameRef.current);
       injectVncStyle(frameRef.current);
+      applyVncStreamSettings(frameRef.current, stream);
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [active, showVnc, frameLoaded, id, frameRef]);
+  }, [active, showVnc, frameLoaded, id, frameRef, stream]);
+
+  useEffect(() => {
+    if (!showVnc || !frameLoaded) return;
+    applyVncStreamSettings(frameRef.current, stream);
+  }, [frameLoaded, frameRef, showVnc, stream]);
 
   useEffect(() => {
     const wasActive = activeRef.current;
@@ -111,6 +122,7 @@ export function useVncFrame({
 
   useEffect(() => {
     if (!active || !showVnc || !id) return;
+    if (!stream.audio) return;
     const audio = new VncAudio(id);
     void audio.connect();
     const isFocused = () => !document.hidden && document.hasFocus();
@@ -125,7 +137,7 @@ export function useVncFrame({
       window.removeEventListener('blur', sync);
       audio.destroy();
     };
-  }, [active, showVnc, id]);
+  }, [active, showVnc, id, stream.audio]);
 
   return {
     frameLoaded,

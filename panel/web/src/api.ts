@@ -50,6 +50,7 @@ export interface AppStatus {
 
 export type RuntimeState = 'running' | 'stopped' | 'missing';
 export type AppType = 'wechat' | 'chromium' | 'qq';
+export type VncServerProfile = 'speed' | 'balanced' | 'quality';
 export interface PanelInstance {
   id: string;
   name: string;
@@ -57,6 +58,7 @@ export interface PanelInstance {
   icon?: string;
   createdAt: string;
   createdBy: string;
+  vncServerProfile: VncServerProfile;
   memSoftLimitMB?: number;
   memHardLimitMB?: number;
 }
@@ -208,6 +210,11 @@ export const api = {
     req<{ instance: PanelInstance }>(`/api/admin/instances/${id}/mem-limits`, {
       method: 'PUT',
       body: JSON.stringify({ soft, hard }),
+    }),
+  setInstanceVncServerProfile: (id: string, profile: VncServerProfile) =>
+    req<{ instance: PanelInstance }>(`/api/admin/instances/${id}/vnc-server-profile`, {
+      method: 'POST',
+      body: JSON.stringify({ profile }),
     }),
   listOrphanVolumes: () =>
     req<{ volumes: OrphanVolume[] }>('/api/admin/orphan-volumes'),

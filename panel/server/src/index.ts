@@ -140,6 +140,11 @@ app.put('/api/admin/instances/:id/mem-limits', async (req, reply) => {
   return handle(reply, () => instances.updateMemoryLimits(routeParams(req).id, routeBody(req)), 400, '阈值不合法');
 });
 
+app.post('/api/admin/instances/:id/vnc-server-profile', async (req, reply) => {
+  if (!requireUser(req, reply)) return;
+  return handle(reply, () => instances.updateVncServerProfile(routeParams(req).id, routeBody(req)), 500, '保存 VNC 服务端档位失败');
+});
+
 app.post('/api/admin/instances/:id/regen-machine-id', async (req, reply) => {
   if (!requireUser(req, reply)) return;
   return handle(reply, () => instances.regenerateMachineId(routeParams(req).id), 400, '重置设备 ID 失败');

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import type { DesktopClientReplacedEvent } from '../api';
 import { api } from '../api';
 import { Icons } from '../components/icons';
 import { appProfile, desktopUrl, isAppBusy, isAppInstalled, isRuntimeOffline } from '../domain/instances';
+import { VNC_STREAM_PROFILES } from '../domain/vncStream';
 import { useClipboardBridge } from '../features/desktop/useClipboardBridge';
 import { DESKTOP_CLIENT_REPLACED_EVENT } from '../features/desktop/desktopClientEvents';
 import { useDesktopFiles } from '../features/desktop/useDesktopFiles';
@@ -11,6 +12,7 @@ import { useImeComposer } from '../features/desktop/useImeComposer';
 import { useInstanceRuntimeActions } from '../features/desktop/useInstanceRuntimeActions';
 import { useSeamlessIme } from '../features/desktop/useSeamlessIme';
 import { useVncFrame } from '../features/desktop/useVncFrame';
+import { useVncStreamSettings } from '../features/desktop/useVncStreamSettings';
 import { useInstances } from '../features/instances/instances-context';
 import { useUI } from '../ui';
 import { formatBytes } from '../utils/format';
@@ -33,12 +35,15 @@ export default function InstanceView({
   const params = useParams<{ id: string }>();
   const id = instanceId ?? params.id;
   const nav = useNavigate();
-  const { alert: showAlert } = useUI();
+  const { alert: showAlert, toast } = useUI();
   const { instances, loaded, reload } = useInstances();
 
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [desktopClientId, setDesktopClientId] = useState(createDesktopClientId);
   const [clientReplaced, setClientReplaced] = useState(false);
+  const stream = useVncStreamSettings();
+  const streamRef = useRef(stream.settings);
+  streamRef.current = stream.settings;
 
   const inst = instances.find((i) => i.id === id);
   const profile = appProfile(inst?.appType);
@@ -49,7 +54,7 @@ export default function InstanceView({
   const installed = !!inst && isAppInstalled(inst);
   const showVnc = !!inst && !offline && installed;
   const effectiveShowVnc = showVnc && !clientReplaced;
-  const vnc = useVncFrame({ active, showVnc: effectiveShowVnc, id, frameRef });
+  const vnc = useVncFrame({ active, showVnc: effectiveShowVnc, id, frameRef, stream: stream.settings });
   const desktopFiles = useDesktopFiles({ active, showVnc: effectiveShowVnc, id });
   const clipboard = useClipboardBridge({ id, frameRef });
   const ime = useImeComposer({
@@ -65,6 +70,10 @@ export default function InstanceView({
     inputMode: ime.inputMode,
   });
   const runtime = useInstanceRuntimeActions({ id, reload, reconnect: vnc.reconnect });
+  const desktopFrameSrc = useMemo(() => {
+    if (!id) return 'about:blank';
+    return desktopUrl(id, desktopClientId, streamRef.current);
+  }, [id, desktopClientId, vnc.vncNonce]);
 
   useEffect(() => {
     setProbing(true);
@@ -136,6 +145,26 @@ export default function InstanceView({
             >
               文件
             </button>
+            <div className="ws-mode ws-stream" role="group" aria-label="画质档位">
+              {VNC_STREAM_PROFILES.map((option) => (
+                <button
+                  key={option.profile}
+                  className={'ws-mode-btn' + (stream.settings.profile === option.profile ? ' on' : '')}
+                  title={option.title}
+                  onClick={() => {
+                    stream.setProfile(option.profile);
+                    toast(
+                      option.settings.audio
+                        ? `${option.label}模式已启用`
+                        : `${option.label}模式已启用，音频已关闭`,
+                      'ok',
+                    );
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <div className="ws-mode" role="group" aria-label="输入模式">
               <button
                 className={'ws-mode-btn' + (ime.inputMode === 'seamless' ? ' on' : '')}
@@ -237,7 +266,7 @@ export default function InstanceView({
             key={`${id}:${desktopClientId}:${vnc.vncNonce}`}
             ref={frameRef}
             className="iv-frame"
-            src={desktopUrl(id, desktopClientId)}
+            src={desktopFrameSrc}
             title={`${profile.label}桌面`}
             allow="clipboard-read; clipboard-write; microphone; camera; autoplay"
             onLoad={vnc.handleFrameLoad}
@@ -250,7 +279,10 @@ export default function InstanceView({
               <div className="spinner" />
               <div className="iv-loading-text">正在连接桌面…</div>
               <div className="iv-loading-sub">{profile.enterHint}</div>
-              <div className="iv-loading-sub">拖文件到窗口任意位置即可上传到 ~/Downloads；声音自动开启，点一下画面即可出声</div>
+              <div className="iv-loading-sub">
+                拖文件到窗口任意位置即可上传到 ~/Downloads；
+                {stream.settings.audio ? '声音自动开启，点一下画面即可出声' : '省流模式已关闭音频'}
+              </div>
               {!window.isSecureContext && (
                 <div className="iv-loading-warn">当前非 HTTPS 访问，浏览器将禁用麦克风与摄像头（音频播放不受影响）</div>
               )}

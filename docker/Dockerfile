@@ -111,5 +111,9 @@ RUN chmod 755 /custom-cont-init.d/02-woc-app
 COPY woc-dbus.sh /custom-cont-init.d/03-woc-dbus
 RUN chmod 755 /custom-cont-init.d/03-woc-dbus
 
+# 启动钩子（04）：按实例档位写入 KasmVNC 服务端编码配置。更改后由面板重建容器生效。
+COPY woc-vnc-profile.sh /custom-cont-init.d/04-woc-vnc-profile
+RUN chmod 755 /custom-cont-init.d/04-woc-vnc-profile
+
 # 3000 = HTTP web 客户端, 3001 = HTTPS
 EXPOSE 3000 3001

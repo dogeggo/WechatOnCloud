@@ -742,6 +742,45 @@ button {
   font-size: 13px;
   line-height: 1.4;
 }
+.vnc-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.vnc-profile-option {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: none;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: var(--trough);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 2px rgba(var(--shadow) / 0.14);
+}
+.vnc-profile-option.on {
+  background: rgba(var(--green-rgb) / 0.12);
+  box-shadow: inset 0 0 0 1.5px rgba(var(--green-rgb) / 0.35);
+}
+.vnc-profile-option:disabled {
+  cursor: default;
+  opacity: 0.76;
+}
+.vnc-profile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vnc-profile-detail {
+  color: var(--brand-green-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
 .iv-stuck-actions {
   display: flex;
   gap: 10px;
@@ -895,6 +934,12 @@ button {
   font-size: 13px;
   color: var(--muted);
   min-height: 18px;
+}
+.inst-meta-line {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .inst-actions {
   display: flex;
@@ -1455,6 +1500,11 @@ button {
   padding: env(safe-area-inset-top) 16px 0;
   background: var(--base);
   box-shadow: inset 0 -1px 0 rgba(var(--shadow) / 0.07);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ws-head::-webkit-scrollbar {
+  display: none;
 }
 .ws-title {
   font-size: 16px;
@@ -1507,6 +1557,9 @@ button {
   border-radius: 999px;
   box-shadow: var(--crease);
 }
+.ws-stream {
+  gap: 1px;
+}
 .ws-mode-btn {
   border: none;
   background: transparent;
@@ -1520,6 +1573,11 @@ button {
 .ws-mode-btn.on {
   background: var(--brand-green, #07c160);
   color: #fff;
+}
+.ws-stream .ws-mode-btn {
+  min-width: 44px;
+  padding-left: 7px;
+  padding-right: 7px;
 }
 .ws-page .content {
   flex: 1;
@@ -1833,6 +1891,11 @@ button {
   }
   .ws-mode-btn {
     padding: 5px 10px;
+  }
+  .ws-stream .ws-mode-btn {
+    min-width: 42px;
+    padding-left: 6px;
+    padding-right: 6px;
   }
 }
 

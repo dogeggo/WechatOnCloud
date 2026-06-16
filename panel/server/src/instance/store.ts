@@ -8,6 +8,12 @@ import {
   parseIdFromContainerName,
   parseIdFromVolumeName,
 } from './resource-guard.js';
+import {
+  DEFAULT_VNC_SERVER_PROFILE,
+  normalizeOptionalVncServerProfile,
+  normalizeVncServerProfile,
+  type VncServerProfile,
+} from '../desktop/vnc-server-profile.js';
 
 export interface Instance {
   id: string; // 短 id，用于容器/卷命名
@@ -20,6 +26,7 @@ export interface Instance {
   kasmPassword: string;
   createdAt: string;
   createdBy: string; // OIDC 邮箱
+  vncServerProfile: VncServerProfile;
   // 自愈 watchdog 的 per-instance 覆盖；缺省时使用 env / 内置默认。
   memSoftLimitMB?: number;
   memHardLimitMB?: number;
@@ -109,6 +116,7 @@ function parseInstance(raw: any): Instance {
   const kasmPassword = asString(raw.kasmPassword, 'Kasm 密码');
   const createdAt = new Date(asString(raw.createdAt, '创建时间')).toISOString();
   const createdBy = asString(raw.createdBy, '创建者');
+  const vncServerProfile = normalizeOptionalVncServerProfile(raw.vncServerProfile);
   const memSoftLimitMB = asOptionalLimit(raw.memSoftLimitMB, 'soft 阈值');
   const memHardLimitMB = asOptionalLimit(raw.memHardLimitMB, 'hard 阈值');
   const inst: Instance = {
@@ -122,6 +130,7 @@ function parseInstance(raw: any): Instance {
     kasmPassword,
     createdAt,
     createdBy,
+    vncServerProfile,
     memSoftLimitMB,
     memHardLimitMB,
   };
@@ -158,9 +167,18 @@ export function publicInstance(i: Instance) {
     icon: i.icon,
     createdAt: i.createdAt,
     createdBy: i.createdBy,
+    vncServerProfile: i.vncServerProfile,
     memSoftLimitMB: i.memSoftLimitMB,
     memHardLimitMB: i.memHardLimitMB,
   };
+}
+
+export function setInstanceVncServerProfile(id: string, profile: unknown) {
+  const inst = findInstance(id);
+  if (!inst) throw new Error('实例不存在');
+  inst.vncServerProfile = normalizeVncServerProfile(profile);
+  persist();
+  return publicInstance(inst);
 }
 
 export function setInstanceMemLimits(
@@ -225,6 +243,7 @@ export function createInstance(
     kasmPassword: randomBytes(24).toString('hex'),
     createdAt: new Date().toISOString(),
     createdBy,
+    vncServerProfile: DEFAULT_VNC_SERVER_PROFILE,
   };
   assertResourceIdMatch(inst.id, inst.containerName, inst.volumeName);
   data.instances.push(inst);
@@ -288,6 +307,7 @@ export function registerExistingInstance(opts: {
     kasmPassword: asString(opts.kasmPassword, 'Kasm 密码'),
     createdAt: new Date().toISOString(),
     createdBy: asString(opts.createdBy, '创建者'),
+    vncServerProfile: DEFAULT_VNC_SERVER_PROFILE,
   };
   data.instances.push(inst);
   persist();

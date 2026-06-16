@@ -8,6 +8,7 @@ import {
   renameInstance,
   setInstanceIcon,
   setInstanceMemLimits,
+  setInstanceVncServerProfile,
   type Instance,
 } from './store.js';
 import {
@@ -153,6 +154,18 @@ export class InstanceManager {
     } catch (e: any) {
       throw httpError(400, e?.message || '阈值不合法');
     }
+  }
+
+  async updateVncServerProfile(id: unknown, body: any) {
+    const inst = this.requireInstance(id);
+    let instance;
+    try {
+      instance = setInstanceVncServerProfile(inst.id, body?.profile);
+    } catch (e: any) {
+      throw httpError(400, e?.message || 'VNC 服务端档位不合法');
+    }
+    await runInstance(this.requireInstance(inst.id));
+    return { instance };
   }
 
   async regenerateMachineId(id: unknown) {

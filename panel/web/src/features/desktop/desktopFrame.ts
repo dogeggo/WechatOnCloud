@@ -1,5 +1,9 @@
 export type ImeSubmitKey = 'enter' | 'ctrlEnter';
 export type DesktopInputMode = 'forward' | 'seamless';
+export interface VncFrameStreamSettings {
+  quality: number;
+  compression: number;
+}
 
 const IME_SUBMIT_KEY = 'woc_ime_submit_key';
 const DESKTOP_INPUT_MODE_KEY = 'woc_input_mode';
@@ -80,12 +84,25 @@ export function injectVncStyle(frame: HTMLIFrameElement | null): void {
   (doc.head || doc.documentElement).appendChild(style);
 }
 
+export function applyVncStreamSettings(
+  frame: HTMLIFrameElement | null,
+  settings: VncFrameStreamSettings,
+): boolean {
+  try {
+    const win = frame?.contentWindow;
+    if (!win) return false;
+    const rfb = readNoVncRfb(win);
+    if (!isObjectRecord(rfb)) return false;
+    rfb.qualityLevel = clampVncLevel(settings.quality);
+    rfb.compressionLevel = clampVncLevel(settings.compression);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readNoVncConnectionState(win: Window): 'connecting' | 'connected' | 'disconnecting' | 'disconnected' | null {
-  const frameWindow = win as Window & {
-    UI?: { rfb?: unknown };
-    rfb?: unknown;
-  };
-  const rfb = frameWindow.UI?.rfb ?? frameWindow.rfb;
+  const rfb = readNoVncRfb(win);
   if (!isObjectRecord(rfb)) return null;
 
   const rawState = rfb._rfbConnectionState ?? rfb._rfb_connection_state ?? rfb.connectionState;
@@ -105,6 +122,14 @@ function readNoVncConnectionState(win: Window): 'connecting' | 'connected' | 'di
   if (websocket.readyState === WebSocket.CLOSING) return 'disconnecting';
   if (websocket.readyState === WebSocket.CLOSED) return 'disconnected';
   return null;
+}
+
+function readNoVncRfb(win: Window): unknown {
+  const frameWindow = win as Window & {
+    UI?: { rfb?: unknown };
+    rfb?: unknown;
+  };
+  return frameWindow.UI?.rfb ?? frameWindow.rfb;
 }
 
 function hasNoVncDisconnectedClass(doc: Document): boolean {
@@ -140,6 +165,11 @@ function hasMissingRfbAfterLoad(win: Window, doc: Document): boolean {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object';
+}
+
+function clampVncLevel(value: number): number {
+  if (!Number.isFinite(value)) return 6;
+  return Math.max(0, Math.min(9, Math.round(value)));
 }
 
 export function installImeCandidateAnchor(doc: Document): () => void {

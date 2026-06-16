@@ -4,6 +4,7 @@ import { PassThrough, Transform } from "node:stream";
 import zlib from "node:zlib";
 import Docker from "dockerode";
 import type { Instance } from "../instance/store.js";
+import { kasmVncServerProfileYaml } from "../desktop/vnc-server-profile.js";
 import {
   singleFileFromTarStream,
   tarNameFitsHeader,
@@ -172,6 +173,7 @@ function videoDevices(): string[] {
 }
 
 function envList(inst: Instance): string[] {
+  const vncProfileYaml = Buffer.from(kasmVncServerProfileYaml(inst.vncServerProfile), "utf8").toString("base64");
   const env = [
     `PUID=${PUID}`,
     `PGID=${PGID}`,
@@ -190,6 +192,8 @@ function envList(inst: Instance): string[] {
   env.push(`WOC_NOTIFY_TOKEN=${inst.kasmPassword}`);
   env.push(`WOC_PANEL_INTERNAL_URL=${PANEL_INTERNAL_URL}`);
   env.push(`WOC_PANEL_INTERNAL_HOST=${PANEL_INTERNAL_HOST}`);
+  env.push(`WOC_VNC_SERVER_PROFILE=${inst.vncServerProfile}`);
+  env.push(`WOC_VNC_SERVER_PROFILE_YAML_B64=${vncProfileYaml}`);
   return env;
 }
 

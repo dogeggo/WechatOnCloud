@@ -3,6 +3,7 @@ import { api, type InstanceWithStatus } from '../../../api';
 import { InstanceIcon } from '../../../AppIcon';
 import { Icons } from '../../../components/icons';
 import { adminCardState, appProfile, type AppInstallAction } from '../../../domain/instances';
+import { vncServerProfileLabel } from '../../../domain/vncServerProfile';
 
 export function InstanceAdminCard({
   inst,
@@ -17,6 +18,7 @@ export function InstanceAdminCard({
   onIcon,
   onDelete,
   onSecurity,
+  onVncServerProfile,
   onVolume,
   vncKeepAlive,
   onToggleVncKeepAlive,
@@ -33,6 +35,7 @@ export function InstanceAdminCard({
   onIcon: () => void;
   onDelete: () => void;
   onSecurity: () => void;
+  onVncServerProfile: () => void;
   onVolume: () => void;
   vncKeepAlive: boolean;
   onToggleVncKeepAlive: (enabled: boolean) => void;
@@ -55,6 +58,9 @@ export function InstanceAdminCard({
       </div>
       <div className="inst-sub">
         {sub}
+      </div>
+      <div className="inst-meta-line">
+        VNC服务端：{vncServerProfileLabel(inst.vncServerProfile)}
       </div>
 
       {working && (
@@ -124,6 +130,9 @@ export function InstanceAdminCard({
                   </button>
                   <button className="btn-text" onClick={onSecurity} title="内存阈值自愈">
                     安全
+                  </button>
+                  <button className="btn-text" onClick={onVncServerProfile} title="调整 KasmVNC 服务端编码参数，保存后重启实例容器">
+                    VNC服务端
                   </button>
                   <button className="btn-text" onClick={onVolume} title="数据卷：备份/恢复、上传应用数据、文件管理">
                     数据卷

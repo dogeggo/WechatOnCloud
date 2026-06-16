@@ -1,4 +1,5 @@
 import type { AppPhase, AppStatus, AppType, InstanceWithStatus, RuntimeState } from '../api';
+import type { VncStreamSettings } from './vncStream';
 
 export const BUSY_APP_PHASES: AppPhase[] = ['downloading', 'extracting', 'installing'];
 export const APP_TYPES: AppType[] = ['wechat', 'qq', 'chromium'];
@@ -154,7 +155,7 @@ export function appActionDoneMessage(action: AppInstallAction, type?: AppType): 
   return action === 'install' ? `已开始下载${appProfile(type).label}` : `已开始更新${appProfile(type).label}`;
 }
 
-export function desktopUrl(id: string, clientId: string): string {
+export function desktopUrl(id: string, clientId: string, stream: VncStreamSettings): string {
   const params = new URLSearchParams({
     autoconnect: '1',
     path: `desktop/${id}/websockify?wocClient=${clientId}`,
@@ -164,6 +165,8 @@ export function desktopUrl(id: string, clientId: string): string {
     clipboard_up: 'true',
     clipboard_down: 'true',
     clipboard_seamless: 'true',
+    quality: String(stream.quality),
+    compression: String(stream.compression),
   });
   return `/desktop/${id}/vnc/index.html?${params.toString()}`;
 }
