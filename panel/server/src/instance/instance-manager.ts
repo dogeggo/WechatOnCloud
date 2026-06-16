@@ -45,7 +45,7 @@ import {
 } from '../docker/docker.js';
 import { httpError } from '../http/http-error.js';
 import { INSTANCE_ID_RE, VOLUME_NAME_RE } from './resource-guard.js';
-import type { WatchdogConfig } from '../config/panel-config.js';
+import type { UploadLimits, WatchdogConfig } from '../config/panel-config.js';
 
 export interface MemoryLimitInfo {
   soft: number | null;
@@ -58,7 +58,10 @@ export interface MemoryLimitInfo {
 }
 
 export class InstanceManager {
-  constructor(private readonly watchdog: WatchdogConfig) {}
+  constructor(
+    private readonly watchdog: WatchdogConfig,
+    private readonly upload: UploadLimits,
+  ) {}
 
   requireInstance(rawId: unknown): Instance {
     const id = String(rawId || '');
@@ -219,7 +222,7 @@ export class InstanceManager {
     const filename = String(name || '').trim();
     return {
       filename,
-      body: await downloadFromInstance(this.requireInstance(id), filename),
+      body: await downloadFromInstance(this.requireInstance(id), filename, this.upload.transferDownloadBytes),
     };
   }
 
@@ -268,7 +271,7 @@ export class InstanceManager {
     const filename = volumePath.split('/').filter(Boolean).pop() || 'file';
     return {
       filename,
-      body: await volDownloadFile(this.requireInstance(id), volumePath),
+      body: await volDownloadFile(this.requireInstance(id), volumePath, this.upload.volumeFileDownloadBytes),
     };
   }
 

@@ -8,7 +8,9 @@ export const MIB = 1024 * 1024;
 
 export interface UploadLimits {
   transferBytes: number;
+  transferDownloadBytes: number;
   volumeFileBytes: number;
+  volumeFileDownloadBytes: number;
   volumeArchiveBytes: number;
   volumeArchiveExtractedBytes: number;
 }
@@ -62,7 +64,9 @@ export const panelConfig: PanelConfig = {
   trustedProxies: parseTrustedProxies(process.env.PANEL_TRUSTED_PROXIES),
   upload: {
     transferBytes: envInt('PANEL_MAX_TRANSFER_UPLOAD_MB', 128, 1, 512) * MIB,
+    transferDownloadBytes: envInt('PANEL_MAX_TRANSFER_DOWNLOAD_MB', 128, 1, 512) * MIB,
     volumeFileBytes: envInt('PANEL_MAX_VOLUME_FILE_UPLOAD_MB', 256, 1, 1024) * MIB,
+    volumeFileDownloadBytes: envInt('PANEL_MAX_VOLUME_FILE_DOWNLOAD_MB', 256, 1, 1024) * MIB,
     volumeArchiveBytes: envInt('PANEL_MAX_VOLUME_ARCHIVE_UPLOAD_MB', 512, 1, 3072) * MIB,
     volumeArchiveExtractedBytes: envInt('PANEL_MAX_VOLUME_ARCHIVE_EXTRACTED_MB', 1024, 1, 8192) * MIB,
   },

@@ -29,7 +29,7 @@ const auth = new AuthManager(
   panelConfig.flowCookieName,
   panelConfig.trustedProxies,
 );
-const instances = new InstanceManager(panelConfig.watchdog);
+const instances = new InstanceManager(panelConfig.watchdog, panelConfig.upload);
 const desktopClients = new DesktopClientManager();
 const notifications = new NotificationManager();
 

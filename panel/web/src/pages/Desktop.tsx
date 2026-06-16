@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import type { DesktopClientReplacedEvent } from '../api';
 import { api } from '../api';
 import { Icons } from '../components/icons';
@@ -110,8 +110,7 @@ export default function InstanceView({
   }, [showVnc, id, reload]);
 
   if (!id) {
-    nav('/', { replace: true });
-    return null;
+    return <Navigate to="/" replace />;
   }
 
   const title = inst?.name || `${profile.label}实例`;

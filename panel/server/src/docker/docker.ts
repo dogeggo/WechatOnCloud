@@ -1,9 +1,14 @@
 import { hostname } from "node:os";
 import { existsSync, readdirSync } from "node:fs";
-import { PassThrough, Readable, Transform } from "node:stream";
+import { PassThrough, Transform } from "node:stream";
 import zlib from "node:zlib";
 import Docker from "dockerode";
 import type { Instance } from "../instance/store.js";
+import {
+  singleFileFromTarStream,
+  tarNameFitsHeader,
+  tarSingleFileStream,
+} from "./archive.js";
 import {
   assertInstanceId,
   assertProjectContainerName,
@@ -609,52 +614,11 @@ export async function pullImage(
 // 反向：把应用收到的文件另存到下载目录，即可在面板里下载。
 const TRANSFER_DIR = "/config/Downloads";
 
-function tarHeader(name: string, size: number): Buffer {
-  if (!Number.isSafeInteger(size) || size < 0)
-    throw new Error("文件大小不合法");
-  const h = Buffer.alloc(512, 0);
-  h.write(name.slice(0, 100), 0, "utf8"); // name
-  h.write("0000644\0", 100); // mode
-  h.write("0001750\0", 108); // uid 1000(octal 1750)
-  h.write("0001750\0", 116); // gid 1000
-  h.write(size.toString(8).padStart(11, "0") + "\0", 124); // size
-  h.write("00000000000\0", 136); // mtime
-  h.write("        ", 148); // checksum 占位（8 空格）
-  h.write("0", 156); // typeflag 普通文件
-  h.write("ustar\0", 257);
-  h.write("00", 263);
-  let sum = 0;
-  for (let i = 0; i < 512; i++) sum += h[i];
-  h.write(sum.toString(8).padStart(6, "0") + "\0 ", 148); // 真实校验和
-  return h;
-}
-
-function tarSingleFileStream(
-  name: string,
-  content: NodeJS.ReadableStream,
-  size: number,
-): Readable {
-  async function* gen() {
-    yield tarHeader(name, size);
-    let seen = 0;
-    for await (const chunk of content as AsyncIterable<Buffer | string>) {
-      const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      seen += b.length;
-      if (seen > size) throw new Error("上传内容超过声明大小");
-      yield b;
-    }
-    if (seen !== size) throw new Error("上传内容大小与 Content-Length 不一致");
-    yield Buffer.alloc((512 - (size % 512)) % 512, 0);
-    yield Buffer.alloc(1024, 0);
-  }
-  return Readable.from(gen());
-}
-
 // 校验文件名为安全 basename（防路径穿越）。
 function safeName(name: string): boolean {
   return (
     !!name &&
-    name.length <= 200 &&
+    tarNameFitsHeader(name) &&
     !name.includes("/") &&
     !name.includes("\0") &&
     name !== "." &&
@@ -709,46 +673,14 @@ export async function deleteInstanceFile(
 export async function downloadFromInstance(
   inst: Instance,
   name: string,
-): Promise<Buffer> {
+  maxBytes: number,
+): Promise<NodeJS.ReadableStream> {
   if (!safeName(name)) throw new Error("文件名不合法");
   const c = projectContainer(inst);
   const stream = (await c.getArchive({
     path: `${TRANSFER_DIR}/${name}`,
   })) as NodeJS.ReadableStream;
-  const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    stream.on("data", (d: Buffer) => chunks.push(d));
-    stream.on("end", () => resolve());
-    stream.on("error", reject);
-  });
-  return extractSingleFileFromTar(Buffer.concat(chunks));
-}
-
-// 从 docker getArchive 返回的 tar 中取出第一个普通文件的内容。Docker(Go archive/tar) 在 mtime 含纳秒精度等
-// 情况下会先写一个 PAX 扩展头块（typeflag 'x'），把它误当文件头会读到扩展记录长度 → 返回错误长度的数据
-// （"大小不对"）。这里跳过 PAX/全局('x'/'g')与 GNU 长名('L'/'K')等扩展头，找到普通文件('0'/NUL)再取内容。
-function extractSingleFileFromTar(tar: Buffer): Buffer {
-  let off = 0;
-  while (off + 512 <= tar.length) {
-    const header = tar.subarray(off, off + 512);
-    let allZero = true;
-    for (let i = 0; i < 512; i++)
-      if (header[i] !== 0) {
-        allZero = false;
-        break;
-      }
-    if (allZero) break; // 归档结束（全零块）
-    const sizeStr = header.toString("ascii", 124, 136).replace(/[^0-7]/g, "");
-    const size = sizeStr ? parseInt(sizeStr, 8) : 0;
-    const typeflag = header[156]; // '0'(0x30) 或 NUL(0) = 普通文件
-    const dataStart = off + 512;
-    if (typeflag === 0x30 || typeflag === 0) {
-      return tar.subarray(dataStart, dataStart + size);
-    }
-    // 扩展头/目录等：跳过其数据块（向上对齐 512）后继续
-    off = dataStart + size + ((512 - (size % 512)) % 512);
-  }
-  return Buffer.alloc(0);
+  return singleFileFromTarStream(stream, maxBytes);
 }
 
 // 拉取实例容器日志（末尾 N 行），供前端"查看/导出日志"排错。
@@ -980,19 +912,14 @@ export async function volExtractArchive(
 export async function volDownloadFile(
   inst: Instance,
   rel: string,
-): Promise<Buffer> {
+  maxBytes: number,
+): Promise<NodeJS.ReadableStream> {
   const abs = safeVolPath(rel);
   if (abs === VOL_ROOT) throw new Error("不能下载整个根目录，请用整卷备份");
   const stream = (await projectContainer(inst).getArchive({
     path: abs,
   })) as NodeJS.ReadableStream;
-  const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    stream.on("data", (d: Buffer) => chunks.push(d));
-    stream.on("end", () => resolve());
-    stream.on("error", reject);
-  });
-  return extractSingleFileFromTar(Buffer.concat(chunks));
+  return singleFileFromTarStream(stream, maxBytes);
 }
 
 // 整卷备份：在容器内把 /config 内容打成相对路径 tar.gz，路由直接 pipe 给响应，避免大文件入内存。
