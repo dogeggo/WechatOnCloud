@@ -50,7 +50,7 @@ export function registerSecurityHeaders(app: FastifyInstance): void {
         "base-uri 'self'",
         "form-action 'self'",
         "frame-ancestors 'self'",
-        "img-src 'self' data: blob:",
+        "img-src 'self' data: blob: https://*.googleusercontent.com",
         "media-src 'self' blob:",
         "connect-src 'self' ws: wss:",
         "style-src 'self' 'unsafe-inline'",
