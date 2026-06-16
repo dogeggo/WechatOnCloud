@@ -321,25 +321,39 @@ button {
 
 /* 实例卡片操作：「管理」分类折叠菜单（默认收起，点开按运维/设置/危险分组展开文字操作） */
 .inst-menu-toggle {
-  margin-top: 10px;
+  margin-top: 12px;
   width: 100%;
   height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   border: none;
-  border-radius: 12px;
-  background: var(--trough);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255 255 255 / 0.92), rgba(224 227 234 / 0.78));
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: inset 0 1px 2px rgba(var(--shadow) / 0.1);
-  transition: background 0.15s;
+  box-shadow:
+    inset 0 1px 0 rgba(255 255 255 / 0.75),
+    inset 0 -1px 1px rgba(var(--shadow) / 0.08),
+    var(--crease-press);
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.inst-menu-toggle:hover {
-  background: var(--base);
+.inst-menu-toggle.open {
+  background: rgba(var(--green-rgb) / 0.12);
+  color: var(--brand-green-dark);
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--green-rgb) / 0.16),
+    inset 0 1px 0 rgba(255 255 255 / 0.54);
+}
+.inst-menu-toggle:active {
+  transform: scale(0.98);
 }
 .inst-menu-caret {
   display: inline-flex;
@@ -350,10 +364,10 @@ button {
   transform: rotate(180deg);
 }
 .inst-menu {
-  margin-top: 8px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   animation: inst-menu-in 0.16s ease;
 }
 @keyframes inst-menu-in {
@@ -362,22 +376,106 @@ button {
     transform: translateY(-4px);
   }
 }
+.inst-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .inst-menu-label {
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-  letter-spacing: 0.04em;
-  margin: 2px 4px 2px;
+  letter-spacing: 0;
+  margin: 0 4px;
 }
 .inst-menu-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.inst-menu .btn-text {
+  min-width: 0;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: rgba(255 255 255 / 0.68);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--shadow) / 0.07),
+    0 1px 2px rgba(var(--shadow) / 0.08);
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.inst-menu .btn-text:active {
+  transform: scale(0.97);
+  background: rgba(var(--green-rgb) / 0.12);
+  color: var(--brand-green-dark);
+}
+.inst-menu .vnc-keep-toggle {
+  grid-column: 1 / -1;
+  width: 100%;
+  justify-content: space-between;
+  padding: 0 10px 0 12px;
+}
+.inst-menu .vnc-keep-toggle.on {
+  background: rgba(var(--green-rgb) / 0.12);
+  color: var(--brand-green-dark);
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--green-rgb) / 0.16),
+    0 1px 2px rgba(var(--green-rgb) / 0.08);
 }
 .inst-menu-danger {
-  margin-top: 2px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(var(--shadow) / 0.08);
+  margin-top: 0;
+  padding-top: 10px;
+  box-shadow: inset 0 1px 0 rgba(var(--shadow) / 0.08);
+}
+.inst-menu-danger .inst-menu-items {
+  grid-template-columns: 1fr;
+}
+.inst-menu .btn-text.danger {
+  background: rgba(var(--danger-rgb) / 0.08);
+  color: var(--danger);
+  box-shadow: inset 0 0 0 1px rgba(var(--danger-rgb) / 0.12);
+}
+.inst-menu .btn-text.danger:active {
+  background: rgba(var(--danger-rgb) / 0.14);
+}
+.inst-menu-toggle:focus-visible,
+.inst-menu .btn-text:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(var(--green-rgb) / 0.2),
+    var(--crease-press);
+}
+@media (hover: hover) {
+  .inst-menu-toggle:hover {
+    color: var(--brand-green-dark);
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--green-rgb) / 0.14),
+      inset 0 1px 0 rgba(255 255 255 / 0.65),
+      var(--crease-press);
+  }
+  .inst-menu .btn-text:hover {
+    background: rgba(var(--green-rgb) / 0.1);
+    color: var(--brand-green-dark);
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--green-rgb) / 0.14),
+      0 1px 2px rgba(var(--green-rgb) / 0.08);
+  }
+  .inst-menu .btn-text.danger:hover {
+    background: rgba(var(--danger-rgb) / 0.12);
+    color: var(--danger);
+    box-shadow: inset 0 0 0 1px rgba(var(--danger-rgb) / 0.16);
+  }
 }
 
 .error {
@@ -918,6 +1016,39 @@ button {
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
+}
+.section-row > .btn-text {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(var(--green-rgb) / 0.1);
+  color: var(--brand-green-dark);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(var(--green-rgb) / 0.12);
+  transition:
+    background 0.18s ease,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.section-row > .btn-text:active {
+  background: rgba(var(--green-rgb) / 0.14);
+  transform: scale(0.98);
+}
+.section-row > .btn-text:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(var(--green-rgb) / 0.2),
+    inset 0 0 0 1px rgba(var(--green-rgb) / 0.16);
+}
+@media (hover: hover) {
+  .section-row > .btn-text:hover {
+    background: rgba(var(--green-rgb) / 0.14);
+    box-shadow: inset 0 0 0 1px rgba(var(--green-rgb) / 0.18);
+  }
 }
 
 /* ---------- 实例网格 ---------- */

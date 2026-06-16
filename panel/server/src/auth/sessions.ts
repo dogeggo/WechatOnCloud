@@ -198,11 +198,11 @@ export function touchSession(t?: string, meta?: SessionMeta) {
   const s = getSession(t);
   if (!s) return null;
   const m = cleanMeta(meta);
-  // 登录设备绑定首次登录 IP，换 IP 后必须重新登录并生成新的设备记录。
-  if (m.ip !== s.ip) return null;
   const now = Date.now();
-  const shouldPersist = now - s.lastSeenAt >= TOUCH_PERSIST_INTERVAL_MS || m.userAgent !== s.userAgent;
+  // 管理页里的一个“设备”只对应一个 session cookie；IP/UA 仅作为最近访问元数据展示。
+  const shouldPersist = now - s.lastSeenAt >= TOUCH_PERSIST_INTERVAL_MS || m.ip !== s.ip || m.userAgent !== s.userAgent;
   s.lastSeenAt = now;
+  s.ip = m.ip;
   s.userAgent = m.userAgent;
   if (shouldPersist) persistSessions();
   return s;

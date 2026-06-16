@@ -23,8 +23,12 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
+# 本地打包 HarmonyOS Sans SC，避免构建镜像时联网下载字体。
+COPY fonts/harmonyos-sans/ /usr/local/share/fonts/harmonyos-sans/
+RUN chmod 644 /usr/local/share/fonts/harmonyos-sans/*
+
 # 明确中文字体优先级：应用实例内的 Qt/Chromium/GTK 通过 fontconfig 选字形。
-# 优先使用 Noto CJK，文泉驿保留为兜底，避免默认匹配到较旧的中文字体。
+# 优先使用更现代的 HarmonyOS Sans SC，Noto CJK / 文泉驿保留为兜底。
 COPY woc-cjk-font.conf /etc/fonts/conf.d/99-woc-cjk-font.conf
 RUN fc-cache -f
 
