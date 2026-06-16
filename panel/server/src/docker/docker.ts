@@ -183,6 +183,8 @@ function envList(inst: Instance): string[] {
   ];
   // 固定禁用 DRI，配合镜像内 LIBGL_ALWAYS_SOFTWARE=1 强制软件渲染。
   env.push("DISABLE_DRI=1");
+  // 本项目不需要在应用实例容器内再启动 dockerd；即使基础镜像服务被外部启用，也保持关闭。
+  env.push("START_DOCKER=false");
   // 透传 os 伪装开关给容器内的 00-woc-identity 钩子（决定是否把 /etc/os-release 改成 deepin）。
   env.push(`WOC_SPOOF_OS=${SPOOF_OS ? "1" : "0"}`);
   // 多应用实例类型，由 02-woc-app 写入数据卷，autostart 据此启动目标应用。

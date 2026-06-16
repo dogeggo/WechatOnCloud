@@ -58,6 +58,11 @@ ENV LANG=zh_CN.UTF-8 \
     QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox \
     BROWSER=/usr/local/bin/woc-browser
 
+# 本项目不依赖实例容器内的 cron / dockerd；从 s6 user bundle 移除，避免常驻空跑进程。
+RUN rm -f \
+    /etc/s6-overlay/s6-rc.d/user/contents.d/svc-cron \
+    /etc/s6-overlay/s6-rc.d/user/contents.d/svc-docker
+
 # 微信内打开外链时可能走系统 URL handler，而不是 app-defs.sh 中的 Chromium 启动命令。
 # 用带 --no-sandbox 的 wrapper 做默认浏览器，避免容器/root 环境下 Chromium 直接退出。
 COPY woc-browser /usr/local/bin/woc-browser
