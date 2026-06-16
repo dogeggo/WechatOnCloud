@@ -735,8 +735,9 @@ button {
   flex: 1;
 }
 .logs-modal {
-  width: min(820px, 92vw);
-  max-height: 86vh;
+  width: min(1120px, 96vw);
+  max-width: min(1120px, 96vw);
+  max-height: 88vh;
 }
 .logs-head {
   display: flex;
@@ -761,7 +762,7 @@ button {
 }
 .logs-box {
   min-height: 220px;
-  max-height: min(56vh, 520px);
+  max-height: min(62vh, 620px);
   overflow: auto;
   padding: 12px;
   border-radius: 14px;
