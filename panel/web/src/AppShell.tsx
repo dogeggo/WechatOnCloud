@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import type { PanelUser } from './api';
 import { useAuth } from './auth';
 import { useUI } from './ui';
 import InstanceView from './pages/Desktop';
@@ -214,12 +215,28 @@ function Sidebar({
           {!collapsed && <span className="sb-label">退出</span>}
         </button>
         {!collapsed && (
-          <div className="sb-user">
-            {user?.username || user?.email}
+          <div className="sb-user" title={user?.email}>
+            {user && <AccountAvatar user={user} variant="sidebar" />}
+            <span className="sb-user-name">{user?.username || user?.email}</span>
           </div>
         )}
       </div>
     </aside>
+  );
+}
+
+function AccountAvatar({ user, variant }: { user: PanelUser; variant: 'sidebar' | 'home' }) {
+  const displayName = user.username || user.email;
+  const initial = displayName.trim().charAt(0).toUpperCase();
+
+  return (
+    <span className={`account-avatar account-avatar-${variant}`}>
+      {user.picture ? (
+        <img src={user.picture} alt="" referrerPolicy="no-referrer" />
+      ) : (
+        <span>{initial}</span>
+      )}
+    </span>
   );
 }
 
@@ -253,7 +270,10 @@ function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
 
       <div className="content">
         <div className="hello">
-          你好，<b>{user?.username || user?.email}</b>
+          {user && <AccountAvatar user={user} variant="home" />}
+          <span className="hello-text">
+            你好，<b>{user?.username || user?.email}</b>
+          </span>
         </div>
 
         <div className="section-row">

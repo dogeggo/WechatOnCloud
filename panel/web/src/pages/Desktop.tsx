@@ -69,7 +69,7 @@ export default function InstanceView({
     frameRef,
     inputMode: ime.inputMode,
   });
-  const runtime = useInstanceRuntimeActions({ id, reload, reconnect: vnc.reconnect });
+  const runtime = useInstanceRuntimeActions({ id, reload });
   const desktopFrameSrc = useMemo(() => {
     if (!id) return 'about:blank';
     return desktopUrl(id, desktopClientId, streamRef.current);
@@ -188,9 +188,6 @@ export default function InstanceView({
             >
               剪贴板
             </button>
-            <button className="ws-action" title="重启实例（修复卡死/最小化丢失）" onClick={runtime.restartInstance}>
-              重启
-            </button>
           </>
         )}
       </header>
@@ -292,7 +289,7 @@ export default function InstanceView({
           {!vnc.frameLoaded && vnc.loadStuck && (
             <div className="iv-loading">
               <div className="iv-loading-text">桌面无响应</div>
-              <div className="iv-loading-sub">连接超时。可能是实例临时卡住，先「重新连接」；若仍无效请「重启实例」。</div>
+              <div className="iv-loading-sub">连接超时。请先重新连接；如仍无效，可到「管理」处理该实例。</div>
               <div className="iv-stuck-actions">
                 <button
                   className="btn btn-primary"
@@ -300,12 +297,9 @@ export default function InstanceView({
                 >
                   重新连接
                 </button>
-                <button className="btn" onClick={runtime.restartInstance}>
-                  重启实例
-                </button>
               </div>
               <div className="iv-loading-sub" style={{ marginTop: 8 }}>
-                也可稍候，面板会自动检测无响应实例并重启自愈。
+                也可稍候，面板会自动检测无响应实例并尝试自愈。
               </div>
             </div>
           )}
