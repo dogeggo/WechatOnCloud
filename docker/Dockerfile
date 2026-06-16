@@ -90,7 +90,7 @@ RUN chmod 755 /usr/local/bin/woc-browser && \
 #      累积不 reset、退格风暴，导致大量丢字 / ~21 字卡住 / 跨浏览器不稳。改为只在 compositionend
 #      用 e.data 直发成品字符串（详见 woc-www-patch.sh / woc-ime.pl）。
 # 注意：实际加载的是 webpack 产物 dist/main.bundle.js（app/ui.js 是未打包源码、运行时不加载），故必须改 bundle。
-COPY woc-www-patch.sh woc-ime.pl woc-canvas.pl woc-lastactive.pl /woc/
+COPY woc-www-patch.sh woc-ime.pl woc-canvas.pl /woc/
 RUN chmod +x /woc/woc-www-patch.sh && /woc/woc-www-patch.sh
 
 # 容器内通知桥：接管 org.freedesktop.Notifications，把 QQ/微信发出的桌面通知转交面板 SSE。

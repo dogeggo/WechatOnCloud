@@ -4,6 +4,7 @@ import type { InstanceWithStatus } from '../api';
 import { EmptyState } from '../components/EmptyState';
 import { Icons } from '../components/icons';
 import { deviceName } from '../domain/devices';
+import { appProfile } from '../domain/instances';
 import { CreateInstance } from '../features/admin/components/CreateInstance';
 import { DeleteInstance } from '../features/admin/components/DeleteInstance';
 import { InstanceAdminCard } from '../features/admin/components/InstanceAdminCard';
@@ -41,6 +42,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
     toggleVncKeepAlive,
   } = useAdminPanel();
   const [creatingInst, setCreatingInst] = useState(false);
+  const [createReuseVolume, setCreateReuseVolume] = useState('');
   const [deleteInst, setDeleteInst] = useState<InstanceWithStatus | null>(null);
   const [renameInst, setRenameInst] = useState<InstanceWithStatus | null>(null);
   const [securityInst, setSecurityInst] = useState<InstanceWithStatus | null>(null);
@@ -49,6 +51,10 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [iconInst, setIconInst] = useState<InstanceWithStatus | null>(null);
   const [logsInst, setLogsInst] = useState<InstanceWithStatus | null>(null);
   const deletingInstId = deleteInst?.id;
+  const openCreateInstance = (reuseVolume = '') => {
+    setCreateReuseVolume(reuseVolume);
+    setCreatingInst(true);
+  };
 
   return (
     <div className="ws-page">
@@ -64,7 +70,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
 
         <div className="section-row">
           <span className="section-title">{isAdmin ? '全部应用实例' : '应用实例'}</span>
-          <button className="btn-text" onClick={() => setCreatingInst(true)}>
+          <button className="btn-text" onClick={() => openCreateInstance()}>
             + 新建实例
           </button>
         </div>
@@ -74,7 +80,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
             title="还没有应用实例"
             sub="新建微信、QQ 或 Chromium 实例，进入后即可在浏览器里使用"
             action={
-              <button className="btn btn-primary" onClick={() => setCreatingInst(true)}>
+              <button className="btn btn-primary" onClick={() => openCreateInstance()}>
                 ＋ 新建实例
               </button>
             }
@@ -180,13 +186,16 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 <div key={v.name} className="inst-card">
                   <div className="inst-head">
                     <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{v.name}</span>
+                    <span className="tag tag-on">{appProfile(v.appType).label}</span>
                   </div>
                   <div className="inst-sub">
+                    归属：{appProfile(v.appType).label}
+                    {'　·　'}
                     {v.createdAt ? `创建于 ${v.createdAt.slice(0, 10)}` : '创建时间未知'}
                     {typeof v.sizeBytes === 'number' ? `　·　${formatMiB(v.sizeBytes)}` : ''}
                   </div>
                   <div className="inst-admin-links">
-                    <button className="btn-text" onClick={() => setCreatingInst(true)} title="去「新建实例」对话框，在「数据卷」下拉里选择复用此卷">
+                    <button className="btn-text" onClick={() => openCreateInstance(v.name)} title="打开「新建实例」并复用此数据卷">
                       复用为新实例
                     </button>
                     <button className="btn-text danger" onClick={() => removeOrphanVolume(v.name)}>
@@ -202,9 +211,14 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
 
       {creatingInst && (
         <CreateInstance
-          onClose={() => setCreatingInst(false)}
+          initialReuseVolume={createReuseVolume}
+          onClose={() => {
+            setCreatingInst(false);
+            setCreateReuseVolume('');
+          }}
           onDone={() => {
             setCreatingInst(false);
+            setCreateReuseVolume('');
             load();
           }}
         />

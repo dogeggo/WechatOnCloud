@@ -2,13 +2,15 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AppType, type OrphanVolume } from '../../api';
 import { errorMessage } from '../../utils/errors';
 
-export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean) {
+export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean, initialReuseVolume = '') {
   const [name, setName] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [orphans, setOrphans] = useState<OrphanVolume[]>([]);
-  const [reuse, setReuse] = useState('');
+  const [reuse, setReuse] = useState(initialReuseVolume);
   const [appType, setAppType] = useState<AppType>('wechat');
+  const selectedVolume = orphans.find((volume) => volume.name === reuse);
+  const lockedAppType = selectedVolume?.appType;
 
   useEffect(() => {
     if (!allowReuseVolume) {
@@ -20,7 +22,10 @@ export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean)
     api
       .listOrphanVolumes()
       .then(({ volumes }) => {
-        if (alive) setOrphans(volumes);
+        if (!alive) return;
+        setOrphans(volumes);
+        const initialVolume = volumes.find((volume) => volume.name === initialReuseVolume);
+        if (initialVolume) setAppType(initialVolume.appType);
       })
       .catch((error) => {
         if (alive) setErr(errorMessage(error, '读取未使用数据卷失败'));
@@ -28,7 +33,24 @@ export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean)
     return () => {
       alive = false;
     };
-  }, [allowReuseVolume]);
+  }, [allowReuseVolume, initialReuseVolume]);
+
+  useEffect(() => {
+    if (lockedAppType && appType !== lockedAppType) {
+      setAppType(lockedAppType);
+    }
+  }, [appType, lockedAppType]);
+
+  const selectReuse = (value: string) => {
+    setReuse(value);
+    const volume = orphans.find((item) => item.name === value);
+    if (volume) setAppType(volume.appType);
+  };
+
+  const selectAppType = (value: AppType) => {
+    if (lockedAppType && value !== lockedAppType) return;
+    setAppType(value);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -51,10 +73,12 @@ export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean)
     busy,
     orphans,
     reuse,
-    setReuse,
+    setReuse: selectReuse,
+    selectedVolume,
+    lockedAppType,
     appType,
-    setAppType,
-    canSubmit: !busy && !!name.trim(),
+    setAppType: selectAppType,
+    canSubmit: !busy && !!name.trim() && (!reuse || !!selectedVolume) && (!lockedAppType || appType === lockedAppType),
     submit,
   };
 }

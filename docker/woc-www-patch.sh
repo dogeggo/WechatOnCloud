@@ -10,7 +10,6 @@ set -euo pipefail
 
 PATCH_PL="$(dirname "$0")/woc-ime.pl"
 CANVAS_PATCH_PL="$(dirname "$0")/woc-canvas.pl"
-LASTACTIVE_PATCH_PL="$(dirname "$0")/woc-lastactive.pl"
 patched=0
 
 for f in /usr/share/kasmvnc/www/dist/*.bundle.js /usr/local/share/kasmvnc/www/dist/*.bundle.js; do
@@ -46,14 +45,6 @@ for f in /usr/share/kasmvnc/www/dist/*.bundle.js /usr/local/share/kasmvnc/www/di
             exit 1
         fi
         optional_changed=1
-    fi
-
-    # (4) KasmVNC 空闲 keepalive 兜底：避免 UI.rfb 已被清理后继续读 lastActiveAt 抛 fatal error。
-    if grep -q "UI.rfb.lastActiveAt" "$f" && ! grep -q "WOC-LASTACTIVE" "$f"; then
-        perl -0777 -i -pe "$(cat "$LASTACTIVE_PATCH_PL")" "$f"
-        if grep -q "WOC-LASTACTIVE" "$f"; then
-            optional_changed=1
-        fi
     fi
 
     [ "$changed" = "1" ] && patched=1

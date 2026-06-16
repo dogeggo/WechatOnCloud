@@ -393,7 +393,8 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
-.inst-menu .btn-text {
+.inst-menu .btn-text,
+.inst-admin-links .btn-text {
   min-width: 0;
   height: 36px;
   display: inline-flex;
@@ -415,7 +416,8 @@ button {
     transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.inst-menu .btn-text:active {
+.inst-menu .btn-text:active,
+.inst-admin-links .btn-text:active {
   transform: scale(0.97);
   background: rgba(var(--green-rgb) / 0.12);
   color: var(--brand-green-dark);
@@ -441,16 +443,19 @@ button {
 .inst-menu-danger .inst-menu-items {
   grid-template-columns: 1fr;
 }
-.inst-menu .btn-text.danger {
+.inst-menu .btn-text.danger,
+.inst-admin-links .btn-text.danger {
   background: rgba(var(--danger-rgb) / 0.08);
   color: var(--danger);
   box-shadow: inset 0 0 0 1px rgba(var(--danger-rgb) / 0.12);
 }
-.inst-menu .btn-text.danger:active {
+.inst-menu .btn-text.danger:active,
+.inst-admin-links .btn-text.danger:active {
   background: rgba(var(--danger-rgb) / 0.14);
 }
 .inst-menu-toggle:focus-visible,
-.inst-menu .btn-text:focus-visible {
+.inst-menu .btn-text:focus-visible,
+.inst-admin-links .btn-text:focus-visible {
   outline: none;
   box-shadow:
     0 0 0 3px rgba(var(--green-rgb) / 0.2),
@@ -464,14 +469,16 @@ button {
       inset 0 1px 0 rgba(255 255 255 / 0.65),
       var(--crease-press);
   }
-  .inst-menu .btn-text:hover {
+  .inst-menu .btn-text:hover,
+  .inst-admin-links .btn-text:hover {
     background: rgba(var(--green-rgb) / 0.1);
     color: var(--brand-green-dark);
     box-shadow:
       inset 0 0 0 1px rgba(var(--green-rgb) / 0.14),
       0 1px 2px rgba(var(--green-rgb) / 0.08);
   }
-  .inst-menu .btn-text.danger:hover {
+  .inst-menu .btn-text.danger:hover,
+  .inst-admin-links .btn-text.danger:hover {
     background: rgba(var(--danger-rgb) / 0.12);
     color: var(--danger);
     box-shadow: inset 0 0 0 1px rgba(var(--danger-rgb) / 0.16);
@@ -1228,16 +1235,15 @@ button {
 }
 /* 管理卡片底部的文字操作（重命名/分配/删除） */
 .inst-admin-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 10px;
-  padding-top: 8px;
+  padding-top: 10px;
   box-shadow: inset 0 1px 0 rgba(var(--shadow) / 0.08);
 }
-.inst-admin-links .btn-text {
-  padding: 6px 8px;
-  font-size: 14px;
+.inst-admin-links .btn-text:only-child {
+  grid-column: 1 / -1;
 }
 .device-card {
   min-width: 0;
@@ -1309,6 +1315,11 @@ button {
 }
 .chip-toggle:active {
   transform: scale(0.95);
+}
+.chip-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
 }
 .chip-toggle.on {
   background: var(--brand-green);
@@ -1944,6 +1955,117 @@ button {
     0 0 0 3px rgba(var(--green-rgb) / 0.2),
     inset 0 0 0 1px rgba(var(--green-rgb) / 0.16);
 }
+.ws-perf {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  background: rgba(255 255 255 / 0.68);
+  border-radius: 12px;
+  color: var(--text);
+  cursor: default;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--shadow) / 0.07),
+    0 1px 2px rgba(var(--shadow) / 0.08);
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ws-perf:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(var(--green-rgb) / 0.2),
+    inset 0 0 0 1px rgba(var(--green-rgb) / 0.16);
+}
+.ws-perf-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ws-perf-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(var(--green-rgb) / 0.12);
+}
+.ws-perf-name {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.ws-perf-summary-value {
+  color: var(--brand-green-dark);
+}
+.ws-perf-popover {
+  position: fixed;
+  top: calc(var(--nav-height) + env(safe-area-inset-top) + 8px);
+  right: 16px;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(118px, 1fr));
+  gap: 6px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255 255 255 / 0.78);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow:
+    inset 0 0 0 1px rgba(255 255 255 / 0.52),
+    inset 0 0 0 1px rgba(var(--shadow) / 0.08),
+    0 14px 32px rgba(var(--shadow) / 0.18);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top right;
+  transition:
+    opacity 0.14s ease,
+    visibility 0.14s ease,
+    transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ws-perf:hover .ws-perf-popover,
+.ws-perf:focus-within .ws-perf-popover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+.ws-perf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  background: rgba(255 255 255 / 0.46);
+  box-shadow: inset 0 0 0 1px rgba(var(--shadow) / 0.06);
+  font-variant-numeric: tabular-nums;
+}
+.ws-perf-k {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ws-perf-v {
+  color: var(--brand-green-dark);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
 .ws-mode {
   flex: none;
   display: inline-flex;
@@ -1994,12 +2116,26 @@ button {
 @media (hover: hover) {
   .ws-menu:hover,
   .ws-action:hover,
+  .ws-perf:hover,
   .ws-mode-btn:hover {
     background: rgba(var(--green-rgb) / 0.1);
     color: var(--brand-green-dark);
     box-shadow:
       inset 0 0 0 1px rgba(var(--green-rgb) / 0.14),
       0 1px 2px rgba(var(--green-rgb) / 0.08);
+  }
+}
+@media (max-width: 760px) {
+  .ws-perf-name {
+    display: none;
+  }
+  .ws-perf {
+    padding: 0 8px;
+  }
+  .ws-perf-popover {
+    right: 12px;
+    width: min(340px, calc(100vw - 24px));
+    grid-template-columns: 1fr;
   }
 }
 .ws-page .content {

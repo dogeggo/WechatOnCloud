@@ -95,6 +95,12 @@ app.get('/api/auth/login', async (req, reply) => auth.login(req, reply));
 app.get('/api/auth/callback', async (req, reply) => auth.callback(req, reply, app.log));
 app.post('/api/auth/logout', async (req, reply) => auth.logout(req, reply));
 app.get('/api/auth/me', async (req, reply) => auth.me(req, reply));
+app.get('/api/ping', async (req, reply) => {
+  const user = requireUser(req, reply);
+  if (!user) return;
+  reply.header('cache-control', 'no-store');
+  return { ok: true, now: Date.now() };
+});
 app.get('/api/admin/sessions', async (req, reply) => auth.currentUserSessions(req, reply));
 app.delete('/api/admin/sessions/:id', async (req, reply) => auth.removeCurrentUserSession(req, reply));
 

@@ -65,6 +65,7 @@ export interface PanelInstance {
 }
 export interface OrphanVolume {
   name: string;
+  appType: AppType;
   createdAt?: string;
   sizeBytes?: number;
 }
@@ -191,6 +192,7 @@ async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
 
 export const api = {
   me: () => req<{ user: PanelUser }>('/api/auth/me'),
+  ping: () => req<{ ok: true; now: number }>(`/api/ping?t=${Date.now()}`),
   loginUrl: (returnTo = '/') => `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
   logout: () => req('/api/auth/logout', { method: 'POST' }),
   listLoggedInDevices: () => req<{ devices: LoggedInDevice[] }>('/api/admin/sessions'),

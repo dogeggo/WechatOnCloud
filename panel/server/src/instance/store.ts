@@ -37,13 +37,20 @@ export interface InstanceActor {
   isAdmin: boolean;
 }
 
+export interface UnusedVolumeOwnership {
+  name: string;
+  appType: AppType;
+  retainedAt: string;
+}
+
 interface Data {
   instances: Instance[];
+  unusedVolumes: UnusedVolumeOwnership[];
 }
 
 const FILE = '/data/accounts.json';
 
-let data: Data = { instances: [] };
+let data: Data = { instances: [], unusedVolumes: [] };
 
 export type AppType = 'wechat' | 'chromium' | 'qq' | 'telegram';
 export const APP_TYPES: AppType[] = ['wechat', 'qq', 'telegram', 'chromium'];
@@ -150,11 +157,27 @@ function parseInstance(raw: any): Instance {
   return inst;
 }
 
+function parseUnusedVolumeOwnership(raw: any): UnusedVolumeOwnership {
+  if (!raw || typeof raw !== 'object') throw new Error('保留数据卷记录格式不合法');
+  const name = asString(raw.name, '数据卷名');
+  assertProjectVolumeName(name);
+  return {
+    name,
+    appType: normalizeAppType(raw.appType),
+    retainedAt: new Date(asString(raw.retainedAt, '保留时间')).toISOString(),
+  };
+}
+
 function normalizeStoreData(raw: unknown): Data {
   if (!raw || typeof raw !== 'object' || !Array.isArray((raw as any).instances)) {
     throw new Error('账户数据文件格式不合法');
   }
-  data = { instances: (raw as any).instances.map(parseInstance) };
+  data = {
+    instances: (raw as any).instances.map(parseInstance),
+    unusedVolumes: Array.isArray((raw as any).unusedVolumes)
+      ? (raw as any).unusedVolumes.map(parseUnusedVolumeOwnership)
+      : [],
+  };
   return data;
 }
 
@@ -163,7 +186,7 @@ export function initStore() {
     const raw = JSON.parse(readFileSync(FILE, 'utf8'));
     normalizeStoreData(raw);
   } else {
-    data = { instances: [] };
+    data = { instances: [], unusedVolumes: [] };
   }
   persist();
 }
@@ -288,6 +311,37 @@ export function removeInstance(id: string) {
   data.instances = data.instances.filter((i) => i.id !== id);
   persist();
   return inst;
+}
+
+export function listUnusedVolumeOwnerships() {
+  return data.unusedVolumes.slice().sort((a, b) => a.retainedAt.localeCompare(b.retainedAt));
+}
+
+export function findUnusedVolumeOwnership(name: string) {
+  assertProjectVolumeName(name);
+  return data.unusedVolumes.find((volume) => volume.name === name);
+}
+
+export function rememberUnusedVolume(name: string, appType: AppType) {
+  assertProjectVolumeName(name);
+  const type = normalizeAppType(appType);
+  const retainedAt = new Date().toISOString();
+  const existing = data.unusedVolumes.find((volume) => volume.name === name);
+  if (existing) {
+    existing.appType = type;
+    existing.retainedAt = retainedAt;
+  } else {
+    data.unusedVolumes.push({ name, appType: type, retainedAt });
+  }
+  persist();
+}
+
+export function forgetUnusedVolume(name: string) {
+  assertProjectVolumeName(name);
+  const next = data.unusedVolumes.filter((volume) => volume.name !== name);
+  if (next.length === data.unusedVolumes.length) return;
+  data.unusedVolumes = next;
+  persist();
 }
 
 // 已登记一个实例（迁移用：复用旧 ./data 卷）。返回是否新建。

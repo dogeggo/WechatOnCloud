@@ -13,6 +13,7 @@ import { useImeComposer } from '../features/desktop/useImeComposer';
 import { useInstanceRuntimeActions } from '../features/desktop/useInstanceRuntimeActions';
 import { useSeamlessIme } from '../features/desktop/useSeamlessIme';
 import { useVncFrame } from '../features/desktop/useVncFrame';
+import { useVncPerformanceStats, type VncPerformanceStats } from '../features/desktop/useVncPerformanceStats';
 import { useVncStreamSettings } from '../features/desktop/useVncStreamSettings';
 import { useInstances } from '../features/instances/instances-context';
 import { useUI } from '../ui';
@@ -57,6 +58,12 @@ export default function InstanceView({
   const showVnc = !!inst && !offline && installed;
   const effectiveShowVnc = showVnc && !clientReplaced;
   const vnc = useVncFrame({ active, showVnc: effectiveShowVnc, id, frameRef, stream: stream.settings });
+  const performanceStats = useVncPerformanceStats({
+    active,
+    showVnc: effectiveShowVnc,
+    frameLoaded: vnc.frameLoaded,
+    frameRef,
+  });
   const desktopFiles = useDesktopFiles({ active, showVnc: effectiveShowVnc, id });
   const clipboard = useClipboardBridge({ id, frameRef });
   const ime = useImeComposer({
@@ -140,12 +147,20 @@ export default function InstanceView({
         <span className="ws-title">{title}</span>
         {effectiveShowVnc && (
           <>
+            <VncPerformanceBadges stats={performanceStats} />
             <button
               className="ws-action"
               title="文件传输"
               onClick={desktopFiles.toggleFiles}
             >
               文件
+            </button>
+            <button
+              className="ws-action"
+              title="重新连接桌面"
+              onClick={vnc.reconnect}
+            >
+              重连
             </button>
             <div className="ws-mode ws-stream" role="group" aria-label="画质档位">
               {VNC_STREAM_PROFILES.map((option) => (
@@ -428,6 +443,55 @@ export default function InstanceView({
       {logsInst && (
         <InstanceLogs inst={logsInst} onClose={() => setLogsInst(null)} />
       )}
+    </div>
+  );
+}
+
+function VncPerformanceBadges({ stats }: { stats: VncPerformanceStats }) {
+  const latency = stats.latencyMs === null ? '--' : `${stats.latencyMs}ms`;
+  const jitter = stats.latencyJitterMs === null ? '--' : `${stats.latencyJitterMs}ms`;
+  const fps = stats.fps === null ? '--' : `${stats.fps}fps`;
+  const frameInterval = stats.frameIntervalMs === null ? '--' : `${stats.frameIntervalMs}ms`;
+  const resolution = stats.resolution ? `${stats.resolution.width}x${stats.resolution.height}` : '--';
+  const viewport = stats.viewport ? `${stats.viewport.width}x${stats.viewport.height}` : '--';
+  const scale = stats.scalePercent === null ? '--' : `${stats.scalePercent}%`;
+  const dpr = stats.devicePixelRatio === null ? '--' : `${stats.devicePixelRatio}x`;
+  const heap = stats.heapUsedBytes === null ? '--' : formatBytes(stats.heapUsedBytes);
+  const buffer = stats.websocketBufferedBytes === null ? '--' : formatBytes(stats.websocketBufferedBytes);
+  const summary = `${latency} · ${fps}`;
+  const items = [
+    { key: 'latency', label: '延迟', value: latency },
+    { key: 'jitter', label: '抖动', value: jitter },
+    { key: 'fps', label: '帧率', value: fps },
+    { key: 'frame', label: '帧时', value: frameInterval },
+    { key: 'resolution', label: '分辨率', value: resolution },
+    { key: 'viewport', label: '视窗', value: viewport },
+    { key: 'scale', label: '缩放', value: scale },
+    { key: 'dpr', label: 'DPR', value: dpr },
+    { key: 'heap', label: '内存', value: heap },
+    { key: 'buffer', label: '缓冲', value: buffer },
+  ];
+  const title = items.map((item) => `${item.label}：${item.value}`).join('；');
+
+  return (
+    <div
+      className="ws-perf"
+      tabIndex={0}
+      aria-label={`性能数据，${title}`}
+    >
+      <span className="ws-perf-summary">
+        <span className="ws-perf-dot" />
+        <span className="ws-perf-name">性能</span>
+        <span className="ws-perf-summary-value">{summary}</span>
+      </span>
+      <div className="ws-perf-popover" role="list" aria-label="性能数据详情">
+        {items.map((item) => (
+          <span key={item.key} className="ws-perf-row" role="listitem">
+            <span className="ws-perf-k">{item.label}</span>
+            <span className="ws-perf-v">{item.value}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

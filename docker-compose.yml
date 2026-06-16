@@ -24,8 +24,8 @@ services:
       - WOC_INSTANCE_MEM_SOFT_MB=${WOC_INSTANCE_MEM_SOFT_MB:-1500}
       - WOC_INSTANCE_MEM_HARD_MB=${WOC_INSTANCE_MEM_HARD_MB:-2500}
       - WOC_WATCHDOG_INTERVAL_SEC=${WOC_WATCHDOG_INTERVAL_SEC:-300}
-      # 设备伪装：os-release 伪装成 deepin（默认开，=0 关恢复 Debian）。详见 .env.example / doc/设备伪装.md。
       - WOC_SPOOF_OS=${WOC_SPOOF_OS:-1}
+      # 设备伪装：os-release 伪装成 deepin（默认开，=0 关恢复 Debian）。详见 .env.example / doc/设备伪装.md。
       # DNS-rebinding 防护：套 HTTPS 反代部署时把对外域名加进 .env（详见 .env.example）。
       # 默认仅放行 loopback + RFC1918 私网，直连 NAS / 局域网无需改动。
       - PANEL_ALLOWED_HOSTS=${PANEL_ALLOWED_HOSTS:-}

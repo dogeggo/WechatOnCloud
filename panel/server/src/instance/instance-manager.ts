@@ -2,9 +2,13 @@ import {
   canAccessInstance,
   createInstance,
   findInstance,
+  findUnusedVolumeOwnership,
+  forgetUnusedVolume,
   listInstances,
+  listUnusedVolumeOwnerships,
   normalizeAppType,
   publicInstance,
+  rememberUnusedVolume,
   removeInstance as removeInstanceRecord,
   renameInstance,
   setInstanceIcon,
@@ -20,6 +24,7 @@ import {
   instanceLogs,
   instanceMemoryMB,
   instanceRuntime,
+  inspectVolumeAppType,
   keyInInstance,
   listInstanceFiles,
   listOrphanContainers,
@@ -91,16 +96,23 @@ export class InstanceManager {
   }
 
   async createForUser(actor: InstanceActor, name: unknown, reuseVolume: unknown, appType: unknown) {
-    const reuseVolumeName = this.normalizeReuseVolume(reuseVolume, actor);
+    let type: Instance['appType'];
+    try {
+      type = normalizeAppType(appType);
+    } catch (e: any) {
+      throw httpError(400, e?.message || '应用类型不合法');
+    }
+    const reuseVolumeName = await this.normalizeReuseVolume(reuseVolume, actor, type);
     let inst: Instance;
     try {
-      inst = createInstance(String(name ?? ''), actor.email, reuseVolumeName, normalizeAppType(appType));
+      inst = createInstance(String(name ?? ''), actor.email, reuseVolumeName, type);
     } catch (e: any) {
       throw httpError(400, e?.message || '创建实例失败');
     }
 
     try {
       await runInstance(inst);
+      if (reuseVolumeName) forgetUnusedVolume(reuseVolumeName);
     } catch (e: any) {
       removeInstanceRecord(inst.id);
       throw httpError(500, '创建容器失败：' + (e?.message || e));
@@ -111,7 +123,13 @@ export class InstanceManager {
   async listUnusedVolumes(actor: InstanceActor) {
     this.requireAdmin(actor);
     const referenced = new Set(listInstances().map((inst) => inst.volumeName));
-    return { volumes: await listOrphanVolumes(referenced) };
+    const ownerships = new Map(listUnusedVolumeOwnerships().map((volume) => [volume.name, volume.appType]));
+    const volumes = (await listOrphanVolumes(referenced)).map((volume) => {
+      const appType = volume.appType ?? ownerships.get(volume.name);
+      if (!appType) throw httpError(409, `数据卷 ${volume.name} 缺少应用归属标记，不能复用`);
+      return { ...volume, appType };
+    });
+    return { volumes };
   }
 
   async listUnusedContainers(actor: InstanceActor) {
@@ -138,6 +156,7 @@ export class InstanceManager {
       throw httpError(409, '该数据卷正被某个实例使用，不能删除');
     }
     await removeVolume(name);
+    forgetUnusedVolume(name);
     return { ok: true };
   }
 
@@ -189,6 +208,8 @@ export class InstanceManager {
     const inst = this.requireInstanceForActor(id, actor);
     await removeInstanceContainer(inst, purge);
     removeInstanceRecord(inst.id);
+    if (purge) forgetUnusedVolume(inst.volumeName);
+    else rememberUnusedVolume(inst.volumeName, inst.appType);
     return { ok: true };
   }
 
@@ -365,7 +386,7 @@ export class InstanceManager {
     if (!actor.isAdmin) throw httpError(403, '需要管理员权限');
   }
 
-  private normalizeReuseVolume(reuseVolume: unknown, actor: InstanceActor): string | undefined {
+  private async normalizeReuseVolume(reuseVolume: unknown, actor: InstanceActor, appType: Instance['appType']): Promise<string | undefined> {
     if (reuseVolume == null || reuseVolume === false || reuseVolume === '') return undefined;
     this.requireAdmin(actor);
     if (typeof reuseVolume !== 'string' || !VOLUME_NAME_RE.test(reuseVolume)) {
@@ -374,8 +395,34 @@ export class InstanceManager {
     if (listInstances().some((inst) => inst.volumeName === reuseVolume)) {
       throw httpError(409, '该数据卷已被另一个实例占用');
     }
+    const retained = findUnusedVolumeOwnership(reuseVolume);
+    let volumeAppType = retained?.appType;
+    if (!volumeAppType) {
+      try {
+        volumeAppType = await inspectVolumeAppType(reuseVolume);
+      } catch (e: any) {
+        throw httpError(400, e?.message || '读取数据卷应用归属失败');
+      }
+    }
+    if (!volumeAppType) {
+      throw httpError(409, `数据卷 ${reuseVolume} 缺少应用归属标记，不能复用`);
+    }
+    if (volumeAppType !== appType) {
+      throw httpError(409, `数据卷 ${reuseVolume} 属于 ${appLabel(volumeAppType)}，只能创建${appLabel(volumeAppType)}实例`);
+    }
     return reuseVolume;
   }
+}
+
+const APP_LABELS: Record<Instance['appType'], string> = {
+  wechat: '微信',
+  qq: 'QQ',
+  telegram: 'Telegram',
+  chromium: 'Chromium',
+};
+
+function appLabel(appType: Instance['appType']): string {
+  return APP_LABELS[appType];
 }
 
 function parseLimitPatch(value: unknown, field: string): number | null | undefined {

@@ -3,7 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { PassThrough, Transform } from "node:stream";
 import zlib from "node:zlib";
 import Docker from "dockerode";
-import type { Instance } from "../instance/store.js";
+import { normalizeAppType, type AppType, type Instance } from "../instance/store.js";
 import { kasmVncServerProfileYaml } from "../desktop/vnc-server-profile.js";
 import {
   singleFileFromTarStream,
@@ -98,6 +98,9 @@ function realisticMac(id: string): string {
 }
 
 const docker = new Docker(); // 默认连 /var/run/docker.sock
+const VOLUME_PROJECT_LABEL = "com.dogeggo.woc.managed";
+const VOLUME_APP_TYPE_LABEL = "com.dogeggo.woc.app-type";
+const VOLUME_INSTANCE_ID_LABEL = "com.dogeggo.woc.instance-id";
 
 // 面板自身所在的 docker 网络名；新实例都 attach 到它，便于按容器名互访。
 let networkName: string | null = normalizeDockerNetworkName(
@@ -124,6 +127,47 @@ function projectContainer(inst: Instance): Docker.Container {
 
 function projectVolume(name: string): Docker.Volume {
   return docker.getVolume(assertProjectVolumeName(name));
+}
+
+function isDockerNotFound(error: any): boolean {
+  return error?.statusCode === 404 || error?.status === 404;
+}
+
+function appTypeFromVolumeLabels(labels: unknown): AppType | undefined {
+  if (!labels || typeof labels !== "object") return undefined;
+  const raw = (labels as Record<string, unknown>)[VOLUME_APP_TYPE_LABEL];
+  if (raw == null || raw === "") return undefined;
+  return normalizeAppType(raw);
+}
+
+async function ensureProjectVolume(inst: Instance): Promise<void> {
+  try {
+    const info: any = await projectVolume(inst.volumeName).inspect();
+    const labeledAppType = appTypeFromVolumeLabels(info?.Labels);
+    if (labeledAppType && labeledAppType !== inst.appType) {
+      throw new Error(
+        `数据卷 ${inst.volumeName} 属于 ${labeledAppType}，不能用于 ${inst.appType} 实例`,
+      );
+    }
+    return;
+  } catch (e: any) {
+    if (!isDockerNotFound(e)) throw e;
+  }
+
+  await docker.createVolume({
+    Name: inst.volumeName,
+    Driver: "local",
+    Labels: {
+      [VOLUME_PROJECT_LABEL]: "true",
+      [VOLUME_APP_TYPE_LABEL]: inst.appType,
+      [VOLUME_INSTANCE_ID_LABEL]: inst.id,
+    },
+  });
+}
+
+export async function inspectVolumeAppType(name: string): Promise<AppType | undefined> {
+  const info: any = await projectVolume(name).inspect();
+  return appTypeFromVolumeLabels(info?.Labels);
 }
 
 // 启动时探测面板自身网络（容器内 hostname = 容器短 id）。失败不致命：
@@ -215,6 +259,7 @@ export async function runInstance(inst: Instance): Promise<void> {
   assertProjectInstance(inst);
   const net = await ensureNetwork();
   await ensureImage();
+  await ensureProjectVolume(inst);
   try {
     const existing = projectContainer(inst);
     await existing.inspect();
@@ -369,7 +414,7 @@ export async function removeInstance(
 // 早期 runInstance 启动失败漏清残留容器，留下 4 个 Created 容器各占一个卷名）。
 export async function listOrphanVolumes(
   referencedVolumes: Set<string>,
-): Promise<Array<{ name: string; createdAt?: string; sizeBytes?: number }>> {
+): Promise<Array<{ name: string; createdAt?: string; sizeBytes?: number; appType?: AppType }>> {
   // 容器视角：扫所有容器（含已停止 / Created），收集它们挂载的 woc-data-* 卷名
   const allContainers = await docker.listContainers({ all: true });
   const containerRefs = new Set<string>();
@@ -393,6 +438,7 @@ export async function listOrphanVolumes(
     .map((v: any) => ({
       name: v.Name,
       createdAt: v.CreatedAt,
+      appType: appTypeFromVolumeLabels(v.Labels),
       // UsageData 仅在 docker engine 启用 -v size=true 时返回，常见情况下没有；缺失就不展示
       sizeBytes:
         typeof v?.UsageData?.Size === "number" && v.UsageData.Size >= 0

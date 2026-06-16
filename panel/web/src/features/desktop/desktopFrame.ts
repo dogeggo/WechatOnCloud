@@ -187,8 +187,6 @@ function hasKasmFatalError(doc: Document): boolean {
   return (
     text.includes('kasmvnc 遇到错误') ||
     text.includes('kasmvnc encountered an error') ||
-    text.includes('cannot read properties of undefined') ||
-    text.includes('lastactiveat') ||
     text.includes('session disconnected') ||
     text.includes('something went wrong, connection is closed') ||
     text.includes('failed to connect to server')
