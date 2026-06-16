@@ -2007,7 +2007,7 @@ button {
 .ws-perf-popover {
   position: fixed;
   top: calc(var(--nav-height) + env(safe-area-inset-top) + 8px);
-  right: 16px;
+  left: 12px;
   z-index: 40;
   display: grid;
   grid-template-columns: repeat(2, minmax(118px, 1fr));
@@ -2026,14 +2026,13 @@ button {
   visibility: hidden;
   pointer-events: none;
   transform: translateY(-6px) scale(0.98);
-  transform-origin: top right;
+  transform-origin: top left;
   transition:
     opacity 0.14s ease,
     visibility 0.14s ease,
     transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.ws-perf:hover .ws-perf-popover,
-.ws-perf:focus-within .ws-perf-popover {
+.ws-perf.open .ws-perf-popover {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;

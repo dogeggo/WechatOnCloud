@@ -65,7 +65,7 @@ export interface PanelInstance {
 }
 export interface OrphanVolume {
   name: string;
-  appType: AppType;
+  appType?: AppType;
   createdAt?: string;
   sizeBytes?: number;
 }

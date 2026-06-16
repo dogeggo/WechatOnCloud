@@ -179,25 +179,29 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
           <>
             <div className="section-row" style={{ marginTop: 22 }}>
               <span className="section-title">未使用的数据卷</span>
-              <span className="muted small">删除实例时未勾选「彻底清除」会保留下来；可在新建实例时复用以继承应用数据。</span>
+              <span className="muted small">带归属标记的卷可复用以继承应用数据；未标记卷只能彻底删除。</span>
             </div>
             <div className="inst-grid">
               {orphanVolumes.map((v) => (
                 <div key={v.name} className="inst-card">
                   <div className="inst-head">
                     <span className="inst-name" style={{ fontFamily: 'monospace', fontSize: 13 }}>{v.name}</span>
-                    <span className="tag tag-on">{appProfile(v.appType).label}</span>
+                    <span className={'tag ' + (v.appType ? 'tag-on' : 'tag-off')}>
+                      {v.appType ? appProfile(v.appType).label : '未标记'}
+                    </span>
                   </div>
                   <div className="inst-sub">
-                    归属：{appProfile(v.appType).label}
+                    归属：{v.appType ? appProfile(v.appType).label : '未标记，不能复用'}
                     {'　·　'}
                     {v.createdAt ? `创建于 ${v.createdAt.slice(0, 10)}` : '创建时间未知'}
                     {typeof v.sizeBytes === 'number' ? `　·　${formatMiB(v.sizeBytes)}` : ''}
                   </div>
                   <div className="inst-admin-links">
-                    <button className="btn-text" onClick={() => openCreateInstance(v.name)} title="打开「新建实例」并复用此数据卷">
-                      复用为新实例
-                    </button>
+                    {v.appType && (
+                      <button className="btn-text" onClick={() => openCreateInstance(v.name)} title="打开「新建实例」并复用此数据卷">
+                        复用为新实例
+                      </button>
+                    )}
                     <button className="btn-text danger" onClick={() => removeOrphanVolume(v.name)}>
                       彻底删除
                     </button>

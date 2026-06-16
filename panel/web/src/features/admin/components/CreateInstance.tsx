@@ -43,15 +43,17 @@ export function CreateInstance({
             <select className="input" value={form.reuse} onChange={(e) => form.setReuse(e.target.value)}>
               <option value="">新建空卷（全新登录）</option>
               {form.orphans.map((v) => (
-                <option key={v.name} value={v.name}>
-                  复用 · {appProfile(v.appType).label} · {v.name}
+                <option key={v.name} value={v.name} disabled={!v.appType}>
+                  {v.appType ? `复用 · ${appProfile(v.appType).label} · ${v.name}` : `不可复用 · 未标记 · ${v.name}`}
                   {v.createdAt ? `（${v.createdAt.slice(0, 10)} 创建）` : ''}
                 </option>
               ))}
             </select>
             <div className="muted small" style={{ marginTop: 4 }}>
-              {form.selectedVolume
+              {form.selectedVolume?.appType
                 ? `该数据卷属于${appProfile(form.selectedVolume.appType).label}，只能创建同类型实例。`
+                : form.selectedVolume
+                  ? '该数据卷缺少应用归属标记，不能复用；可在管理页彻底删除。'
                 : '复用旧应用数据卷需使用原应用账号登录；浏览器实例建议使用新卷。'}
             </div>
           </>

@@ -124,11 +124,10 @@ export class InstanceManager {
     this.requireAdmin(actor);
     const referenced = new Set(listInstances().map((inst) => inst.volumeName));
     const ownerships = new Map(listUnusedVolumeOwnerships().map((volume) => [volume.name, volume.appType]));
-    const volumes = (await listOrphanVolumes(referenced)).map((volume) => {
-      const appType = volume.appType ?? ownerships.get(volume.name);
-      if (!appType) throw httpError(409, `数据卷 ${volume.name} 缺少应用归属标记，不能复用`);
-      return { ...volume, appType };
-    });
+    const volumes = (await listOrphanVolumes(referenced)).map((volume) => ({
+      ...volume,
+      appType: volume.appType ?? ownerships.get(volume.name),
+    }));
     return { volumes };
   }
 

@@ -25,7 +25,7 @@ export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean,
         if (!alive) return;
         setOrphans(volumes);
         const initialVolume = volumes.find((volume) => volume.name === initialReuseVolume);
-        if (initialVolume) setAppType(initialVolume.appType);
+        if (initialVolume?.appType) setAppType(initialVolume.appType);
       })
       .catch((error) => {
         if (alive) setErr(errorMessage(error, '读取未使用数据卷失败'));
@@ -44,7 +44,7 @@ export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean,
   const selectReuse = (value: string) => {
     setReuse(value);
     const volume = orphans.find((item) => item.name === value);
-    if (volume) setAppType(volume.appType);
+    if (volume?.appType) setAppType(volume.appType);
   };
 
   const selectAppType = (value: AppType) => {
@@ -78,7 +78,7 @@ export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean,
     lockedAppType,
     appType,
     setAppType: selectAppType,
-    canSubmit: !busy && !!name.trim() && (!reuse || !!selectedVolume) && (!lockedAppType || appType === lockedAppType),
+    canSubmit: !busy && !!name.trim() && (!reuse || !!lockedAppType) && (!lockedAppType || appType === lockedAppType),
     submit,
   };
 }

@@ -31,8 +31,6 @@ const EMPTY_STATS: VncPerformanceStats = {
   heapUsedBytes: null,
   websocketBufferedBytes: null,
 };
-const FPS_SAMPLE_WIDTH = 48;
-const FPS_SAMPLE_HEIGHT = 27;
 const LATENCY_SAMPLE_SIZE = 6;
 
 export function useVncPerformanceStats({
@@ -58,38 +56,33 @@ export function useVncPerformanceStats({
     if (!enabled) return;
 
     let stopped = false;
-    let changedFrames = 0;
+    let renderedFrames = 0;
     let sampleSeen = false;
-    let lastFingerprint: number | null = null;
+    let lastDrawCount: number | null = null;
     let sampleStartedAt = performance.now();
     let rafId = 0;
-    const sampleCanvas = document.createElement('canvas');
-    sampleCanvas.width = FPS_SAMPLE_WIDTH;
-    sampleCanvas.height = FPS_SAMPLE_HEIGHT;
-    const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true });
 
     const tick = (now: number) => {
       if (stopped) return;
 
-      const fingerprint = sampleContext
-        ? readCanvasFingerprint(frameRef.current, sampleCanvas, sampleContext)
-        : null;
-      if (fingerprint !== null) {
+      installCanvasDrawMonitor(frameRef.current);
+      const drawCount = readCanvasDrawCount(frameRef.current);
+      if (drawCount !== null) {
         sampleSeen = true;
-        if (lastFingerprint !== null && fingerprint !== lastFingerprint) changedFrames += 1;
-        lastFingerprint = fingerprint;
+        if (lastDrawCount !== null) renderedFrames += Math.max(0, drawCount - lastDrawCount);
+        lastDrawCount = drawCount;
       }
 
       const elapsed = now - sampleStartedAt;
       if (elapsed >= 1000) {
-        const fps = sampleSeen ? Math.max(0, Math.round((changedFrames * 1000) / elapsed)) : null;
+        const fps = sampleSeen ? Math.max(0, Math.round((renderedFrames * 1000) / elapsed)) : null;
         const frameIntervalMs = fps && fps > 0 ? Math.round(1000 / fps) : null;
         setStats((current) =>
           current.fps === fps && current.frameIntervalMs === frameIntervalMs
             ? current
             : { ...current, fps, frameIntervalMs },
         );
-        changedFrames = 0;
+        renderedFrames = 0;
         sampleSeen = false;
         sampleStartedAt = now;
       }
@@ -181,56 +174,121 @@ function readRuntimeStats(frame: HTMLIFrameElement | null): Pick<
   };
 }
 
+function installCanvasDrawMonitor(frame: HTMLIFrameElement | null): boolean {
+  try {
+    const win = frame?.contentWindow as (Window & {
+      __wocCanvasDrawStats?: { count: number; pending: boolean; installed: boolean };
+    }) | null;
+    const proto = win?.CanvasRenderingContext2D?.prototype as Record<string, unknown> | undefined;
+    if (!win || !proto) return false;
+    if (win.__wocCanvasDrawStats?.installed) return true;
+
+    const stats = { count: 0, pending: false, installed: true };
+    win.__wocCanvasDrawStats = stats;
+    const methodNames = ['drawImage', 'putImageData', 'fillRect', 'stroke', 'fill', 'clearRect'] as const;
+    const markDraw = () => {
+      if (stats.pending) return;
+      stats.pending = true;
+      win.requestAnimationFrame(() => {
+        stats.count += 1;
+        stats.pending = false;
+      });
+    };
+
+    methodNames.forEach((methodName) => {
+      const original = proto[methodName];
+      if (typeof original !== 'function') return;
+      proto[methodName] = function patchedCanvasDraw(this: CanvasRenderingContext2D, ...args: unknown[]) {
+        markDraw();
+        return original.apply(this, args);
+      };
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readCanvasDrawCount(frame: HTMLIFrameElement | null): number | null {
+  try {
+    const win = frame?.contentWindow as (Window & {
+      __wocCanvasDrawStats?: { count: number };
+    }) | null;
+    const count = win?.__wocCanvasDrawStats?.count;
+    if (typeof count !== 'number' || !Number.isFinite(count)) return null;
+    return count;
+  } catch {
+    return null;
+  }
+}
+
+function readNativeCanvasSize(frame: HTMLIFrameElement | null): VncFrameResolution | null {
+  try {
+    const canvas = frame?.contentDocument?.querySelector('canvas') as HTMLCanvasElement | null;
+    if (!canvas) return null;
+    return sizeOrNull(canvas.width, canvas.height);
+  } catch {
+    return null;
+  }
+}
+
+function readRenderedCanvasSize(frame: HTMLIFrameElement | null): VncFrameResolution | null {
+  try {
+    const canvas = frame?.contentDocument?.querySelector('canvas') as HTMLCanvasElement | null;
+    const rect = canvas?.getBoundingClientRect();
+    if (!rect) return null;
+    return sizeOrNull(rect.width, rect.height);
+  } catch {
+    return null;
+  }
+}
+
+function readFrameDocumentSize(frame: HTMLIFrameElement | null): VncFrameResolution | null {
+  try {
+    const doc = frame?.contentDocument;
+    return sizeOrNull(doc?.documentElement.clientWidth, doc?.documentElement.clientHeight);
+  } catch {
+    return null;
+  }
+}
+
+function readFrameElementSize(frame: HTMLIFrameElement | null): VncFrameResolution | null {
+  return sizeOrNull(frame?.clientWidth, frame?.clientHeight);
+}
+
+function readFallbackGeometry(frame: HTMLIFrameElement | null): Pick<
+  VncPerformanceStats,
+  'resolution' | 'viewport' | 'scalePercent'
+> {
+  const viewport = readFrameElementSize(frame);
+  return {
+    resolution: viewport,
+    viewport,
+    scalePercent: viewport ? 100 : null,
+  };
+}
+
+function readCanvasGeometry(frame: HTMLIFrameElement | null): Pick<
+  VncPerformanceStats,
+  'resolution' | 'viewport' | 'scalePercent'
+> {
+  const resolution = readNativeCanvasSize(frame) || readFrameDocumentSize(frame) || readFrameElementSize(frame);
+  const viewport = readRenderedCanvasSize(frame) || readFrameElementSize(frame);
+  return {
+    resolution,
+    viewport,
+    scalePercent: calculateScalePercent(resolution, viewport),
+  };
+}
+
 function readFrameGeometry(frame: HTMLIFrameElement | null): Pick<
   VncPerformanceStats,
   'resolution' | 'viewport' | 'scalePercent'
 > {
   try {
-    const doc = frame?.contentDocument;
-    const canvas = doc?.querySelector('canvas') as HTMLCanvasElement | null;
-    const resolution = sizeOrNull(canvas?.width, canvas?.height)
-      || sizeOrNull(doc?.documentElement.clientWidth, doc?.documentElement.clientHeight)
-      || sizeOrNull(frame?.clientWidth, frame?.clientHeight);
-    const canvasRect = canvas?.getBoundingClientRect();
-    const viewport = sizeOrNull(canvasRect?.width, canvasRect?.height)
-      || sizeOrNull(frame?.clientWidth, frame?.clientHeight);
-    return {
-      resolution,
-      viewport,
-      scalePercent: calculateScalePercent(resolution, viewport),
-    };
+    return readCanvasGeometry(frame);
   } catch {
-    const viewport = sizeOrNull(frame?.clientWidth, frame?.clientHeight);
-    return {
-      resolution: viewport,
-      viewport,
-      scalePercent: 100,
-    };
-  }
-}
-
-function readCanvasFingerprint(
-  frame: HTMLIFrameElement | null,
-  sampleCanvas: HTMLCanvasElement,
-  sampleContext: CanvasRenderingContext2D,
-): number | null {
-  try {
-    const canvas = frame?.contentDocument?.querySelector('canvas') as HTMLCanvasElement | null;
-    if (!canvas || canvas.width <= 0 || canvas.height <= 0) return null;
-
-    sampleContext.drawImage(canvas, 0, 0, sampleCanvas.width, sampleCanvas.height);
-    const data = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
-    let hash = 2166136261;
-    hash = Math.imul(hash ^ canvas.width, 16777619);
-    hash = Math.imul(hash ^ canvas.height, 16777619);
-    for (let i = 0; i < data.length; i += 4) {
-      hash = Math.imul(hash ^ data[i], 16777619);
-      hash = Math.imul(hash ^ data[i + 1], 16777619);
-      hash = Math.imul(hash ^ data[i + 2], 16777619);
-    }
-    return hash >>> 0;
-  } catch {
-    return null;
+    return readFallbackGeometry(frame);
   }
 }
 
@@ -256,7 +314,9 @@ function readWebsocketBufferedBytes(frame: HTMLIFrameElement | null): number | n
     const rfb = objectRecord(objectRecord(win?.UI)?.rfb) || objectRecord(win?.rfb);
     const sock = objectRecord(rfb?._sock);
     const websocket = objectRecord(sock?._websocket) || objectRecord(sock?._webSocket)
-      || objectRecord(sock?.websocket) || objectRecord(sock?.webSocket);
+      || objectRecord(sock?.websocket) || objectRecord(sock?.webSocket)
+      || objectRecord(sock?._ws) || objectRecord(sock?.ws)
+      || objectRecord(rfb?._websocket) || objectRecord(rfb?._webSocket);
     const bufferedAmount = websocket?.bufferedAmount;
     return typeof bufferedAmount === 'number' && Number.isFinite(bufferedAmount) ? Math.max(0, bufferedAmount) : null;
   } catch {

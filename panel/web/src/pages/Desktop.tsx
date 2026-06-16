@@ -64,6 +64,7 @@ export default function InstanceView({
     frameLoaded: vnc.frameLoaded,
     frameRef,
   });
+  const targetFps = vncServerProfileFrameRate(inst?.vncServerProfile);
   const desktopFiles = useDesktopFiles({ active, showVnc: effectiveShowVnc, id });
   const clipboard = useClipboardBridge({ id, frameRef });
   const ime = useImeComposer({
@@ -147,7 +148,7 @@ export default function InstanceView({
         <span className="ws-title">{title}</span>
         {effectiveShowVnc && (
           <>
-            <VncPerformanceBadges stats={performanceStats} />
+            <VncPerformanceBadges stats={performanceStats} targetFps={targetFps} />
             <button
               className="ws-action"
               title="文件传输"
@@ -447,44 +448,110 @@ export default function InstanceView({
   );
 }
 
-function VncPerformanceBadges({ stats }: { stats: VncPerformanceStats }) {
+const PERF_POPOVER_WIDTH = 360;
+const PERF_POPOVER_MARGIN = 12;
+
+function VncPerformanceBadges({ stats, targetFps }: { stats: VncPerformanceStats; targetFps: number | null }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   const latency = stats.latencyMs === null ? '--' : `${stats.latencyMs}ms`;
   const jitter = stats.latencyJitterMs === null ? '--' : `${stats.latencyJitterMs}ms`;
-  const fps = stats.fps === null ? '--' : `${stats.fps}fps`;
-  const frameInterval = stats.frameIntervalMs === null ? '--' : `${stats.frameIntervalMs}ms`;
+  const liveFps = stats.fps === null ? '--' : stats.fps <= 0 ? '静止' : `${stats.fps}fps`;
+  const fps = targetFps === null ? liveFps : `${targetFps}fps`;
+  const frameInterval = targetFps !== null
+    ? `${Math.round(1000 / targetFps)}ms`
+    : stats.frameIntervalMs === null ? '--' : `${stats.frameIntervalMs}ms`;
   const resolution = stats.resolution ? `${stats.resolution.width}x${stats.resolution.height}` : '--';
   const viewport = stats.viewport ? `${stats.viewport.width}x${stats.viewport.height}` : '--';
   const scale = stats.scalePercent === null ? '--' : `${stats.scalePercent}%`;
   const dpr = stats.devicePixelRatio === null ? '--' : `${stats.devicePixelRatio}x`;
   const heap = stats.heapUsedBytes === null ? '--' : formatBytes(stats.heapUsedBytes);
-  const buffer = stats.websocketBufferedBytes === null ? '--' : formatBytes(stats.websocketBufferedBytes);
+  const buffer = stats.websocketBufferedBytes === null ? null : formatBytes(stats.websocketBufferedBytes);
   const summary = `${latency} · ${fps}`;
   const items = [
     { key: 'latency', label: '延迟', value: latency },
     { key: 'jitter', label: '抖动', value: jitter },
     { key: 'fps', label: '帧率', value: fps },
+    { key: 'liveFps', label: '刷新', value: liveFps },
     { key: 'frame', label: '帧时', value: frameInterval },
     { key: 'resolution', label: '分辨率', value: resolution },
     { key: 'viewport', label: '视窗', value: viewport },
     { key: 'scale', label: '缩放', value: scale },
     { key: 'dpr', label: 'DPR', value: dpr },
-    { key: 'heap', label: '内存', value: heap },
-    { key: 'buffer', label: '缓冲', value: buffer },
+    ...(stats.heapUsedBytes === null ? [] : [{ key: 'heap', label: '内存', value: heap }]),
+    ...(buffer === null ? [] : [{ key: 'buffer', label: '缓冲', value: buffer }]),
   ];
   const title = items.map((item) => `${item.label}：${item.value}`).join('；');
+  const popoverStyle = popoverPosition
+    ? { left: `${popoverPosition.left}px`, top: `${popoverPosition.top}px` }
+    : undefined;
+
+  const syncPopoverPosition = () => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = Math.min(PERF_POPOVER_WIDTH, window.innerWidth - PERF_POPOVER_MARGIN * 2);
+    const minLeft = PERF_POPOVER_MARGIN;
+    const maxLeft = Math.max(minLeft, window.innerWidth - width - PERF_POPOVER_MARGIN);
+    setPopoverPosition({
+      left: Math.round(Math.min(Math.max(rect.left, minLeft), maxLeft)),
+      top: Math.round(rect.bottom + 8),
+    });
+  };
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current === null) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+  const openPopover = () => {
+    clearCloseTimer();
+    syncPopoverPosition();
+    setPopoverOpen(true);
+  };
+  const closePopover = () => {
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => setPopoverOpen(false), 120);
+  };
+
+  useEffect(() => {
+    if (!popoverOpen) return;
+    const sync = () => syncPopoverPosition();
+    window.addEventListener('resize', sync);
+    window.addEventListener('scroll', sync, true);
+    return () => {
+      window.removeEventListener('resize', sync);
+      window.removeEventListener('scroll', sync, true);
+    };
+  }, [popoverOpen]);
+
+  useEffect(() => () => clearCloseTimer(), []);
 
   return (
     <div
-      className="ws-perf"
+      ref={rootRef}
+      className={'ws-perf' + (popoverOpen ? ' open' : '')}
       tabIndex={0}
       aria-label={`性能数据，${title}`}
+      onBlur={closePopover}
+      onFocus={openPopover}
+      onMouseEnter={openPopover}
+      onMouseLeave={closePopover}
+      onPointerDown={openPopover}
     >
       <span className="ws-perf-summary">
         <span className="ws-perf-dot" />
         <span className="ws-perf-name">性能</span>
         <span className="ws-perf-summary-value">{summary}</span>
       </span>
-      <div className="ws-perf-popover" role="list" aria-label="性能数据详情">
+      <div
+        className="ws-perf-popover"
+        role="list"
+        aria-label="性能数据详情"
+        style={popoverStyle}
+        onMouseEnter={openPopover}
+        onMouseLeave={closePopover}
+      >
         {items.map((item) => (
           <span key={item.key} className="ws-perf-row" role="listitem">
             <span className="ws-perf-k">{item.label}</span>
@@ -494,4 +561,11 @@ function VncPerformanceBadges({ stats }: { stats: VncPerformanceStats }) {
       </div>
     </div>
   );
+}
+
+function vncServerProfileFrameRate(profile: InstanceWithStatus['vncServerProfile'] | undefined): number | null {
+  if (profile === 'speed') return 15;
+  if (profile === 'balanced') return 24;
+  if (profile === 'quality') return 30;
+  return null;
 }
