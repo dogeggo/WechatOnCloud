@@ -38,7 +38,7 @@ woc_app_def "$APP_TYPE" || exit 1
 # 桌面通知桥必须在应用启动前接管 org.freedesktop.Notifications，
 # 否则部分客户端启动时探测不到通知服务后不会再重试。
 if command -v woc-notifyd >/dev/null 2>&1; then
-    woc-notifyd >>/tmp/woc-notifyd.log 2>&1 &
+    woc-notifyd &
 fi
 
 restore_minimized_windows() {

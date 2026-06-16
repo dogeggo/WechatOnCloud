@@ -240,6 +240,7 @@ export const api = {
   instanceRestart: (id: string) => req(`/api/admin/instances/${id}/restart`, { method: 'POST' }),
   instanceUpgrade: (id: string) => req(`/api/admin/instances/${id}/upgrade`, { method: 'POST' }),
   instanceLogsUrl: (id: string) => `/api/admin/instances/${id}/logs`,
+  instanceLogs: (id: string) => req<string>(`/api/admin/instances/${id}/logs`),
 
   // 文件中转
   listFiles: (id: string) => req<{ files: DesktopFile[] }>(`/api/instances/${id}/files`),

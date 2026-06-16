@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type InstanceWithStatus } from "../../../api";
+import type { InstanceWithStatus } from "../../../api";
 import { InstanceIcon } from "../../../AppIcon";
 import { Icons } from "../../../components/icons";
 import {
@@ -20,6 +20,7 @@ export function InstanceAdminCard({
   onUpgrade,
   onRename,
   onIcon,
+  onLogs,
   onDelete,
   onSecurity,
   onVncServerProfile,
@@ -38,6 +39,7 @@ export function InstanceAdminCard({
   onUpgrade: () => void;
   onRename: () => void;
   onIcon: () => void;
+  onLogs: () => void;
   onDelete: () => void;
   onSecurity: () => void;
   onVncServerProfile: () => void;
@@ -171,9 +173,7 @@ export function InstanceAdminCard({
                   </button>
                   <button
                     className="btn-text"
-                    onClick={() =>
-                      window.open(api.instanceLogsUrl(inst.id), "_blank")
-                    }
+                    onClick={onLogs}
                     title="查看实例容器日志"
                   >
                     日志

@@ -734,6 +734,58 @@ button {
 .modal-actions .btn {
   flex: 1;
 }
+.logs-modal {
+  width: min(820px, 92vw);
+  max-height: 86vh;
+}
+.logs-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.logs-head .btn-text {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(var(--green-rgb) / 0.1);
+  color: var(--brand-green-dark);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(var(--green-rgb) / 0.12);
+}
+.logs-head .btn-text:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.logs-box {
+  min-height: 220px;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  padding: 12px;
+  border-radius: 14px;
+  background: #14171f;
+  color: #e7ebf2;
+  box-shadow: inset 0 1px 3px rgba(0 0 0 / 0.32);
+}
+.logs-box pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.logs-state {
+  min-height: 196px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #c6ccd7;
+  font-size: 13px;
+}
 
 /* ── 桌面 ──────────────────────────────────────────────── */
 .desktop-wrap {

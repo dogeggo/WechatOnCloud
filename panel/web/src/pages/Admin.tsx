@@ -8,6 +8,7 @@ import { CreateInstance } from '../features/admin/components/CreateInstance';
 import { DeleteInstance } from '../features/admin/components/DeleteInstance';
 import { InstanceAdminCard } from '../features/admin/components/InstanceAdminCard';
 import { InstanceIconEditor } from '../features/admin/components/InstanceIconEditor';
+import { InstanceLogs } from '../features/admin/components/InstanceLogs';
 import { InstanceSecurity } from '../features/admin/components/InstanceSecurity';
 import { InstanceVncServerProfile } from '../features/admin/components/InstanceVncServerProfile';
 import { RenameInstance } from '../features/admin/components/RenameInstance';
@@ -46,6 +47,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [vncServerInst, setVncServerInst] = useState<InstanceWithStatus | null>(null);
   const [volumeInst, setVolumeInst] = useState<InstanceWithStatus | null>(null);
   const [iconInst, setIconInst] = useState<InstanceWithStatus | null>(null);
+  const [logsInst, setLogsInst] = useState<InstanceWithStatus | null>(null);
   const deletingInstId = deleteInst?.id;
 
   return (
@@ -92,6 +94,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 onUpgrade={() => runLifecycle(inst, 'upgrade')}
                 onRename={() => setRenameInst(inst)}
                 onIcon={() => setIconInst(inst)}
+                onLogs={() => setLogsInst(inst)}
                 onDelete={() => setDeleteInst(inst)}
                 onSecurity={() => setSecurityInst(inst)}
                 onVncServerProfile={() => setVncServerInst(inst)}
@@ -262,6 +265,9 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
           onClose={() => setIconInst(null)}
           onDone={(instance) => patchInstance(instance)}
         />
+      )}
+      {logsInst && (
+        <InstanceLogs inst={logsInst} onClose={() => setLogsInst(null)} />
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import type { DesktopClientReplacedEvent } from '../api';
+import type { DesktopClientReplacedEvent, InstanceWithStatus } from '../api';
 import { api } from '../api';
 import { Icons } from '../components/icons';
 import { appProfile, desktopUrl, isAppBusy, isAppInstalled, isRuntimeOffline } from '../domain/instances';
@@ -8,6 +8,7 @@ import { VNC_STREAM_PROFILES } from '../domain/vncStream';
 import { useClipboardBridge } from '../features/desktop/useClipboardBridge';
 import { DESKTOP_CLIENT_REPLACED_EVENT } from '../features/desktop/desktopClientEvents';
 import { useDesktopFiles } from '../features/desktop/useDesktopFiles';
+import { InstanceLogs } from '../features/admin/components/InstanceLogs';
 import { useImeComposer } from '../features/desktop/useImeComposer';
 import { useInstanceRuntimeActions } from '../features/desktop/useInstanceRuntimeActions';
 import { useSeamlessIme } from '../features/desktop/useSeamlessIme';
@@ -37,6 +38,7 @@ export default function InstanceView({
   const nav = useNavigate();
   const { alert: showAlert, toast } = useUI();
   const { instances, loaded, reload } = useInstances();
+  const [logsInst, setLogsInst] = useState<InstanceWithStatus | null>(null);
 
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [desktopClientId, setDesktopClientId] = useState(createDesktopClientId);
@@ -213,7 +215,7 @@ export default function InstanceView({
             <button className="btn btn-primary iv-notice-btn" disabled={runtime.starting} onClick={runtime.start}>
               {runtime.starting ? '启动中…' : inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
             </button>
-            <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
+            <button className="btn-text" onClick={() => setLogsInst(inst)}>
               查看日志
             </button>
           </div>
@@ -241,7 +243,7 @@ export default function InstanceView({
             <button className="btn btn-primary iv-notice-btn" onClick={() => nav('/admin')}>
               去「管理」{inst.app.phase === 'error' ? '重试 / 处理' : profile.needsInstall ? '下载安装' : '查看状态'}
             </button>
-            <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(id), '_blank')}>
+            <button className="btn-text" onClick={() => setLogsInst(inst)}>
               查看日志
             </button>
           </div>
@@ -422,6 +424,9 @@ export default function InstanceView({
             </div>
           )}
         </div>
+      )}
+      {logsInst && (
+        <InstanceLogs inst={logsInst} onClose={() => setLogsInst(null)} />
       )}
     </div>
   );

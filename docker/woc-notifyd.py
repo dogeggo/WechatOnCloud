@@ -29,6 +29,10 @@ def log(message):
     print(f"[woc-notifyd] {message}", file=sys.stderr, flush=True)
 
 
+def log_value(value, limit=160):
+    return json.dumps(clean_text(value, limit), ensure_ascii=False)
+
+
 def clean_text(value, limit):
     text = html.unescape(str(value or ""))
     text = re.sub(r"<[^>]+>", "", text)
@@ -49,7 +53,7 @@ def dbus_value(value):
 def post_notification(payload):
     if not INSTANCE_ID or not TOKEN:
         log("缺少 WOC_INSTANCE_ID 或 WOC_NOTIFY_TOKEN，跳过上报")
-        return
+        return False
 
     url = f"{PANEL_URL}/_woc/internal/instances/{INSTANCE_ID}/notifications"
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -63,10 +67,12 @@ def post_notification(payload):
     try:
         with urllib.request.urlopen(req, timeout=2) as res:
             res.read(256)
+        return True
     except urllib.error.HTTPError as e:
         log(f"面板拒绝通知上报：HTTP {e.code}")
     except Exception as e:
         log(f"通知上报失败：{e}")
+    return False
 
 
 class WocNotificationServer(dbus.service.Object):
@@ -93,7 +99,18 @@ class WocNotificationServer(dbus.service.Object):
             "source": "freedesktop-notifications",
             "createdAt": int(time.time() * 1000),
         }
-        post_notification(payload)
+        log(
+            "收到通知 "
+            f"id={notification_id} "
+            f"app={log_value(payload['appName'], 40)} "
+            f"summary={log_value(payload['summary'], 120)} "
+            f"body={log_value(payload['body'], 160)} "
+            f"urgency={payload['urgency']} "
+            f"actions={len(actions)} "
+            f"expireMs={int(expire_timeout)}"
+        )
+        if post_notification(payload):
+            log(f"通知已上报 id={notification_id}")
         return dbus.UInt32(notification_id)
 
     @dbus.service.method(IFACE, in_signature="u", out_signature="")
