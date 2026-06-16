@@ -12,15 +12,21 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         curl ca-certificates locales dpkg \
+        fontconfig \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
         libnss3 libgbm1 libasound2 libxss1 \
         chromium xdg-utils dbus dbus-x11 \
         python3-dbus python3-gi gir1.2-glib-2.0 \
-        xdotool xclip; \
+        xdotool xclip wmctrl; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
+
+# 明确中文字体优先级：应用实例内的 Qt/Chromium/GTK 通过 fontconfig 选字形。
+# 优先使用 Noto CJK，文泉驿保留为兜底，避免默认匹配到较旧的中文字体。
+COPY woc-cjk-font.conf /etc/fonts/conf.d/99-woc-cjk-font.conf
+RUN fc-cache -f
 
 # 微信运行时需要、但官方 deb 未声明的额外库（单独成层，避免动到上面缓存的安装层）。
 # 微信原生版是 Qt 程序，依赖一组 xcb 平台库；libxcb-cursor0 由 Qt 动态 dlopen，ldd 查不到，需主动装。

@@ -101,6 +101,34 @@ export function applyVncStreamSettings(
   }
 }
 
+export function syncVncFrameSize(frame: HTMLIFrameElement | null): boolean {
+  try {
+    const win = frame?.contentWindow;
+    if (!win) return false;
+
+    const ResizeEvent = (win as Window & typeof globalThis).Event;
+    win.dispatchEvent(new ResizeEvent('resize'));
+
+    const rfb = readNoVncRfb(win);
+    if (isObjectRecord(rfb)) {
+      // noVNC requests a remote desktop resize when resizeSession is enabled.
+      // Flip it so returning from a hidden keep-alive iframe always recalculates.
+      rfb.resizeSession = false;
+      rfb.resizeSession = true;
+    }
+
+    const ui = readNoVncUi(win);
+    if (ui) {
+      callNoArgMethod(ui, 'applyResizeMode');
+      callNoArgMethod(ui, 'updateViewClip');
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readNoVncConnectionState(win: Window): 'connecting' | 'connected' | 'disconnecting' | 'disconnected' | null {
   const rfb = readNoVncRfb(win);
   if (!isObjectRecord(rfb)) return null;
@@ -126,10 +154,21 @@ function readNoVncConnectionState(win: Window): 'connecting' | 'connected' | 'di
 
 function readNoVncRfb(win: Window): unknown {
   const frameWindow = win as Window & {
-    UI?: { rfb?: unknown };
     rfb?: unknown;
   };
-  return frameWindow.UI?.rfb ?? frameWindow.rfb;
+  return readNoVncUi(win)?.rfb ?? frameWindow.rfb;
+}
+
+function readNoVncUi(win: Window): Record<string, unknown> | null {
+  const frameWindow = win as Window & { UI?: unknown };
+  return isObjectRecord(frameWindow.UI) ? frameWindow.UI : null;
+}
+
+function callNoArgMethod(target: Record<string, unknown>, key: string): boolean {
+  const fn = target[key];
+  if (typeof fn !== 'function') return false;
+  (fn as () => void).call(target);
+  return true;
 }
 
 function hasNoVncDisconnectedClass(doc: Document): boolean {

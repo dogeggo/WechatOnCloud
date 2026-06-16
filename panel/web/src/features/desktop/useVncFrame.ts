@@ -9,6 +9,7 @@ import {
   injectVncStyle,
   isVncFrameDisconnected,
   readDesktopInputMode,
+  syncVncFrameSize,
   writeKasmImeMode,
 } from './desktopFrame';
 import type { VncStreamSettings } from '../../domain/vncStream';
@@ -33,6 +34,13 @@ export function useVncFrame({
 
   const focusFrame = useCallback(() => focusVncFrame(frameRef.current), [frameRef]);
 
+  const syncFrame = useCallback((shouldFocus: boolean) => {
+    if (shouldFocus) focusVncFrame(frameRef.current);
+    injectVncStyle(frameRef.current);
+    applyVncStreamSettings(frameRef.current, stream);
+    syncVncFrameSize(frameRef.current);
+  }, [frameRef, stream]);
+
   const reconnect = useCallback(() => {
     setLoadStuck(false);
     setFrameLoaded(false);
@@ -50,11 +58,9 @@ export function useVncFrame({
   const handleFrameLoad = useCallback(() => {
     setFrameLoaded(true);
     window.setTimeout(() => {
-      if (active) focusVncFrame(frameRef.current);
-      injectVncStyle(frameRef.current);
-      applyVncStreamSettings(frameRef.current, stream);
+      syncFrame(active);
     }, 500);
-  }, [active, frameRef, stream]);
+  }, [active, syncFrame]);
 
   useEffect(() => {
     setFrameLoaded(false);
@@ -74,13 +80,9 @@ export function useVncFrame({
 
   useEffect(() => {
     if (!active || !showVnc || !frameLoaded) return;
-    const timer = window.setTimeout(() => {
-      focusVncFrame(frameRef.current);
-      injectVncStyle(frameRef.current);
-      applyVncStreamSettings(frameRef.current, stream);
-    }, 80);
-    return () => window.clearTimeout(timer);
-  }, [active, showVnc, frameLoaded, id, frameRef, stream]);
+    const timers = [80, 260, 700].map((delay) => window.setTimeout(() => syncFrame(true), delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [active, showVnc, frameLoaded, id, syncFrame]);
 
   useEffect(() => {
     if (!showVnc || !frameLoaded) return;

@@ -41,16 +41,89 @@ if command -v woc-notifyd >/dev/null 2>&1; then
     woc-notifyd >>/tmp/woc-notifyd.log 2>&1 &
 fi
 
-# 防“最小化后丢失”：本桌面（openbox）无任务栏，窗口被最小化就无处恢复 → 黑屏。
-# 看守进程：每 2s 把“被最小化（不可见）”的顶层窗口重新激活，相当于禁用最小化。
+restore_minimized_windows() {
+    # 防“最小化后丢失”：本桌面（openbox）无任务栏，窗口被最小化就无处恢复 → 黑屏。
+    # 把“被最小化（不可见）”的顶层窗口重新激活，相当于禁用最小化。
+    local all vis w
+    all=$(xdotool search --name '.+' 2>/dev/null) || return 0
+    vis=$(xdotool search --onlyvisible --name '.+' 2>/dev/null || true)
+    for w in ${all}; do
+        printf '%s\n' "${vis}" | grep -qx "${w}" || xdotool windowactivate "${w}" 2>/dev/null || true
+    done
+}
+
+app_window_ids() {
+    local class_ids pattern pid
+    if [ -n "${APP_WINDOW_CLASS_RE:-}" ]; then
+        class_ids="$(xdotool search --onlyvisible --class "${APP_WINDOW_CLASS_RE}" 2>/dev/null || true)"
+        if [ -n "${class_ids}" ]; then
+            printf '%s\n' "${class_ids}" | awk 'NF && !seen[$0]++'
+            return 0
+        fi
+    fi
+
+    pattern="${APP_PROCESS_PATTERN:-${APP_BIN:-}}"
+    [ -n "${pattern}" ] || return 0
+    for pid in $(pgrep -f "${pattern}" 2>/dev/null || true); do
+        xdotool search --onlyvisible --pid "${pid}" 2>/dev/null || true
+    done | awk 'NF && !seen[$0]++'
+}
+
+largest_window_id() {
+    local w width height area best= best_area=0
+    while IFS= read -r w; do
+        [ -n "${w}" ] || continue
+        read -r width height < <(
+            xdotool getwindowgeometry --shell "${w}" 2>/dev/null \
+                | awk -F= '/^WIDTH=/{w=$2} /^HEIGHT=/{h=$2} END{print w, h}'
+        )
+        case "${width:-}:${height:-}" in
+            *[!0-9:]* | : | *: ) continue ;;
+        esac
+        [ "${width}" -ge 160 ] 2>/dev/null || continue
+        [ "${height}" -ge 120 ] 2>/dev/null || continue
+        area=$((width * height))
+        if [ "${area}" -gt "${best_area}" ]; then
+            best="${w}"
+            best_area="${area}"
+        fi
+    done
+    [ -n "${best}" ] && printf '%s\n' "${best}"
+}
+
+maximize_window() {
+    local w="$1" wm_w dw dh
+    [ -n "${w}" ] || return 0
+    if command -v wmctrl >/dev/null 2>&1; then
+        case "${w}" in
+            *[!0-9]* ) wm_w="${w}" ;;
+            * ) printf -v wm_w '0x%08x' "${w}" ;;
+        esac
+        wmctrl -i -r "${wm_w}" -b remove,hidden,shaded 2>/dev/null || true
+        wmctrl -i -r "${wm_w}" -b add,maximized_vert,maximized_horz 2>/dev/null || true
+        return 0
+    fi
+
+    read -r dw dh < <(xdotool getdisplaygeometry 2>/dev/null || true)
+    [ -n "${dw:-}" ] && [ -n "${dh:-}" ] || return 0
+    xdotool windowmove "${w}" 0 0 windowsize "${w}" "${dw}" "${dh}" 2>/dev/null || true
+}
+
+sync_app_window_size() {
+    local w
+    w="$(app_window_ids | largest_window_id)"
+    [ -n "${w}" ] || return 0
+    maximize_window "${w}"
+}
+
+# 窗口看守：每 2s 恢复最小化窗口，并把当前应用主窗口重新最大化。
+# KasmVNC 的 resize=remote 会随浏览器视口改变远端桌面；微信/QQ 有时不会跟随新桌面尺寸，
+# 尤其是多个保活 VNC iframe 来回切换后，所以这里在容器内按 openbox 状态兜底。
 (
     export DISPLAY="${DISPLAY:-:1}"
     while sleep 2; do
-        all=$(xdotool search --name '.+' 2>/dev/null) || continue
-        vis=$(xdotool search --onlyvisible --name '.+' 2>/dev/null)
-        for w in ${all}; do
-            printf '%s\n' "${vis}" | grep -qx "${w}" || xdotool windowactivate "${w}" 2>/dev/null || true
-        done
+        restore_minimized_windows
+        sync_app_window_size
     done
 ) &
 

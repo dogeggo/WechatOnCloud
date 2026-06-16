@@ -1,9 +1,13 @@
-import { useState } from 'react';
-import { api, type InstanceWithStatus } from '../../../api';
-import { InstanceIcon } from '../../../AppIcon';
-import { Icons } from '../../../components/icons';
-import { adminCardState, appProfile, type AppInstallAction } from '../../../domain/instances';
-import { vncServerProfileLabel } from '../../../domain/vncServerProfile';
+import { useState } from "react";
+import { api, type InstanceWithStatus } from "../../../api";
+import { InstanceIcon } from "../../../AppIcon";
+import { Icons } from "../../../components/icons";
+import {
+  adminCardState,
+  appProfile,
+  type AppInstallAction,
+} from "../../../domain/instances";
+import { vncServerProfileLabel } from "../../../domain/vncServerProfile";
 
 export function InstanceAdminCard({
   inst,
@@ -44,7 +48,10 @@ export function InstanceAdminCard({
 }) {
   const appStatus = inst.app;
   const profile = appProfile(inst.appType);
-  const { badge, sub, installed, offline, working } = adminCardState(inst, acting);
+  const { badge, sub, installed, offline, working } = adminCardState(
+    inst,
+    acting,
+  );
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -52,25 +59,35 @@ export function InstanceAdminCard({
       <div className="inst-head">
         <div className="inst-title">
           <span className="inst-avatar">
-            <InstanceIcon icon={inst.icon} appType={inst.appType} size={40} radius={12} />
+            <InstanceIcon
+              icon={inst.icon}
+              appType={inst.appType}
+              size={40}
+              radius={12}
+            />
           </span>
           <span className="inst-name">{inst.name}</span>
         </div>
-        <span className={'tag ' + badge.cls}>{badge.text}</span>
+        <span className={"tag " + badge.cls}>{badge.text}</span>
       </div>
-      <div className="inst-sub">
-        {sub}
-      </div>
+      <div className="inst-sub">{sub}</div>
       <div className="inst-meta-line">
         {showOwner && <div>创建者：{inst.createdBy}</div>}
-        <div>VNC服务端：{vncServerProfileLabel(inst.vncServerProfile)}</div>
+        <div>VNC编码：{vncServerProfileLabel(inst.vncServerProfile)}</div>
       </div>
 
       {working && (
         <div className="app-progress">
           <div
-            className={'app-progress-bar' + (acting || appStatus.percent < 0 ? ' indeterminate' : '')}
-            style={!acting && appStatus.percent >= 0 ? { width: `${appStatus.percent}%` } : undefined}
+            className={
+              "app-progress-bar" +
+              (acting || appStatus.percent < 0 ? " indeterminate" : "")
+            }
+            style={
+              !acting && appStatus.percent >= 0
+                ? { width: `${appStatus.percent}%` }
+                : undefined
+            }
           />
         </div>
       )}
@@ -79,17 +96,28 @@ export function InstanceAdminCard({
         <>
           <div className="inst-actions">
             {offline ? (
-              <button className="btn btn-primary inst-act-wide" onClick={onStart}>
-                {inst.runtime === 'missing' ? '创建并启动' : '启动实例'}
+              <button
+                className="btn btn-primary inst-act-wide"
+                onClick={onStart}
+              >
+                {inst.runtime === "missing" ? "创建并启动" : "启动实例"}
               </button>
             ) : (
-              <button className="btn btn-primary inst-act-wide" disabled={!installed} onClick={onEnter} title={installed ? '' : profile.installButtonTitle}>
+              <button
+                className="btn btn-primary inst-act-wide"
+                disabled={!installed}
+                onClick={onEnter}
+                title={installed ? "" : profile.installButtonTitle}
+              >
                 进入实例
               </button>
             )}
           </div>
 
-          <button className={'inst-menu-toggle' + (menuOpen ? ' open' : '')} onClick={() => setMenuOpen((v) => !v)}>
+          <button
+            className={"inst-menu-toggle" + (menuOpen ? " open" : "")}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
             <span>管理</span>
             <span className="inst-menu-caret">{Icons.caret}</span>
           </button>
@@ -100,11 +128,20 @@ export function InstanceAdminCard({
                 <div className="inst-menu-label">运维</div>
                 <div className="inst-menu-items">
                   {!offline && profile.needsInstall && (
-                    <button className="btn-text" onClick={() => onTrigger(inst, installed ? 'update' : 'install')}>
-                      {installed ? profile.updateLabel : '下载安装'}
+                    <button
+                      className="btn-text"
+                      onClick={() =>
+                        onTrigger(inst, installed ? "update" : "install")
+                      }
+                    >
+                      {installed ? profile.updateLabel : "下载安装"}
                     </button>
                   )}
-                  <button className="btn-text" onClick={onUpgrade} title="拉取最新镜像并重建（保留应用数据）">
+                  <button
+                    className="btn-text"
+                    onClick={onUpgrade}
+                    title="拉取最新镜像并重建（保留应用数据）"
+                  >
                     升级实例
                   </button>
                   {!offline && (
@@ -125,27 +162,57 @@ export function InstanceAdminCard({
                   <button className="btn-text" onClick={onRename}>
                     重命名
                   </button>
-                  <button className="btn-text" onClick={onIcon} title="设置实例图标">
+                  <button
+                    className="btn-text"
+                    onClick={onIcon}
+                    title="设置实例图标"
+                  >
                     图标
                   </button>
-                  <button className="btn-text" onClick={() => window.open(api.instanceLogsUrl(inst.id), '_blank')} title="查看实例容器日志">
+                  <button
+                    className="btn-text"
+                    onClick={() =>
+                      window.open(api.instanceLogsUrl(inst.id), "_blank")
+                    }
+                    title="查看实例容器日志"
+                  >
                     日志
                   </button>
-                  <button className="btn-text" onClick={onSecurity} title="内存阈值自愈">
+                  <button
+                    className="btn-text"
+                    onClick={onSecurity}
+                    title="内存阈值自愈"
+                  >
                     安全
                   </button>
-                  <button className="btn-text" onClick={onVncServerProfile} title="调整 KasmVNC 服务端编码参数，保存后重启实例容器">
-                    VNC服务端
+                  <button
+                    className="btn-text"
+                    onClick={onVncServerProfile}
+                    title="调整 KasmVNC 服务端编码参数，保存后重启实例容器"
+                  >
+                    VNC编码
                   </button>
-                  <button className="btn-text" onClick={onVolume} title="数据卷：备份/恢复、上传应用数据、文件管理">
+                  <button
+                    className="btn-text"
+                    onClick={onVolume}
+                    title="数据卷：备份/恢复、上传应用数据、文件管理"
+                  >
                     数据卷
                   </button>
                   <button
-                    className={'btn-text' + (vncKeepAlive ? ' on' : '')}
+                    type="button"
+                    role="switch"
+                    aria-checked={vncKeepAlive}
+                    className={
+                      "btn-text vnc-keep-toggle" + (vncKeepAlive ? " on" : "")
+                    }
                     onClick={() => onToggleVncKeepAlive(!vncKeepAlive)}
                     title="切换到主页或管理页时保留该浏览器标签页里的 VNC 连接"
                   >
-                    {vncKeepAlive ? 'VNC常驻开' : 'VNC常驻关'}
+                    <span>VNC常驻</span>
+                    <span className="vnc-switch" aria-hidden="true">
+                      <span className="vnc-switch-knob" />
+                    </span>
                   </button>
                 </div>
               </div>
