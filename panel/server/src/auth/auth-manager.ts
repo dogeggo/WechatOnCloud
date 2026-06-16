@@ -2,7 +2,7 @@ import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify';
 import type { IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
 import * as oidc from 'openid-client';
-import { isEmailAllowed, type AuthConfig } from './auth-config.js';
+import { isAdminEmail, isEmailAllowed, type AuthConfig } from './auth-config.js';
 import { firstHeaderValue, parseCookies, trustedClientIp } from '../http/request-utils.js';
 import {
   createLoginFlow,
@@ -14,6 +14,8 @@ import {
   listSessions,
   touchSession,
   type AuthUser,
+  type PublicSession,
+  type Session,
   type SessionMeta,
 } from './sessions.js';
 import type { TrustedProxy } from '../http/host-guard.js';
@@ -32,7 +34,7 @@ export class AuthManager {
   ) {}
 
   currentSession(req: FastifyRequest) {
-    return touchSession(req.cookies?.[this.sessionCookieName], this.requestSessionMeta(req));
+    return this.applyCurrentRole(touchSession(req.cookies?.[this.sessionCookieName], this.requestSessionMeta(req)));
   }
 
   currentUser(req: FastifyRequest): AuthUser | null {
@@ -50,7 +52,7 @@ export class AuthManager {
 
   rawSession(req: IncomingMessage) {
     const cookies = parseCookies(req.headers.cookie);
-    return touchSession(cookies[this.sessionCookieName], this.rawRequestSessionMeta(req));
+    return this.applyCurrentRole(touchSession(cookies[this.sessionCookieName], this.rawRequestSessionMeta(req)));
   }
 
   trackSessionSocket(sessionId: string, socket: Socket): void {
@@ -149,8 +151,8 @@ export class AuthManager {
     if (!user) return undefined;
     const current = this.currentSession(req);
     const devices = listSessions()
-      .filter((session) => session.user.sub === user.sub)
-      .map((session) => ({ ...session, current: session.id === current?.id }));
+      .filter((session) => user.isAdmin || session.user.sub === user.sub)
+      .map((session) => this.publicSessionWithRole(session, session.id === current?.id));
     return { devices };
   }
 
@@ -162,7 +164,7 @@ export class AuthManager {
 
     const target = findSessionById(id);
     if (!target) return reply.code(404).send({ error: '设备登录记录不存在或已过期' });
-    if (target.user.sub !== user.sub) return reply.code(403).send({ error: '不能移除其他账号的登录设备' });
+    if (!user.isAdmin && target.user.sub !== user.sub) return reply.code(403).send({ error: '不能移除其他账号的登录设备' });
 
     const currentId = this.currentSession(req)?.id;
     destroySessionById(id);
@@ -222,6 +224,24 @@ export class AuthManager {
     };
   }
 
+  private applyCurrentRole<T extends Session | null>(session: T): T {
+    if (session) session.user = this.userWithCurrentRole(session.user);
+    return session;
+  }
+
+  private publicSessionWithRole(session: PublicSession, current: boolean) {
+    return {
+      ...session,
+      user: this.userWithCurrentRole(session.user),
+      current,
+    };
+  }
+
+  private userWithCurrentRole(user: AuthUser): AuthUser {
+    const isAdmin = isAdminEmail(user.email, this.config);
+    return user.isAdmin === isAdmin ? user : { ...user, isAdmin };
+  }
+
   private buildUser(claims: Record<string, any>, info: Record<string, any>): AuthUser {
     const email = String(info.email || claims.email || '').trim().toLowerCase();
     if (!email) throw new LoginFlowError('OIDC 返回缺少邮箱');
@@ -237,6 +257,7 @@ export class AuthManager {
       sub: claims.sub,
       email,
       username: name || email,
+      isAdmin: isAdminEmail(email, this.config),
       name: name || undefined,
       picture: String(info.picture || claims.picture || '').trim() || undefined,
     };

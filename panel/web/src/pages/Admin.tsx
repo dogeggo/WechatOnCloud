@@ -20,6 +20,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const nav = useNavigate();
   const { toast } = useUI();
   const {
+    isAdmin,
     instances,
     forgetInstance,
     patchInstance,
@@ -60,7 +61,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
         {err && <div className="error">{err}</div>}
 
         <div className="section-row">
-          <span className="section-title">应用实例</span>
+          <span className="section-title">{isAdmin ? '全部应用实例' : '应用实例'}</span>
           <button className="btn-text" onClick={() => setCreatingInst(true)}>
             + 新建实例
           </button>
@@ -95,6 +96,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 onSecurity={() => setSecurityInst(inst)}
                 onVncServerProfile={() => setVncServerInst(inst)}
                 onVolume={() => setVolumeInst(inst)}
+                showOwner={isAdmin}
                 vncKeepAlive={!!vncKeepAlive[inst.id]}
                 onToggleVncKeepAlive={(enabled) => toggleVncKeepAlive(inst, enabled)}
               />
@@ -103,8 +105,8 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
         )}
 
         <div className="section-row" style={{ marginTop: 22 }}>
-          <span className="section-title">已登录设备</span>
-          <span className="muted small">可移除不再使用的面板登录态</span>
+          <span className="section-title">{isAdmin ? '全部已登录设备' : '已登录设备'}</span>
+          <span className="muted small">{isAdmin ? '可移除任意账号的面板登录态' : '可移除不再使用的面板登录态'}</span>
         </div>
         <div className="inst-grid">
           {devices.length === 0 ? (
@@ -119,6 +121,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                   <span className={'tag ' + (d.current ? 'tag-on' : '')}>{d.current ? '当前设备' : '已登录'}</span>
                 </div>
                 <div className="device-meta">
+                  {isAdmin && <div>账号：{d.user.email}{d.user.isAdmin ? '（管理员）' : ''}</div>}
                   <div>IP：{d.ip || 'unknown'}</div>
                   <div>最近活动：{formatIsoDate(d.lastSeenAt)}</div>
                   <div>登录时间：{formatIsoDate(d.createdAt)}</div>
@@ -135,7 +138,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
           )}
         </div>
 
-        {orphanContainers.length > 0 && (
+        {isAdmin && orphanContainers.length > 0 && (
           <>
             <div className="section-row" style={{ marginTop: 22 }}>
               <span className="section-title">残留容器</span>
@@ -163,7 +166,7 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
             </div>
           </>
         )}
-        {orphanVolumes.length > 0 && (
+        {isAdmin && orphanVolumes.length > 0 && (
           <>
             <div className="section-row" style={{ marginTop: 22 }}>
               <span className="section-title">未使用的数据卷</span>

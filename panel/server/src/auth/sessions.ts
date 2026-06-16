@@ -6,11 +6,12 @@ export interface AuthUser {
   sub: string;
   email: string;
   username: string;
+  isAdmin: boolean;
   name?: string;
   picture?: string;
 }
 
-interface Session {
+export interface Session {
   id: string;
   user: AuthUser;
   createdAt: number;
@@ -106,9 +107,10 @@ function asUser(v: any): AuthUser | null {
   const email = String(v.email || '').trim().toLowerCase();
   const username = String(v.username || v.name || email).trim();
   if (!sub || !email || !username) return null;
+  const isAdmin = v.isAdmin === true;
   const name = String(v.name || '').trim() || undefined;
   const picture = String(v.picture || '').trim() || undefined;
-  return { sub, email, username, name, picture };
+  return { sub, email, username, isAdmin, name, picture };
 }
 
 function assertLoadedSession(row: any) {

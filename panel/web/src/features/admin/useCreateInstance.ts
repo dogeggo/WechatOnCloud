@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AppType, type OrphanVolume } from '../../api';
 import { errorMessage } from '../../utils/errors';
 
-export function useCreateInstance(onDone: () => void) {
+export function useCreateInstance(onDone: () => void, allowReuseVolume: boolean) {
   const [name, setName] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -11,6 +11,11 @@ export function useCreateInstance(onDone: () => void) {
   const [appType, setAppType] = useState<AppType>('wechat');
 
   useEffect(() => {
+    if (!allowReuseVolume) {
+      setOrphans([]);
+      setReuse('');
+      return;
+    }
     let alive = true;
     api
       .listOrphanVolumes()
@@ -23,14 +28,14 @@ export function useCreateInstance(onDone: () => void) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [allowReuseVolume]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setErr('');
     setBusy(true);
     try {
-      await api.createInstance(name.trim(), reuse || undefined, appType);
+      await api.createInstance(name.trim(), allowReuseVolume ? reuse || undefined : undefined, appType);
       onDone();
     } catch (error) {
       setErr(errorMessage(error, '创建失败'));

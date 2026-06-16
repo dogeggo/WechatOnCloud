@@ -32,6 +32,11 @@ export interface Instance {
   memHardLimitMB?: number;
 }
 
+export interface InstanceActor {
+  email: string;
+  isAdmin: boolean;
+}
+
 interface Data {
   instances: Instance[];
 }
@@ -86,6 +91,10 @@ function asString(v: unknown, name: string): string {
   return v.trim();
 }
 
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 function asOptionalLimit(v: unknown, name: string): number | undefined {
   if (v == null) return undefined;
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 20480) {
@@ -115,7 +124,7 @@ function parseInstance(raw: any): Instance {
   const kasmUser = asString(raw.kasmUser, 'Kasm 用户名');
   const kasmPassword = asString(raw.kasmPassword, 'Kasm 密码');
   const createdAt = new Date(asString(raw.createdAt, '创建时间')).toISOString();
-  const createdBy = asString(raw.createdBy, '创建者');
+  const createdBy = normalizeEmail(asString(raw.createdBy, '创建者'));
   const vncServerProfile = normalizeOptionalVncServerProfile(raw.vncServerProfile);
   const memSoftLimitMB = asOptionalLimit(raw.memSoftLimitMB, 'soft 阈值');
   const memHardLimitMB = asOptionalLimit(raw.memHardLimitMB, 'hard 阈值');
@@ -171,6 +180,10 @@ export function publicInstance(i: Instance) {
     memSoftLimitMB: i.memSoftLimitMB,
     memHardLimitMB: i.memHardLimitMB,
   };
+}
+
+export function canAccessInstance(inst: Instance, actor: InstanceActor): boolean {
+  return actor.isAdmin || normalizeEmail(inst.createdBy) === normalizeEmail(actor.email);
 }
 
 export function setInstanceVncServerProfile(id: string, profile: unknown) {
@@ -242,7 +255,7 @@ export function createInstance(
     // 用 hex（仅 0-9a-f）：容器内 init 脚本以 `openssl passwd -apr1 ${PASSWORD}` 未加引号方式生成 .htpasswd。
     kasmPassword: randomBytes(24).toString('hex'),
     createdAt: new Date().toISOString(),
-    createdBy,
+    createdBy: normalizeEmail(createdBy),
     vncServerProfile: DEFAULT_VNC_SERVER_PROFILE,
   };
   assertResourceIdMatch(inst.id, inst.containerName, inst.volumeName);
@@ -306,7 +319,7 @@ export function registerExistingInstance(opts: {
     kasmUser: asString(opts.kasmUser, 'Kasm 用户名'),
     kasmPassword: asString(opts.kasmPassword, 'Kasm 密码'),
     createdAt: new Date().toISOString(),
-    createdBy: asString(opts.createdBy, '创建者'),
+    createdBy: normalizeEmail(asString(opts.createdBy, '创建者')),
     vncServerProfile: DEFAULT_VNC_SERVER_PROFILE,
   };
   data.instances.push(inst);

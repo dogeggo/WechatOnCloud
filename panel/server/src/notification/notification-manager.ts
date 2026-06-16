@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ServerResponse } from 'node:http';
 import { httpError } from '../http/http-error.js';
-import type { Instance } from '../instance/store.js';
+import { canAccessInstance, type Instance, type InstanceActor } from '../instance/store.js';
 
 export interface InstanceNotificationEvent {
   type: 'instance-notification';
@@ -33,6 +33,7 @@ export interface DesktopClientReplacedEvent {
 
 interface Client {
   id: number;
+  actor: InstanceActor;
   res: ServerResponse;
   heartbeat: NodeJS.Timeout;
 }
@@ -55,7 +56,7 @@ export class NotificationManager {
   private clientSeq = 0;
   private eventSeq = 0;
 
-  openStream(req: FastifyRequest, reply: FastifyReply): void {
+  openStream(req: FastifyRequest, reply: FastifyReply, actor: InstanceActor): void {
     reply.hijack();
     const res = reply.raw;
     res.writeHead(200, {
@@ -70,7 +71,7 @@ export class NotificationManager {
     const heartbeat = setInterval(() => {
       if (!res.destroyed) res.write(`: ping ${Date.now()}\n\n`);
     }, 25_000);
-    const client: Client = { id: clientId, res, heartbeat };
+    const client: Client = { id: clientId, actor, res, heartbeat };
     this.clients.set(clientId, client);
 
     const close = () => this.closeClient(clientId);
@@ -82,7 +83,7 @@ export class NotificationManager {
   receive(inst: Instance, authorization: string | undefined, payload: unknown): InstanceNotificationEvent {
     this.verifyToken(inst, authorization);
     const event = this.normalizeEvent(inst, payload);
-    this.broadcast('notification', event.id, event);
+    this.broadcastForInstance(inst, 'notification', event.id, event);
     return event;
   }
 
@@ -100,7 +101,7 @@ export class NotificationManager {
       body: '同一个应用只能保留一个客户端连接，新客户端已接入。',
       createdAt: Date.now(),
     };
-    this.broadcast('desktop-client-replaced', event.id, event);
+    this.broadcastForInstance(inst, 'desktop-client-replaced', event.id, event);
     return event;
   }
 
@@ -116,9 +117,10 @@ export class NotificationManager {
     }
   }
 
-  private broadcast(eventName: string, id: string, data: unknown): void {
+  private broadcastForInstance(inst: Instance, eventName: string, id: string, data: unknown): void {
     const message = sseMessage(eventName, id, data);
     for (const client of this.clients.values()) {
+      if (!canAccessInstance(inst, client.actor)) continue;
       if (client.res.destroyed) {
         this.closeClient(client.id);
         continue;

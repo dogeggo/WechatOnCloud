@@ -99,147 +99,168 @@ app.get('/api/admin/sessions', async (req, reply) => auth.currentUserSessions(re
 app.delete('/api/admin/sessions/:id', async (req, reply) => auth.removeCurrentUserSession(req, reply));
 
 app.get('/api/instances', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.listWithStatus(), 500, '读取实例失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.listWithStatus(user), 500, '读取实例失败');
 });
 
 app.post('/api/admin/instances', async (req, reply) => {
   const user = requireUser(req, reply);
   if (!user) return;
   const body = routeBody(req);
-  return handle(reply, () => instances.createForUser(body.name, user.email, body.reuseVolume, body.appType), 500, '创建实例失败');
+  return handle(reply, () => instances.createForUser(user, body.name, body.reuseVolume, body.appType), 500, '创建实例失败');
 });
 
 app.get('/api/admin/orphan-volumes', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.listUnusedVolumes(), 500, '读取数据卷失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.listUnusedVolumes(user), 500, '读取数据卷失败');
 });
 
 app.get('/api/admin/orphan-containers', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.listUnusedContainers(), 500, '读取容器失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.listUnusedContainers(user), 500, '读取容器失败');
 });
 
 app.delete('/api/admin/orphan-containers/:idOrName', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.removeUnusedContainer(routeParams(req).idOrName), 500, '删除容器失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.removeUnusedContainer(user, routeParams(req).idOrName), 500, '删除容器失败');
 });
 
 app.delete('/api/admin/orphan-volumes/:name', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.removeUnusedVolume(routeParams(req).name), 500, '删除数据卷失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.removeUnusedVolume(user, routeParams(req).name), 500, '删除数据卷失败');
 });
 
 app.get('/api/admin/instances/:id/mem-limits', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.memoryLimits(routeParams(req).id), 500, '读取阈值失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.memoryLimits(user, routeParams(req).id), 500, '读取阈值失败');
 });
 
 app.put('/api/admin/instances/:id/mem-limits', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.updateMemoryLimits(routeParams(req).id, routeBody(req)), 400, '阈值不合法');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.updateMemoryLimits(user, routeParams(req).id, routeBody(req)), 400, '阈值不合法');
 });
 
 app.post('/api/admin/instances/:id/vnc-server-profile', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.updateVncServerProfile(routeParams(req).id, routeBody(req)), 500, '保存 VNC 服务端档位失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.updateVncServerProfile(user, routeParams(req).id, routeBody(req)), 500, '保存 VNC 服务端档位失败');
 });
 
 app.post('/api/admin/instances/:id/regen-machine-id', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.regenerateMachineId(routeParams(req).id), 400, '重置设备 ID 失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.regenerateMachineId(user, routeParams(req).id), 400, '重置设备 ID 失败');
 });
 
 app.delete('/api/admin/instances/:id', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   const id = routeParams(req).id;
   const query = routeQuery(req);
   const purge = query.purge === '1' || query.purge === 'true';
   return handle(reply, async () => {
-    const result = await instances.remove(id, purge);
+    const result = await instances.remove(user, id, purge);
     desktopClients.releaseInstance(String(id));
     return result;
   }, 500, '删除实例失败');
 });
 
 app.post('/api/admin/instances/:id/rename', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.rename(routeParams(req).id, routeBody(req).name), 400, '重命名失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.rename(user, routeParams(req).id, routeBody(req).name), 400, '重命名失败');
 });
 
 app.post('/api/admin/instances/:id/icon', { bodyLimit: 350 * 1024 }, async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.setIcon(routeParams(req).id, routeBody(req).icon), 400, '设置图标失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.setIcon(user, routeParams(req).id, routeBody(req).icon), 400, '设置图标失败');
 });
 
 app.post('/api/admin/instances/:id/start', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.start(routeParams(req).id), 500, '启动失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.start(user, routeParams(req).id), 500, '启动失败');
 });
 
 app.post('/api/admin/instances/:id/stop', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.stop(routeParams(req).id), 500, '停止失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.stop(user, routeParams(req).id), 500, '停止失败');
 });
 
 app.post('/api/admin/instances/:id/restart', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.restart(routeParams(req).id), 500, '重启失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.restart(user, routeParams(req).id), 500, '重启失败');
 });
 
 app.post('/api/admin/instances/:id/upgrade', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.upgrade(routeParams(req).id), 500, '升级失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.upgrade(user, routeParams(req).id), 500, '升级失败');
 });
 
 app.post('/api/instances/:id/upload', { bodyLimit: panelConfig.upload.transferBytes }, async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   return handle(reply, () => {
     const upload = rawUpload(req, panelConfig.upload.transferBytes);
-    return instances.uploadTransferFile(routeParams(req).id, routeQuery(req).name, upload.stream, upload.size);
+    return instances.uploadTransferFile(user, routeParams(req).id, routeQuery(req).name, upload.stream, upload.size);
   }, 400, '上传失败');
 });
 
 app.get('/api/instances/:id/files', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.listTransferFiles(routeParams(req).id), 400, '读取文件列表失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.listTransferFiles(user, routeParams(req).id), 400, '读取文件列表失败');
 });
 
 app.delete('/api/instances/:id/files', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.deleteTransferFile(routeParams(req).id, routeQuery(req).name), 400, '删除失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.deleteTransferFile(user, routeParams(req).id, routeQuery(req).name), 400, '删除失败');
 });
 
 app.get('/api/instances/:id/download', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   return handle(reply, async () => {
-    const file = await instances.downloadTransferFile(routeParams(req).id, routeQuery(req).name);
+    const file = await instances.downloadTransferFile(user, routeParams(req).id, routeQuery(req).name);
     return sendBinary(reply, file.body, file.filename, 'application/octet-stream');
   }, 400, '下载失败');
 });
 
 app.post('/api/instances/:id/type', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   const body = routeBody(req);
   return handle(reply, async () => {
-    const inst = instances.requireInstance(routeParams(req).id);
-    return instances.typeText(inst.id, body.text, body.submit, body.submitKey);
+    return instances.typeText(user, routeParams(req).id, body.text, body.submit, body.submitKey);
   }, 500, '输入失败');
 });
 
 app.post('/api/instances/:id/key', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   const body = routeBody(req);
   return handle(reply, async () => {
-    const inst = instances.requireInstance(routeParams(req).id);
-    return instances.keyInput(inst.id, body.key);
+    return instances.keyInput(user, routeParams(req).id, body.key);
   }, 500, '按键输入失败');
 });
 
 app.get('/api/admin/instances/:id/logs', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   try {
-    const text = await instances.logs(routeParams(req).id);
+    const text = await instances.logs(user, routeParams(req).id);
     reply.header('content-type', 'text/plain; charset=utf-8');
     return reply.send(text || '（暂无日志）');
   } catch (e: any) {
@@ -249,47 +270,55 @@ app.get('/api/admin/instances/:id/logs', async (req, reply) => {
 });
 
 app.get('/api/admin/instances/:id/volume', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.listVolume(routeParams(req).id, routeQuery(req).path), 400, '读取目录失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.listVolume(user, routeParams(req).id, routeQuery(req).path), 400, '读取目录失败');
 });
 
 app.post('/api/admin/instances/:id/volume/mkdir', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.mkdirVolume(routeParams(req).id, routeBody(req).path), 400, '新建失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.mkdirVolume(user, routeParams(req).id, routeBody(req).path), 400, '新建失败');
 });
 
 app.post('/api/admin/instances/:id/volume/move', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   const body = routeBody(req);
-  return handle(reply, () => instances.moveVolume(routeParams(req).id, body.from, body.to), 400, '移动失败');
+  return handle(reply, () => instances.moveVolume(user, routeParams(req).id, body.from, body.to), 400, '移动失败');
 });
 
 app.delete('/api/admin/instances/:id/volume', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.deleteVolumePath(routeParams(req).id, routeQuery(req).path), 400, '删除失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.deleteVolumePath(user, routeParams(req).id, routeQuery(req).path), 400, '删除失败');
 });
 
 app.get('/api/admin/instances/:id/volume/download', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   return handle(reply, async () => {
-    const file = await instances.downloadVolumeFile(routeParams(req).id, routeQuery(req).path);
+    const file = await instances.downloadVolumeFile(user, routeParams(req).id, routeQuery(req).path);
     return sendBinary(reply, file.body, file.filename, 'application/octet-stream');
   }, 400, '下载失败');
 });
 
 app.post('/api/admin/instances/:id/volume/upload', { bodyLimit: panelConfig.upload.volumeFileBytes }, async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   return handle(reply, () => {
     const upload = rawUpload(req, panelConfig.upload.volumeFileBytes);
-    return instances.uploadVolumeFile(routeParams(req).id, routeQuery(req).path, routeQuery(req).name, upload.stream, upload.size);
+    return instances.uploadVolumeFile(user, routeParams(req).id, routeQuery(req).path, routeQuery(req).name, upload.stream, upload.size);
   }, 400, '上传失败');
 });
 
 app.post('/api/admin/instances/:id/volume/extract', { bodyLimit: panelConfig.upload.volumeArchiveBytes }, async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   return handle(reply, () => {
     const upload = rawUpload(req, panelConfig.upload.volumeArchiveBytes);
     return instances.extractVolumeArchive(
+      user,
       routeParams(req).id,
       routeQuery(req).path,
       upload.stream,
@@ -300,18 +329,21 @@ app.post('/api/admin/instances/:id/volume/extract', { bodyLimit: panelConfig.upl
 });
 
 app.get('/api/admin/instances/:id/volume/backup', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   return handle(reply, async () => {
-    const file = await instances.backupVolume(routeParams(req).id);
+    const file = await instances.backupVolume(user, routeParams(req).id);
     return sendBinary(reply, file.body, file.filename, 'application/gzip');
   }, 500, '备份失败');
 });
 
 app.post('/api/admin/instances/:id/volume/restore', { bodyLimit: panelConfig.upload.volumeArchiveBytes }, async (req, reply) => {
-  if (!requireUser(req, reply)) return;
+  const user = requireUser(req, reply);
+  if (!user) return;
   return handle(reply, () => {
     const upload = rawUpload(req, panelConfig.upload.volumeArchiveBytes);
     return instances.restoreVolume(
+      user,
       routeParams(req).id,
       upload.stream,
       gzipQuery(req),
@@ -321,18 +353,21 @@ app.post('/api/admin/instances/:id/volume/restore', { bodyLimit: panelConfig.upl
 });
 
 app.get('/api/instances/:id/app/status', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.getAppStatus(routeParams(req).id), 500, '读取应用状态失败');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.getAppStatus(user, routeParams(req).id), 500, '读取应用状态失败');
 });
 
 app.post('/api/admin/instances/:id/app/install', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.triggerAppInstall(routeParams(req).id, 'install'), 500, '无法触发安装');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.triggerAppInstall(user, routeParams(req).id, 'install'), 500, '无法触发安装');
 });
 
 app.post('/api/admin/instances/:id/app/update', async (req, reply) => {
-  if (!requireUser(req, reply)) return;
-  return handle(reply, () => instances.triggerAppInstall(routeParams(req).id, 'update'), 500, '无法触发更新');
+  const user = requireUser(req, reply);
+  if (!user) return;
+  return handle(reply, () => instances.triggerAppInstall(user, routeParams(req).id, 'update'), 500, '无法触发更新');
 });
 
 registerNotificationRoutes(app, auth, instances, notifications);

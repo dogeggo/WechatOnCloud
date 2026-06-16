@@ -1,4 +1,5 @@
 import {
+  canAccessInstance,
   createInstance,
   findInstance,
   listInstances,
@@ -10,6 +11,7 @@ import {
   setInstanceMemLimits,
   setInstanceVncServerProfile,
   type Instance,
+  type InstanceActor,
 } from './store.js';
 import {
   deleteInstanceFile,
@@ -72,9 +74,15 @@ export class InstanceManager {
     return inst;
   }
 
-  async listWithStatus() {
+  requireInstanceForActor(rawId: unknown, actor: InstanceActor): Instance {
+    const inst = this.requireInstance(rawId);
+    if (!canAccessInstance(inst, actor)) throw httpError(404, '实例不存在');
+    return inst;
+  }
+
+  async listWithStatus(actor: InstanceActor) {
     const rows = await Promise.all(
-      listInstances().map(async (inst) => {
+      listInstances().filter((inst) => canAccessInstance(inst, actor)).map(async (inst) => {
         const [runtime, status] = await Promise.all([instanceRuntime(inst), appStatus(inst)]);
         return { ...publicInstance(inst), runtime, app: status };
       }),
@@ -82,11 +90,11 @@ export class InstanceManager {
     return { instances: rows };
   }
 
-  async createForUser(name: unknown, createdBy: string, reuseVolume: unknown, appType: unknown) {
-    const reuseVolumeName = this.normalizeReuseVolume(reuseVolume);
+  async createForUser(actor: InstanceActor, name: unknown, reuseVolume: unknown, appType: unknown) {
+    const reuseVolumeName = this.normalizeReuseVolume(reuseVolume, actor);
     let inst: Instance;
     try {
-      inst = createInstance(String(name ?? ''), createdBy, reuseVolumeName, normalizeAppType(appType));
+      inst = createInstance(String(name ?? ''), actor.email, reuseVolumeName, normalizeAppType(appType));
     } catch (e: any) {
       throw httpError(400, e?.message || '创建实例失败');
     }
@@ -100,17 +108,20 @@ export class InstanceManager {
     return { instance: publicInstance(inst) };
   }
 
-  async listUnusedVolumes() {
+  async listUnusedVolumes(actor: InstanceActor) {
+    this.requireAdmin(actor);
     const referenced = new Set(listInstances().map((inst) => inst.volumeName));
     return { volumes: await listOrphanVolumes(referenced) };
   }
 
-  async listUnusedContainers() {
+  async listUnusedContainers(actor: InstanceActor) {
+    this.requireAdmin(actor);
     const known = new Set(listInstances().map((inst) => inst.containerName));
     return { containers: await listOrphanContainers(known) };
   }
 
-  async removeUnusedContainer(idOrName: unknown) {
+  async removeUnusedContainer(actor: InstanceActor, idOrName: unknown) {
+    this.requireAdmin(actor);
     if (!idOrName || typeof idOrName !== 'string') throw httpError(400, '参数不合法');
     const known = new Set(listInstances().map((inst) => inst.containerName));
     if (known.has(idOrName)) throw httpError(409, '该容器属于现存实例，不能在此删除');
@@ -118,7 +129,8 @@ export class InstanceManager {
     return { ok: true };
   }
 
-  async removeUnusedVolume(name: unknown) {
+  async removeUnusedVolume(actor: InstanceActor, name: unknown) {
+    this.requireAdmin(actor);
     if (!name || typeof name !== 'string' || !VOLUME_NAME_RE.test(name)) {
       throw httpError(400, '卷名不合法');
     }
@@ -129,8 +141,8 @@ export class InstanceManager {
     return { ok: true };
   }
 
-  async memoryLimits(id: unknown): Promise<MemoryLimitInfo> {
-    const inst = this.requireInstance(id);
+  async memoryLimits(actor: InstanceActor, id: unknown): Promise<MemoryLimitInfo> {
+    const inst = this.requireInstanceForActor(id, actor);
     const currentMB = (await instanceRuntime(inst)) === 'running' ? await instanceMemoryMB(inst) : 0;
     return {
       soft: inst.memSoftLimitMB ?? null,
@@ -143,8 +155,8 @@ export class InstanceManager {
     };
   }
 
-  updateMemoryLimits(id: unknown, body: any) {
-    const inst = this.requireInstance(id);
+  updateMemoryLimits(actor: InstanceActor, id: unknown, body: any) {
+    const inst = this.requireInstanceForActor(id, actor);
     const soft = parseLimitPatch(body?.soft, 'soft');
     const hard = parseLimitPatch(body?.hard, 'hard');
     const finalSoft = soft === undefined ? inst.memSoftLimitMB ?? null : soft;
@@ -156,8 +168,8 @@ export class InstanceManager {
     }
   }
 
-  async updateVncServerProfile(id: unknown, body: any) {
-    const inst = this.requireInstance(id);
+  async updateVncServerProfile(actor: InstanceActor, id: unknown, body: any) {
+    const inst = this.requireInstanceForActor(id, actor);
     let instance;
     try {
       instance = setInstanceVncServerProfile(inst.id, body?.profile);
@@ -168,28 +180,29 @@ export class InstanceManager {
     return { instance };
   }
 
-  async regenerateMachineId(id: unknown) {
-    await regenInstanceMachineId(this.requireInstance(id));
+  async regenerateMachineId(actor: InstanceActor, id: unknown) {
+    await regenInstanceMachineId(this.requireInstanceForActor(id, actor));
     return { ok: true };
   }
 
-  async remove(id: unknown, purge: boolean) {
-    const inst = this.requireInstance(id);
+  async remove(actor: InstanceActor, id: unknown, purge: boolean) {
+    const inst = this.requireInstanceForActor(id, actor);
     await removeInstanceContainer(inst, purge);
     removeInstanceRecord(inst.id);
     return { ok: true };
   }
 
-  rename(id: unknown, name: unknown) {
+  rename(actor: InstanceActor, id: unknown, name: unknown) {
+    const inst = this.requireInstanceForActor(id, actor);
     try {
-      return { instance: renameInstance(String(id || ''), String(name ?? '')) };
+      return { instance: renameInstance(inst.id, String(name ?? '')) };
     } catch (e: any) {
       throw httpError(400, e?.message || '重命名失败');
     }
   }
 
-  setIcon(id: unknown, icon: unknown) {
-    const inst = this.requireInstance(id);
+  setIcon(actor: InstanceActor, id: unknown, icon: unknown) {
+    const inst = this.requireInstanceForActor(id, actor);
     try {
       return { instance: setInstanceIcon(inst.id, icon) };
     } catch (e: any) {
@@ -197,132 +210,133 @@ export class InstanceManager {
     }
   }
 
-  async start(id: unknown) {
-    await ensureRunning(this.requireInstance(id));
+  async start(actor: InstanceActor, id: unknown) {
+    await ensureRunning(this.requireInstanceForActor(id, actor));
     return { ok: true };
   }
 
-  async stop(id: unknown) {
-    await stopInstance(this.requireInstance(id));
+  async stop(actor: InstanceActor, id: unknown) {
+    await stopInstance(this.requireInstanceForActor(id, actor));
     return { ok: true };
   }
 
-  async restart(id: unknown) {
-    await runInstance(this.requireInstance(id));
+  async restart(actor: InstanceActor, id: unknown) {
+    await runInstance(this.requireInstanceForActor(id, actor));
     return { ok: true };
   }
 
-  async upgrade(id: unknown) {
-    await upgradeInstance(this.requireInstance(id));
+  async upgrade(actor: InstanceActor, id: unknown) {
+    await upgradeInstance(this.requireInstanceForActor(id, actor));
     return { ok: true };
   }
 
-  async uploadTransferFile(id: unknown, name: unknown, stream: NodeJS.ReadableStream, size: number) {
-    await uploadToInstance(this.requireInstance(id), String(name || '').trim(), stream, size);
+  async uploadTransferFile(actor: InstanceActor, id: unknown, name: unknown, stream: NodeJS.ReadableStream, size: number) {
+    await uploadToInstance(this.requireInstanceForActor(id, actor), String(name || '').trim(), stream, size);
     return { ok: true };
   }
 
-  async listTransferFiles(id: unknown) {
-    return { files: await listInstanceFiles(this.requireInstance(id)) };
+  async listTransferFiles(actor: InstanceActor, id: unknown) {
+    return { files: await listInstanceFiles(this.requireInstanceForActor(id, actor)) };
   }
 
-  async deleteTransferFile(id: unknown, name: unknown) {
-    await deleteInstanceFile(this.requireInstance(id), String(name || '').trim());
+  async deleteTransferFile(actor: InstanceActor, id: unknown, name: unknown) {
+    await deleteInstanceFile(this.requireInstanceForActor(id, actor), String(name || '').trim());
     return { ok: true };
   }
 
-  async downloadTransferFile(id: unknown, name: unknown) {
+  async downloadTransferFile(actor: InstanceActor, id: unknown, name: unknown) {
     const filename = String(name || '').trim();
     return {
       filename,
-      body: await downloadFromInstance(this.requireInstance(id), filename, this.upload.transferDownloadBytes),
+      body: await downloadFromInstance(this.requireInstanceForActor(id, actor), filename, this.upload.transferDownloadBytes),
     };
   }
 
-  async typeText(id: unknown, text: unknown, submit: unknown, submitKey: unknown) {
+  async typeText(actor: InstanceActor, id: unknown, text: unknown, submit: unknown, submitKey: unknown) {
     const value = String(text ?? '');
     if (!value || value.length > 500) throw httpError(400, '文字为空或过长');
-    await typeInInstance(this.requireInstance(id), value, {
+    await typeInInstance(this.requireInstanceForActor(id, actor), value, {
       submit: submit === true,
       submitKey: submitKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter',
     });
     return { ok: true };
   }
 
-  async keyInput(id: unknown, key: unknown) {
+  async keyInput(actor: InstanceActor, id: unknown, key: unknown) {
     const value = String(key ?? '');
     if (!/^[A-Za-z_]{1,20}$/.test(value)) throw httpError(400, '按键名不合法');
-    await keyInInstance(this.requireInstance(id), value);
+    await keyInInstance(this.requireInstanceForActor(id, actor), value);
     return { ok: true };
   }
 
-  async logs(id: unknown) {
-    return await instanceLogs(this.requireInstance(id));
+  async logs(actor: InstanceActor, id: unknown) {
+    return await instanceLogs(this.requireInstanceForActor(id, actor));
   }
 
-  async listVolume(id: unknown, path: unknown) {
-    return await listVolume(this.requireInstance(id), String(path || ''));
+  async listVolume(actor: InstanceActor, id: unknown, path: unknown) {
+    return await listVolume(this.requireInstanceForActor(id, actor), String(path || ''));
   }
 
-  async mkdirVolume(id: unknown, path: unknown) {
-    await volMkdir(this.requireInstance(id), String(path || ''));
+  async mkdirVolume(actor: InstanceActor, id: unknown, path: unknown) {
+    await volMkdir(this.requireInstanceForActor(id, actor), String(path || ''));
     return { ok: true };
   }
 
-  async moveVolume(id: unknown, from: unknown, to: unknown) {
-    await volMove(this.requireInstance(id), String(from || ''), String(to || ''));
+  async moveVolume(actor: InstanceActor, id: unknown, from: unknown, to: unknown) {
+    await volMove(this.requireInstanceForActor(id, actor), String(from || ''), String(to || ''));
     return { ok: true };
   }
 
-  async deleteVolumePath(id: unknown, path: unknown) {
-    await volDelete(this.requireInstance(id), String(path || ''));
+  async deleteVolumePath(actor: InstanceActor, id: unknown, path: unknown) {
+    await volDelete(this.requireInstanceForActor(id, actor), String(path || ''));
     return { ok: true };
   }
 
-  async downloadVolumeFile(id: unknown, path: unknown) {
+  async downloadVolumeFile(actor: InstanceActor, id: unknown, path: unknown) {
     const volumePath = String(path || '');
     const filename = volumePath.split('/').filter(Boolean).pop() || 'file';
     return {
       filename,
-      body: await volDownloadFile(this.requireInstance(id), volumePath, this.upload.volumeFileDownloadBytes),
+      body: await volDownloadFile(this.requireInstanceForActor(id, actor), volumePath, this.upload.volumeFileDownloadBytes),
     };
   }
 
-  async uploadVolumeFile(id: unknown, path: unknown, name: unknown, stream: NodeJS.ReadableStream, size: number) {
-    await volUploadFile(this.requireInstance(id), String(path || ''), String(name || '').trim(), stream, size);
+  async uploadVolumeFile(actor: InstanceActor, id: unknown, path: unknown, name: unknown, stream: NodeJS.ReadableStream, size: number) {
+    await volUploadFile(this.requireInstanceForActor(id, actor), String(path || ''), String(name || '').trim(), stream, size);
     return { ok: true };
   }
 
   async extractVolumeArchive(
+    actor: InstanceActor,
     id: unknown,
     path: unknown,
     stream: NodeJS.ReadableStream,
     gzip: boolean,
     maxExtractedBytes: number,
   ) {
-    await volExtractArchive(this.requireInstance(id), String(path || ''), stream, gzip, maxExtractedBytes);
+    await volExtractArchive(this.requireInstanceForActor(id, actor), String(path || ''), stream, gzip, maxExtractedBytes);
     return { ok: true };
   }
 
-  async backupVolume(id: unknown) {
-    const inst = this.requireInstance(id);
+  async backupVolume(actor: InstanceActor, id: unknown) {
+    const inst = this.requireInstanceForActor(id, actor);
     return {
       filename: `woc-${inst.name}-backup.tar.gz`,
       body: await volBackupStream(inst),
     };
   }
 
-  async restoreVolume(id: unknown, stream: NodeJS.ReadableStream, gzip: boolean, maxExtractedBytes: number) {
-    await volRestoreArchive(this.requireInstance(id), stream, gzip, maxExtractedBytes);
+  async restoreVolume(actor: InstanceActor, id: unknown, stream: NodeJS.ReadableStream, gzip: boolean, maxExtractedBytes: number) {
+    await volRestoreArchive(this.requireInstanceForActor(id, actor), stream, gzip, maxExtractedBytes);
     return { ok: true };
   }
 
-  async getAppStatus(id: unknown) {
-    return { status: await appStatus(this.requireInstance(id)) };
+  async getAppStatus(actor: InstanceActor, id: unknown) {
+    return { status: await appStatus(this.requireInstanceForActor(id, actor)) };
   }
 
-  async triggerAppInstall(id: unknown, command: 'install' | 'update') {
-    await triggerAppInstall(this.requireInstance(id), command);
+  async triggerAppInstall(actor: InstanceActor, id: unknown, command: 'install' | 'update') {
+    await triggerAppInstall(this.requireInstanceForActor(id, actor), command);
     return { ok: true };
   }
 
@@ -347,8 +361,13 @@ export class InstanceManager {
     };
   }
 
-  private normalizeReuseVolume(reuseVolume: unknown): string | undefined {
+  private requireAdmin(actor: InstanceActor): void {
+    if (!actor.isAdmin) throw httpError(403, '需要管理员权限');
+  }
+
+  private normalizeReuseVolume(reuseVolume: unknown, actor: InstanceActor): string | undefined {
     if (reuseVolume == null || reuseVolume === false || reuseVolume === '') return undefined;
+    this.requireAdmin(actor);
     if (typeof reuseVolume !== 'string' || !VOLUME_NAME_RE.test(reuseVolume)) {
       throw httpError(400, '复用卷名不合法');
     }

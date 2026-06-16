@@ -19,6 +19,7 @@ export interface PanelUser {
   sub: string;
   email: string;
   username: string;
+  isAdmin: boolean;
   name?: string;
   picture?: string;
 }

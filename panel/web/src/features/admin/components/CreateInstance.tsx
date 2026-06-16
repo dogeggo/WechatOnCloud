@@ -1,8 +1,10 @@
 import { APP_TYPES, appProfile } from '../../../domain/instances';
+import { useAuth } from '../../../auth';
 import { useCreateInstance } from '../useCreateInstance';
 
 export function CreateInstance({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const form = useCreateInstance(onDone);
+  const { user } = useAuth();
+  const form = useCreateInstance(onDone, !!user?.isAdmin);
 
   return (
     <div className="modal-mask" onClick={onClose}>

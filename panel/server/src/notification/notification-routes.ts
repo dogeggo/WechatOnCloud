@@ -20,8 +20,9 @@ export function registerNotificationRoutes(
   notifications: NotificationManager,
 ): void {
   app.get('/api/notifications/stream', (req, reply) => {
-    if (!auth.requireAuth(req, reply)) return;
-    notifications.openStream(req, reply);
+    const user = auth.requireAuth(req, reply);
+    if (!user) return;
+    notifications.openStream(req, reply, user);
   });
 
   app.post('/_woc/internal/instances/:id/notifications', { bodyLimit: 16 * 1024 }, async (req, reply) => {

@@ -20,6 +20,7 @@ export function InstanceAdminCard({
   onSecurity,
   onVncServerProfile,
   onVolume,
+  showOwner = false,
   vncKeepAlive,
   onToggleVncKeepAlive,
 }: {
@@ -37,6 +38,7 @@ export function InstanceAdminCard({
   onSecurity: () => void;
   onVncServerProfile: () => void;
   onVolume: () => void;
+  showOwner?: boolean;
   vncKeepAlive: boolean;
   onToggleVncKeepAlive: (enabled: boolean) => void;
 }) {
@@ -60,7 +62,8 @@ export function InstanceAdminCard({
         {sub}
       </div>
       <div className="inst-meta-line">
-        VNC服务端：{vncServerProfileLabel(inst.vncServerProfile)}
+        {showOwner && <div>创建者：{inst.createdBy}</div>}
+        <div>VNC服务端：{vncServerProfileLabel(inst.vncServerProfile)}</div>
       </div>
 
       {working && (

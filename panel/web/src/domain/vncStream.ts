@@ -72,6 +72,6 @@ function isVncStreamProfile(value: unknown): value is VncStreamProfile {
 }
 
 function clampVncLevel(value: number | undefined, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   return Math.max(0, Math.min(9, Math.round(value)));
 }

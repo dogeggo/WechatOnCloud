@@ -6,7 +6,7 @@ import type { AuthManager } from '../auth/auth-manager.js';
 import { instanceTarget } from '../docker/docker.js';
 import { isRequestHostAllowed } from '../http/host-guard.js';
 import { firstHeaderValue, sameOrigin, type RequestTrustConfig } from '../http/request-utils.js';
-import { findInstance, type Instance } from '../instance/store.js';
+import { canAccessInstance, findInstance, type Instance } from '../instance/store.js';
 import type { NotificationManager } from '../notification/notification-manager.js';
 import type { DesktopClientManager } from './desktop-client-manager.js';
 
@@ -60,7 +60,7 @@ export function registerDesktopProxy(
       return;
     }
     const inst = findInstance(parsed.id);
-    if (!inst) {
+    if (!inst || !canAccessInstance(inst, user)) {
       reply.code(404).send({ error: '实例不存在' });
       return;
     }
@@ -112,7 +112,7 @@ function handleUpgrade(
   }
   const session = auth.rawSession(req);
   const inst = findInstance(parsed.id);
-  if (!session?.user || !inst) {
+  if (!session?.user || !inst || !canAccessInstance(inst, session.user)) {
     socket.destroy();
     return;
   }

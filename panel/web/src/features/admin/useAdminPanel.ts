@@ -9,6 +9,7 @@ import {
 } from '../../domain/instances';
 import { deviceName } from '../../domain/devices';
 import { errorMessage } from '../../utils/errors';
+import { useAuth } from '../../auth';
 import { useInstances } from '../instances/instances-context';
 import { isVncKeepAliveEnabled, setVncKeepAliveEnabled } from '../../vncKeepAlive';
 import { useUI } from '../../ui';
@@ -22,7 +23,9 @@ function patchActionLabel(actions: Record<string, string>, id: string, label: st
 
 export function useAdminPanel() {
   const { toast, confirm } = useUI();
+  const { user } = useAuth();
   const { instances, reload: reloadInstances, updateInstances } = useInstances();
+  const isAdmin = !!user?.isAdmin;
   const [devices, setDevices] = useState<LoggedInDevice[]>([]);
   const [orphanVolumes, setOrphanVolumes] = useState<OrphanVolume[]>([]);
   const [orphanContainers, setOrphanContainers] = useState<OrphanContainer[]>([]);
@@ -39,9 +42,13 @@ export function useAdminPanel() {
   }, [instances]);
 
   const refreshOrphanVolumes = useCallback(async () => {
+    if (!isAdmin) {
+      setOrphanVolumes([]);
+      return;
+    }
     const { volumes } = await api.listOrphanVolumes();
     setOrphanVolumes(volumes);
-  }, []);
+  }, [isAdmin]);
 
   const load = useCallback(async (refreshInstances = true) => {
     setErr('');
@@ -49,12 +56,14 @@ export function useAdminPanel() {
       refreshInstances ? reloadInstances() : Promise.resolve(),
       api.listLoggedInDevices().then(({ devices }) => setDevices(devices)),
       refreshOrphanVolumes(),
-      api.listOrphanContainers().then(({ containers }) => setOrphanContainers(containers)),
+      isAdmin
+        ? api.listOrphanContainers().then(({ containers }) => setOrphanContainers(containers))
+        : Promise.resolve(setOrphanContainers([])),
     ];
     const results = await Promise.allSettled(tasks);
     const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (rejected) setErr(errorMessage(rejected.reason, '读取管理数据失败'));
-  }, [refreshOrphanVolumes, reloadInstances]);
+  }, [isAdmin, refreshOrphanVolumes, reloadInstances]);
 
   useEffect(() => {
     void load();
@@ -210,6 +219,7 @@ export function useAdminPanel() {
   );
 
   return {
+    isAdmin,
     instances,
     forgetInstance,
     patchInstance,

@@ -13,6 +13,7 @@ export interface OidcSettings {
 export interface AuthConfig {
   file: string;
   allowedEmails: string[];
+  adminEmails: string[];
   oidc: OidcSettings;
 }
 
@@ -27,7 +28,7 @@ function asOptionalBoolean(v: unknown): boolean | undefined {
   return typeof v === 'boolean' ? v : undefined;
 }
 
-function normalizeAllowedEmails(raw: unknown): string[] {
+function normalizeEmailList(raw: unknown): string[] {
   const parts = Array.isArray(raw)
     ? raw
     : typeof raw === 'string'
@@ -54,8 +55,11 @@ export function loadAuthConfig(file = DEFAULT_FILE): AuthConfig {
   const oidc = raw?.oidc;
   if (!oidc || typeof oidc !== 'object') throw new Error('认证配置缺少 oidc 对象');
 
-  const allowedEmails = normalizeAllowedEmails(raw.allowedEmails);
-  if (allowedEmails.length === 0) throw new Error('认证配置 allowedEmails 至少要包含一个邮箱');
+  const allowedEmails = normalizeEmailList(raw.allowedEmails);
+  const adminEmails = normalizeEmailList(raw.adminEmails);
+  if (allowedEmails.length === 0 && adminEmails.length === 0) {
+    throw new Error('认证配置 allowedEmails 或 adminEmails 至少要包含一个邮箱');
+  }
 
   const redirectUri = asString(oidc.redirectUri, 'oidc.redirectUri');
   const redirectUrl = new URL(redirectUri);
@@ -67,6 +71,7 @@ export function loadAuthConfig(file = DEFAULT_FILE): AuthConfig {
   return {
     file,
     allowedEmails,
+    adminEmails,
     oidc: {
       issuer: asString(oidc.issuer, 'oidc.issuer'),
       clientId: asString(oidc.clientId, 'oidc.clientId'),
@@ -80,5 +85,10 @@ export function loadAuthConfig(file = DEFAULT_FILE): AuthConfig {
 }
 
 export function isEmailAllowed(email: string, config: AuthConfig): boolean {
-  return config.allowedEmails.includes(email.trim().toLowerCase());
+  const normalized = email.trim().toLowerCase();
+  return config.allowedEmails.includes(normalized) || config.adminEmails.includes(normalized);
+}
+
+export function isAdminEmail(email: string, config: AuthConfig): boolean {
+  return config.adminEmails.includes(email.trim().toLowerCase());
 }
