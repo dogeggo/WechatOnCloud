@@ -1,7 +1,6 @@
 import { useEffect, type RefObject } from 'react';
 import { api } from '../../api';
-import { installImeCandidateAnchor } from './desktopFrame';
-import type { DesktopInputMode } from './desktopFrame';
+import { enableKasmImeMode, installImeCandidateAnchor } from './desktopFrame';
 
 type SeamlessJob = { kind: 'text'; data: string } | { kind: 'key'; data: string };
 
@@ -78,17 +77,19 @@ export function useSeamlessIme({
   id,
   frameLoaded,
   frameRef,
-  inputMode,
 }: {
   active: boolean;
   showVnc: boolean;
   id: string | undefined;
   frameLoaded: boolean;
   frameRef: RefObject<HTMLIFrameElement>;
-  inputMode: DesktopInputMode;
 }) {
   useEffect(() => {
-    if (!active || inputMode !== 'seamless' || !showVnc || !frameLoaded || !id) return;
+    enableKasmImeMode();
+  }, []);
+
+  useEffect(() => {
+    if (!active || !showVnc || !frameLoaded || !id) return;
     const win = frameRef.current?.contentWindow;
     const doc = frameRef.current?.contentDocument;
     if (!win || !doc) return;
@@ -98,5 +99,5 @@ export function useSeamlessIme({
       cleanupImeAnchor();
       cleanupSeamlessIme();
     };
-  }, [active, inputMode, showVnc, frameLoaded, id, frameRef]);
+  }, [active, showVnc, frameLoaded, id, frameRef]);
 }

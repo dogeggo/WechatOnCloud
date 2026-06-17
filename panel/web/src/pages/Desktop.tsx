@@ -12,14 +12,13 @@ import {
 } from "../domain/instances";
 import { vncServerProfileFrameRate } from "../domain/vncServerProfile";
 import { VNC_STREAM_PROFILES } from "../domain/vncStream";
-import { useClipboardBridge } from "../features/desktop/useClipboardBridge";
 import { DESKTOP_CLIENT_REPLACED_EVENT } from "../features/desktop/desktopClientEvents";
 import { useDesktopFiles } from "../features/desktop/useDesktopFiles";
 import { InstanceLogs } from "../features/admin/components/InstanceLogs";
-import { useImeComposer } from "../features/desktop/useImeComposer";
 import { useInstanceRuntimeActions } from "../features/desktop/useInstanceRuntimeActions";
 import { useSeamlessIme } from "../features/desktop/useSeamlessIme";
 import { useVncFrame } from "../features/desktop/useVncFrame";
+import { enableKasmImeMode } from "../features/desktop/desktopFrame";
 import {
   useVncPerformanceStats,
   type VncPerformanceStats,
@@ -88,22 +87,17 @@ export default function InstanceView({
     showVnc: effectiveShowVnc,
     id,
   });
-  const clipboard = useClipboardBridge({ id, frameRef });
-  const ime = useImeComposer({
-    id,
-    focusFrame: vnc.focusFrame,
-  });
   useSeamlessIme({
     active,
     showVnc: effectiveShowVnc,
     id,
     frameLoaded: vnc.frameLoaded,
     frameRef,
-    inputMode: ime.inputMode,
   });
   const runtime = useInstanceRuntimeActions({ id, reload });
   const desktopFrameSrc = useMemo(() => {
     if (!id) return "about:blank";
+    enableKasmImeMode();
     return desktopUrl(id, desktopClientId, streamRef.current);
   }, [id, desktopClientId, vnc.vncNonce]);
 
@@ -218,33 +212,6 @@ export default function InstanceView({
                 </button>
               ))}
             </div>
-            <div className="ws-mode" role="group" aria-label="输入模式">
-              <button
-                className={
-                  "ws-mode-btn" + (ime.inputMode === "seamless" ? " on" : "")
-                }
-                title="无感输入：直接在应用里打中文，候选提交后转发到远端"
-                onClick={() => ime.switchInputMode("seamless")}
-              >
-                无感
-              </button>
-              <button
-                className={
-                  "ws-mode-btn" + (ime.inputMode === "forward" ? " on" : "")
-                }
-                title="转发输入：使用底部输入条发送文本，最稳定"
-                onClick={() => ime.switchInputMode("forward")}
-              >
-                转发
-              </button>
-            </div>
-            <button
-              className="ws-action"
-              title="把文本发送到容器剪贴板（局域网 http 下也可用）"
-              onClick={() => clipboard.setShowClip((v) => !v)}
-            >
-              剪贴板
-            </button>
           </>
         )}
       </header>
@@ -353,7 +320,7 @@ export default function InstanceView({
               className="iv-frame"
               src={desktopFrameSrc}
               title={`${profile.label}桌面`}
-              allow="clipboard-read; clipboard-write; autoplay"
+              allow="autoplay"
               onLoad={vnc.handleFrameLoad}
               onFocus={() => vnc.reconnectIfDisconnected()}
               onMouseDown={() => vnc.reconnectIfDisconnected()}
@@ -454,96 +421,7 @@ export default function InstanceView({
               </div>
             )}
 
-            {clipboard.showClip && (
-              <div className="iv-files">
-                <div className="files-head">
-                  <span>文本剪贴板</span>
-                  <button
-                    className="btn-text"
-                    onClick={() => clipboard.setShowClip(false)}
-                  >
-                    关闭
-                  </button>
-                </div>
-                <textarea
-                  className="clip-area"
-                  value={clipboard.clipText}
-                  onChange={(e) => clipboard.setClipText(e.target.value)}
-                  placeholder="在此输入或粘贴文本，点「发送到应用」后到应用输入框按 Ctrl+V 粘贴"
-                  rows={5}
-                />
-                <button
-                  className="btn btn-primary files-upload"
-                  onClick={clipboard.sendClip}
-                >
-                  发送到应用（容器剪贴板）
-                </button>
-                <button
-                  className="btn-text"
-                  style={{ alignSelf: "flex-start", marginTop: 6 }}
-                  onClick={clipboard.pullClip}
-                >
-                  ↓ 读取容器剪贴板到此框
-                </button>
-                <div className="files-hint">
-                  局域网 http
-                  访问时浏览器会禁用系统级剪贴板同步，故用此框中转：文本→容器剪贴板，再在应用里
-                  Ctrl+V。
-                </div>
-              </div>
-            )}
           </div>
-
-          {ime.inputMode === "forward" && (
-            <div className="iv-imebar">
-              <textarea
-                className="iv-imebar-input"
-                value={ime.imeText}
-                onChange={(e) => ime.setImeText(e.target.value)}
-                onKeyDown={(e) => {
-                  const native = e.nativeEvent as KeyboardEvent;
-                  if (native.isComposing || e.keyCode === 229) return;
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void ime.sendImeText(true);
-                  }
-                }}
-                placeholder="文本输入，Enter 发送。Shift+Enter 换行。"
-                disabled={ime.imeDisabled}
-                rows={1}
-              />
-              <select
-                className="iv-imebar-key"
-                value={ime.imeSubmitKey}
-                onChange={(e) =>
-                  ime.setImeSubmitKey(
-                    e.target.value === "ctrlEnter" ? "ctrlEnter" : "enter",
-                  )
-                }
-                disabled={ime.imeDisabled}
-                title="应用发送快捷键"
-              >
-                <option value="enter">Enter发送</option>
-                <option value="ctrlEnter">Ctrl+Enter发送</option>
-              </select>
-              <button
-                className="btn iv-imebar-input-only"
-                disabled={ime.imeDisabled || !ime.imeText.trim()}
-                onClick={() => void ime.sendImeText(false)}
-                title="只粘贴到应用输入框，不发送"
-              >
-                {ime.imeSending === "input" ? "输入中" : "输入"}
-              </button>
-              <button
-                className="btn btn-primary iv-imebar-send"
-                disabled={ime.imeDisabled || !ime.imeText.trim()}
-                onClick={() => void ime.sendImeText(true)}
-                title="粘贴到应用输入框并发送"
-              >
-                {ime.imeSending === "send" ? "发送中" : "发送"}
-              </button>
-            </div>
-          )}
         </div>
       )}
       {logsInst && (

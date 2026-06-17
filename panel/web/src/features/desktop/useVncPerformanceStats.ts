@@ -177,6 +177,7 @@ function readRuntimeStats(frame: HTMLIFrameElement | null): Pick<
 function installCanvasDrawMonitor(frame: HTMLIFrameElement | null): boolean {
   try {
     const win = frame?.contentWindow as (Window & {
+      CanvasRenderingContext2D?: typeof CanvasRenderingContext2D;
       __wocCanvasDrawStats?: { count: number; pending: boolean; installed: boolean };
     }) | null;
     const proto = win?.CanvasRenderingContext2D?.prototype as Record<string, unknown> | undefined;

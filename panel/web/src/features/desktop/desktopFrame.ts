@@ -1,12 +1,8 @@
-export type ImeSubmitKey = 'enter' | 'ctrlEnter';
-export type DesktopInputMode = 'forward' | 'seamless';
 export interface VncFrameStreamSettings {
   quality: number;
   compression: number;
 }
 
-const IME_SUBMIT_KEY = 'woc_ime_submit_key';
-const DESKTOP_INPUT_MODE_KEY = 'woc_input_mode';
 const VNC_STYLE_ID = 'woc-vnc-style';
 const VNC_KEYBOARD_INPUT_ID = 'noVNC_keyboardinput';
 const IME_ANCHOR_MARGIN = 8;
@@ -24,25 +20,12 @@ const VNC_CONTROL_STYLE =
   '#noVNC_control_bar_handle{opacity:1!important;background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.5)!important;}' +
   '#noVNC_keyboardinput{position:fixed!important;left:24px!important;top:24px!important;width:2px!important;height:24px!important;min-width:2px!important;min-height:24px!important;margin:0!important;padding:0!important;border:0!important;outline:0!important;opacity:.01!important;overflow:hidden!important;resize:none!important;background:transparent!important;color:transparent!important;caret-color:transparent!important;pointer-events:none!important;}';
 
-export function readImeSubmitKey(): ImeSubmitKey {
-  return window.localStorage.getItem(IME_SUBMIT_KEY) === 'ctrlEnter' ? 'ctrlEnter' : 'enter';
-}
-
-export function writeImeSubmitKey(value: ImeSubmitKey): void {
-  window.localStorage.setItem(IME_SUBMIT_KEY, value);
-}
-
-export function readDesktopInputMode(): DesktopInputMode {
-  return window.localStorage.getItem(DESKTOP_INPUT_MODE_KEY) === 'seamless' ? 'seamless' : 'forward';
-}
-
-export function writeDesktopInputMode(value: DesktopInputMode): void {
-  window.localStorage.setItem(DESKTOP_INPUT_MODE_KEY, value);
-  writeKasmImeMode(value);
-}
-
-export function writeKasmImeMode(value: DesktopInputMode): void {
-  window.localStorage.setItem('enable_ime', value === 'seamless' ? 'true' : 'false');
+export function enableKasmImeMode(): void {
+  try {
+    window.localStorage.setItem('enable_ime', 'true');
+  } catch {
+    // 浏览器禁用 localStorage 时不阻断桌面加载。
+  }
 }
 
 export function focusVncFrame(frame: HTMLIFrameElement | null): void {
@@ -350,20 +333,4 @@ function setImeAnchorStyle(input: HTMLElement, x: number, y: number): void {
   input.style.setProperty('color', 'transparent', 'important');
   input.style.setProperty('caret-color', 'transparent', 'important');
   input.style.setProperty('pointer-events', 'none', 'important');
-}
-
-export function pushClipboardToRemote(frame: HTMLIFrameElement | null, text: string): boolean {
-  const doc = frame?.contentDocument;
-  const win = frame?.contentWindow;
-  const textarea = doc?.getElementById('noVNC_clipboard_text') as HTMLTextAreaElement | null;
-  if (!doc || !win || !textarea) return false;
-  textarea.value = text;
-  const ChangeEvent = (win as Window & typeof globalThis).Event;
-  textarea.dispatchEvent(new ChangeEvent('change', { bubbles: true }));
-  return true;
-}
-
-export function pullClipboardFromRemote(frame: HTMLIFrameElement | null): string | null {
-  const textarea = frame?.contentDocument?.getElementById('noVNC_clipboard_text') as HTMLTextAreaElement | null;
-  return textarea ? textarea.value : null;
 }

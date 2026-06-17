@@ -272,13 +272,10 @@ export class InstanceManager {
     };
   }
 
-  async typeText(actor: InstanceActor, id: unknown, text: unknown, submit: unknown, submitKey: unknown) {
+  async typeText(actor: InstanceActor, id: unknown, text: unknown) {
     const value = String(text ?? '');
     if (!value || value.length > 500) throw httpError(400, '文字为空或过长');
-    await typeInInstance(this.requireInstanceForActor(id, actor), value, {
-      submit: submit === true,
-      submitKey: submitKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter',
-    });
+    await typeInInstance(this.requireInstanceForActor(id, actor), value);
     return { ok: true };
   }
 

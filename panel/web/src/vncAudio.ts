@@ -3,7 +3,7 @@
 // 背景：linuxserver KasmVNC 的音频不在我们内嵌的原生 noVNC 客户端里，而在它外层的 kclient
 // （容器内 nginx :3000 / → kclient :6900）通过 socket.io（路径 audio/socket.io）提供：
 //   - 扬声器：服务端把 PulseAudio sink 的 PCM 通过 'audio' 事件推下来，前端用 Web Audio 播放。
-// 我们没有内嵌 kclient（会破坏对原生客户端的 IME / 剪贴板 / 控制条定制），故在面板父页面直接
+// 我们没有内嵌 kclient（会破坏对原生客户端的 IME / 控制条定制），故在面板父页面直接
 // 复刻它的音频客户端，连到经面板反代的 /desktop/<id>/audio/socket.io。这样还能精确控制：
 //   - 「强制开启」：实例就绪即自动连接、首个用户手势后开始播放（浏览器自动播放策略所限）；
 //   - 「焦点不在该实例时断开」：标签页隐藏 / 失焦 / 离开页面时关闭，避免多实例多端互相串音。

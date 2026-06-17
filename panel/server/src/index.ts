@@ -249,7 +249,7 @@ app.post('/api/instances/:id/type', async (req, reply) => {
   if (!user) return;
   const body = routeBody(req);
   return handle(reply, async () => {
-    return instances.typeText(user, routeParams(req).id, body.text, body.submit, body.submitKey);
+    return instances.typeText(user, routeParams(req).id, body.text);
   }, 500, '输入失败');
 });
 

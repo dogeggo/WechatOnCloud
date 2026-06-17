@@ -760,22 +760,13 @@ export async function instanceLogs(
   return out || buf.toString("utf8"); // 兜底：TTY 模式非多路复用
 }
 
-export type TypeSubmitKey = "enter" | "ctrlEnter";
-
 // 通过 xdotool 在实例容器内输入文字（绕过 VNC keysym 限制，解决中文 IME 吞字问题）。
-// 用 base64 传递文本避免 shell 转义问题，xclip 后台短暂持有剪贴板，避免 exec 因 xclip 常驻而卡住。
+// 用 base64 传递文本避免 shell 转义问题，xclip 后台短暂持有 X selection，避免 exec 因 xclip 常驻而卡住。
 export async function typeInInstance(
   inst: Instance,
   text: string,
-  opts: { submit?: boolean; submitKey?: TypeSubmitKey } = {},
 ): Promise<void> {
   const b64 = Buffer.from(text, "utf8").toString("base64");
-  const submitKey = opts.submitKey === "ctrlEnter" ? "ctrlEnter" : "enter";
-  const submitCmd = opts.submit
-    ? submitKey === "ctrlEnter"
-      ? "xdotool key --clearmodifiers ctrl+Return"
-      : "xdotool key --clearmodifiers Return"
-    : ":";
   const cmd = [
     "set -e",
     'display="${DISPLAY:-}"',
@@ -792,9 +783,6 @@ export async function typeInInstance(
     'clip_pid="$!"',
     "sleep 0.08",
     "xdotool key --clearmodifiers ctrl+v",
-    "sleep 0.12",
-    submitCmd,
-    "sleep 0.08",
     'for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$clip_pid" 2>/dev/null || break; sleep 0.1; done',
   ].join("\n");
   await execCapture(inst, ["bash", "-c", cmd]);

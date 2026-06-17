@@ -173,9 +173,6 @@ export function desktopUrl(id: string, clientId: string, stream: VncStreamSettin
     resize: 'remote',
     reconnect: 'true',
     reconnect_delay: '2000',
-    clipboard_up: 'true',
-    clipboard_down: 'true',
-    clipboard_seamless: 'true',
     quality: String(stream.quality),
     compression: String(stream.compression),
   });

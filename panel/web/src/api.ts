@@ -270,8 +270,8 @@ export const api = {
   volumeRestore: (id: string, file: File) =>
     rawUpload(`/api/admin/instances/${id}/volume/restore?gzip=${file.name.endsWith('.gz') ? '1' : '0'}`, file),
 
-  typeInInstance: (id: string, text: string, opts: { submit?: boolean; submitKey?: 'enter' | 'ctrlEnter' } = {}) =>
-    req(`/api/instances/${id}/type`, { method: 'POST', body: JSON.stringify({ text, ...opts }) }),
+  typeInInstance: (id: string, text: string) =>
+    req(`/api/instances/${id}/type`, { method: 'POST', body: JSON.stringify({ text }) }),
   keyInInstance: (id: string, key: string) =>
     req(`/api/instances/${id}/key`, { method: 'POST', body: JSON.stringify({ key }) }),
 };

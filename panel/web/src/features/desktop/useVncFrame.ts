@@ -5,12 +5,11 @@ import { isVncKeepAliveEnabled } from '../../vncKeepAlive';
 import {
   applyVncStreamSettings,
   blurVncFrame,
+  enableKasmImeMode,
   focusVncFrame,
   injectVncStyle,
   isVncFrameDisconnected,
-  readDesktopInputMode,
   syncVncFrameSize,
-  writeKasmImeMode,
 } from './desktopFrame';
 import type { VncStreamSettings } from '../../domain/vncStream';
 
@@ -78,7 +77,7 @@ export function useVncFrame({
   }, [showVnc, frameLoaded, id, vncNonce]);
 
   useEffect(() => {
-    writeKasmImeMode(readDesktopInputMode());
+    enableKasmImeMode();
   }, [id, vncNonce]);
 
   useEffect(() => {

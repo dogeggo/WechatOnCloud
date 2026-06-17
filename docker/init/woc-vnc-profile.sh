@@ -18,9 +18,6 @@ runtime_configuration:
   allow_override_standard_vnc_server_settings: true
   allow_override_list:
     - pointer.enabled
-    - data_loss_prevention.clipboard.server_to_client.enabled
-    - data_loss_prevention.clipboard.client_to_server.enabled
-    - data_loss_prevention.clipboard.server_to_client.primary_clipboard_enabled
 encoding:
   max_frame_rate: 24
   full_frame_updates: none
