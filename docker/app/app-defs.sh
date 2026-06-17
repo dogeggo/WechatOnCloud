@@ -52,6 +52,8 @@ woc_apply_software_rendering_env() {
   export QT_QUICK_BACKEND=software
   export QT_XCB_FORCE_SOFTWARE_OPENGL=1
   export QTWEBENGINE_DISABLE_SANDBOX=1
+  export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+  export GTK_MODULES="${GTK_MODULES:+$GTK_MODULES:}gail:atk-bridge"
   while IFS= read -r flag; do
     woc_append_env_word QTWEBENGINE_CHROMIUM_FLAGS "$flag"
   done < <(woc_chromium_software_flags)

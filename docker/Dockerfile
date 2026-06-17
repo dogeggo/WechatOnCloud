@@ -17,7 +17,7 @@ RUN set -eux; \
         fonts-wqy-zenhei fonts-wqy-microhei fonts-noto-cjk fonts-noto-color-emoji \
         libnss3 libgbm1 libasound2 libxss1 \
         chromium xdg-utils dbus dbus-x11 \
-        python3-dbus python3-gi gir1.2-glib-2.0 \
+        python3-dbus python3-gi gir1.2-glib-2.0 python3-pyatspi at-spi2-core \
         xdotool xclip wmctrl; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
