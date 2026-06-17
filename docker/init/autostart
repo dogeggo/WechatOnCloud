@@ -57,7 +57,7 @@ app_window_ids() {
 window_is_visible() {
     local w="$1"
     [ -n "${w}" ] || return 1
-    xdotool search --onlyvisible --name '.+' 2>/dev/null | grep -qx "${w}"
+    xdotool search --onlyvisible --name '.*' 2>/dev/null | grep -qx "${w}"
 }
 
 window_matches_app() {
@@ -155,6 +155,35 @@ maximize_window() {
     xdotool windowmove "${w}" 0 0 windowsize "${w}" "${dw}" "${dh}" 2>/dev/null || true
 }
 
+sync_visible_window_size() {
+    local w="$1" wm_w dw dh x y width height
+    [ -n "${w}" ] || return 0
+    read -r dw dh < <(xdotool getdisplaygeometry 2>/dev/null || true)
+    [ -n "${dw:-}" ] && [ -n "${dh:-}" ] || return 0
+    read -r x y width height < <(
+        xdotool getwindowgeometry --shell "${w}" 2>/dev/null \
+            | awk -F= '/^X=/{x=$2} /^Y=/{y=$2} /^WIDTH=/{w=$2} /^HEIGHT=/{h=$2} END{print x, y, w, h}'
+    )
+    case "${x:-}:${y:-}:${width:-}:${height:-}" in
+        *[!0-9:]* | *::* | :* | *: ) return 0 ;;
+    esac
+    [ "${x}" -eq 0 ] 2>/dev/null \
+        && [ "${y}" -eq 0 ] 2>/dev/null \
+        && [ "${width}" -eq "${dw}" ] 2>/dev/null \
+        && [ "${height}" -eq "${dh}" ] 2>/dev/null \
+        && return 0
+
+    if command -v wmctrl >/dev/null 2>&1; then
+        case "${w}" in
+            *[!0-9]* ) wm_w="${w}" ;;
+            * ) printf -v wm_w '0x%08x' "${w}" ;;
+        esac
+        wmctrl -i -r "${wm_w}" -b add,maximized_vert,maximized_horz 2>/dev/null || true
+    fi
+
+    xdotool windowmove "${w}" 0 0 windowsize "${w}" "${dw}" "${dh}" 2>/dev/null || true
+}
+
 restore_minimized_app_windows() {
     # 防“最小化后丢失”：本桌面（openbox）无任务栏，窗口被最小化就无处恢复。
     # 只处理当前应用窗口；若浏览器/文件选择器等非应用窗口在前台，不抢焦点。
@@ -221,7 +250,7 @@ sync_app_window_size() {
         if [ -n "${active_w}" ] && [ "${active_w}" != "${w}" ]; then
             return 0
         fi
-        maximize_window "${w}"
+        sync_visible_window_size "${w}"
         return 0
     fi
 
