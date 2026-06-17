@@ -27,6 +27,14 @@ import { useVncStreamSettings } from "../features/desktop/useVncStreamSettings";
 import { useInstances } from "../features/instances/instances-context";
 import { useUI } from "../ui";
 import { formatBytes } from "../utils/format";
+import {
+  idFromVncKeepAliveKey,
+  isVncKeepAliveEnabled,
+  isVncKeepAliveKey,
+  setVncKeepAliveEnabled,
+  VNC_KEEP_ALIVE_EVENT,
+  type VncKeepAliveChange,
+} from "../vncKeepAlive";
 
 function createDesktopClientId(): string {
   const bytes = new Uint8Array(16);
@@ -51,6 +59,9 @@ export default function InstanceView({
   const { alert: showAlert, toast } = useUI();
   const { instances, loaded, reload } = useInstances();
   const [logsInst, setLogsInst] = useState<InstanceWithStatus | null>(null);
+  const [vncKeepAlive, setVncKeepAlive] = useState(() =>
+    id ? isVncKeepAliveEnabled(id) : false,
+  );
 
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [desktopClientId, setDesktopClientId] = useState(createDesktopClientId);
@@ -100,6 +111,33 @@ export default function InstanceView({
     enableKasmImeMode();
     return desktopUrl(id, desktopClientId, streamRef.current);
   }, [id, desktopClientId, vnc.vncNonce]);
+
+  useEffect(() => {
+    setVncKeepAlive(id ? isVncKeepAliveEnabled(id) : false);
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<VncKeepAliveChange>).detail;
+      if (detail?.id === id) setVncKeepAlive(detail.enabled);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (!isVncKeepAliveKey(event.key)) return;
+      if (idFromVncKeepAliveKey(event.key!) === id) {
+        setVncKeepAlive(event.newValue === "1");
+      }
+    };
+    window.addEventListener(VNC_KEEP_ALIVE_EVENT, onChanged as EventListener);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(
+        VNC_KEEP_ALIVE_EVENT,
+        onChanged as EventListener,
+      );
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [id]);
 
   useEffect(() => {
     setProbing(true);
@@ -157,6 +195,12 @@ export default function InstanceView({
     setClientReplaced(false);
     vnc.reconnect();
   };
+  const toggleVncKeepAlive = (enabled: boolean) => {
+    if (!id) return;
+    setVncKeepAliveEnabled(id, enabled);
+    setVncKeepAlive(enabled);
+    toast(enabled ? "已开启 VNC 常驻" : "已关闭 VNC 常驻", "ok");
+  };
 
   return (
     <div className="ws-page">
@@ -185,6 +229,26 @@ export default function InstanceView({
             >
               重连
             </button>
+            <div
+              className="ws-mode ws-keep"
+              role="group"
+              aria-label="VNC 常驻"
+            >
+              <button
+                className={"ws-mode-btn" + (!vncKeepAlive ? " on" : "")}
+                title="切换到其他页面时断开 VNC 连接"
+                onClick={() => toggleVncKeepAlive(false)}
+              >
+                临时
+              </button>
+              <button
+                className={"ws-mode-btn" + (vncKeepAlive ? " on" : "")}
+                title="切换到其他页面时保留 VNC 连接"
+                onClick={() => toggleVncKeepAlive(true)}
+              >
+                常驻
+              </button>
+            </div>
             <div
               className="ws-mode ws-stream"
               role="group"

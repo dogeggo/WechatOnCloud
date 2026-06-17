@@ -11,7 +11,6 @@ import { deviceName } from '../../domain/devices';
 import { errorMessage } from '../../utils/errors';
 import { useAuth } from '../../auth';
 import { useInstances } from '../instances/instances-context';
-import { isVncKeepAliveEnabled, setVncKeepAliveEnabled } from '../../vncKeepAlive';
 import { useUI } from '../../ui';
 
 function patchActionLabel(actions: Record<string, string>, id: string, label: string | null): Record<string, string> {
@@ -29,17 +28,12 @@ export function useAdminPanel() {
   const [devices, setDevices] = useState<LoggedInDevice[]>([]);
   const [orphanVolumes, setOrphanVolumes] = useState<OrphanVolume[]>([]);
   const [orphanContainers, setOrphanContainers] = useState<OrphanContainer[]>([]);
-  const [vncKeepAlive, setVncKeepAlive] = useState<Record<string, boolean>>({});
   const [acting, setActing] = useState<Record<string, string>>({});
   const [err, setErr] = useState('');
 
   const setAct = useCallback((id: string, label: string | null) => {
     setActing((actions) => patchActionLabel(actions, id, label));
   }, []);
-
-  useEffect(() => {
-    setVncKeepAlive(Object.fromEntries(instances.map((inst) => [inst.id, isVncKeepAliveEnabled(inst.id)])));
-  }, [instances]);
 
   const refreshOrphanVolumes = useCallback(async () => {
     if (!isAdmin) {
@@ -205,19 +199,6 @@ export function useAdminPanel() {
     [load, setAct, toast],
   );
 
-  const toggleVncKeepAlive = useCallback(
-    (inst: InstanceWithStatus, enabled: boolean) => {
-      try {
-        setVncKeepAliveEnabled(inst.id, enabled);
-        setVncKeepAlive((prefs) => ({ ...prefs, [inst.id]: enabled }));
-        toast(enabled ? '已开启 VNC 常驻' : '已关闭 VNC 常驻', 'ok');
-      } catch (error) {
-        toast(errorMessage(error, '保存 VNC 常驻设置失败'), 'error');
-      }
-    },
-    [toast],
-  );
-
   return {
     isAdmin,
     instances,
@@ -226,7 +207,6 @@ export function useAdminPanel() {
     devices,
     orphanVolumes,
     orphanContainers,
-    vncKeepAlive,
     acting,
     err,
     load,
@@ -236,6 +216,5 @@ export function useAdminPanel() {
     triggerAppInstall,
     startInstance,
     runLifecycle,
-    toggleVncKeepAlive,
   };
 }

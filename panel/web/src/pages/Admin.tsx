@@ -29,7 +29,6 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
     devices,
     orphanVolumes,
     orphanContainers,
-    vncKeepAlive,
     acting,
     err,
     load,
@@ -39,7 +38,6 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
     triggerAppInstall,
     startInstance,
     runLifecycle,
-    toggleVncKeepAlive,
   } = useAdminPanel();
   const [creatingInst, setCreatingInst] = useState(false);
   const [createReuseVolume, setCreateReuseVolume] = useState('');
@@ -106,8 +104,6 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 onVncServerProfile={() => setVncServerInst(inst)}
                 onVolume={() => setVolumeInst(inst)}
                 showOwner={isAdmin}
-                vncKeepAlive={!!vncKeepAlive[inst.id]}
-                onToggleVncKeepAlive={(enabled) => toggleVncKeepAlive(inst, enabled)}
               />
             ))}
           </div>

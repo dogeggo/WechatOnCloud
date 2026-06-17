@@ -26,8 +26,6 @@ export function InstanceAdminCard({
   onVncServerProfile,
   onVolume,
   showOwner = false,
-  vncKeepAlive,
-  onToggleVncKeepAlive,
 }: {
   inst: InstanceWithStatus;
   acting?: string;
@@ -45,8 +43,6 @@ export function InstanceAdminCard({
   onVncServerProfile: () => void;
   onVolume: () => void;
   showOwner?: boolean;
-  vncKeepAlive: boolean;
-  onToggleVncKeepAlive: (enabled: boolean) => void;
 }) {
   const appStatus = inst.app;
   const profile = appProfile(inst.appType);
@@ -198,21 +194,6 @@ export function InstanceAdminCard({
                     title="数据卷：备份/恢复、上传应用数据、文件管理"
                   >
                     数据卷
-                  </button>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={vncKeepAlive}
-                    className={
-                      "btn-text vnc-keep-toggle" + (vncKeepAlive ? " on" : "")
-                    }
-                    onClick={() => onToggleVncKeepAlive(!vncKeepAlive)}
-                    title="切换到主页或管理页时保留该浏览器标签页里的 VNC 连接"
-                  >
-                    <span>VNC常驻</span>
-                    <span className="vnc-switch" aria-hidden="true">
-                      <span className="vnc-switch-knob" />
-                    </span>
                   </button>
                 </div>
               </div>
