@@ -94,6 +94,11 @@ COPY web/woc-www-patch.sh web/woc-ime.pl web/woc-canvas.pl /woc/
 RUN chmod +x /woc/woc-www-patch.sh && /woc/woc-www-patch.sh
 
 # 容器内通知桥：接管 org.freedesktop.Notifications，把 QQ/微信发出的桌面通知转交面板 SSE。
+# baseimage 自带 dunst 的 D-Bus 激活；通知桥重启空窗期如果触发通知，dunst 会抢占通知名。
+# 这里直接卸载 dunst，并删除残留激活文件，确保只有 woc-notifyd 能提供桌面通知服务。
+RUN apt-get purge -y dunst 2>/dev/null || true; \
+    rm -f /usr/share/dbus-1/services/org.knopwob.dunst.service; \
+    rm -rf /var/lib/apt/lists/*
 COPY notify/woc-notifyd.py /usr/local/bin/woc-notifyd
 RUN chmod 755 /usr/local/bin/woc-notifyd
 
