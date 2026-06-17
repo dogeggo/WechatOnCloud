@@ -1,16 +1,12 @@
-// VNC 音频/麦克风桥接（扬声器 + 麦克风）。
+// VNC 音频桥接（扬声器播放）。
 //
 // 背景：linuxserver KasmVNC 的音频不在我们内嵌的原生 noVNC 客户端里，而在它外层的 kclient
 // （容器内 nginx :3000 / → kclient :6900）通过 socket.io（路径 audio/socket.io）提供：
-//   - 扬声器：服务端把 PulseAudio sink 的 PCM 通过 'audio' 事件推下来，前端用 Web Audio 播放；
-//   - 麦克风：前端采集 Int16 通过 'micdata' 事件上传，服务端灌进 PulseAudio。
+//   - 扬声器：服务端把 PulseAudio sink 的 PCM 通过 'audio' 事件推下来，前端用 Web Audio 播放。
 // 我们没有内嵌 kclient（会破坏对原生客户端的 IME / 剪贴板 / 控制条定制），故在面板父页面直接
 // 复刻它的音频客户端，连到经面板反代的 /desktop/<id>/audio/socket.io。这样还能精确控制：
 //   - 「强制开启」：实例就绪即自动连接、首个用户手势后开始播放（浏览器自动播放策略所限）；
 //   - 「焦点不在该实例时断开」：标签页隐藏 / 失焦 / 离开页面时关闭，避免多实例多端互相串音。
-//
-// 麦克风需要「安全上下文」(HTTPS 或 localhost) 才有 getUserMedia；局域网 http 下浏览器禁用，
-// 此时自动跳过麦克风、只保留扬声器。
 
 // kclient 服务端用的 socket.io 版本未知，为避免协议不匹配，动态加载它自带的 socket.io.js
 // （经反代取 /desktop/<id>/audio/socket.io/socket.io.js），用全局 io，而非打包我们自己的版本。
@@ -22,7 +18,6 @@ interface AudioSocket {
   on(event: 'connect', handler: () => void): void;
   on(event: 'disconnect' | 'connect_error', handler: (reason?: unknown) => void): void;
   emit(event: 'open' | 'close', payload: string): void;
-  emit(event: 'micdata', payload: ArrayBuffer): void;
   connect?: () => void;
   open?: () => void;
   disconnect(): void;
@@ -60,22 +55,6 @@ function audioContextCtor(): new (options?: AudioContextOptions) => AudioContext
   const Ctx = win.AudioContext || win.webkitAudioContext;
   if (!Ctx) throw new Error('当前浏览器不支持 AudioContext');
   return Ctx;
-}
-
-function isExpectedMicUnavailableError(error: unknown): boolean {
-  const name =
-    error instanceof DOMException
-      ? error.name
-      : error && typeof error === 'object' && 'name' in error
-        ? String((error as { name: unknown }).name)
-        : '';
-  return (
-    name === 'NotFoundError' ||
-    name === 'DevicesNotFoundError' ||
-    name === 'NotAllowedError' ||
-    name === 'PermissionDeniedError' ||
-    name === 'SecurityError'
-  );
 }
 
 function loadIo(id: string): Promise<SocketIoFactory> {
@@ -199,21 +178,11 @@ export class VncAudio {
   private player: PcmPlayer | null = null;
   private active = false; // 当前实例是否处于"焦点中"（应出声）
   private opened = false; // 是否已对服务端 emit('open')
-  private micStream: MediaStream | null = null;
-  private micCtx: AudioContext | null = null;
-  private micNode: ScriptProcessorNode | null = null;
-  private micSource: MediaStreamAudioSourceNode | null = null;
-  private micStarting = false;
-  private micUnavailable = false;
-  private micDeviceChangeBound = false;
   private gestureBound = false;
   private resumeOnGesture: (() => void) | null = null;
   private destroyed = false;
   private connecting = false;
   private reconnectWatchdog: ReconnectWatchdog;
-  private readonly resetMicAvailability = () => {
-    this.micUnavailable = false;
-  };
 
   constructor(id: string) {
     this.id = id;
@@ -233,7 +202,6 @@ export class VncAudio {
       if (this.socket.connected) {
         if (this.active) {
           this.open();
-          void this.startMic();
         }
       } else {
         this.requestSocketConnect();
@@ -261,7 +229,6 @@ export class VncAudio {
         this.opened = false;
         if (this.active) {
           this.open();
-          void this.startMic();
         }
       });
       this.socket.on('disconnect', () => {
@@ -281,18 +248,16 @@ export class VncAudio {
     }
   }
 
-  // 焦点变化时调用：true=本实例获得焦点（出声+收音），false=失焦（断开设备）。
+  // 焦点变化时调用：true=本实例获得焦点（出声），false=失焦（断开播放）。
   setActive(on: boolean) {
     if (this.destroyed) return;
     this.active = on;
     if (on) {
       void this.connect();
       this.open();
-      void this.startMic();
     } else {
       this.reconnectWatchdog.cancel();
       this.close();
-      this.stopMic();
     }
   }
 
@@ -347,89 +312,6 @@ export class VncAudio {
     this.gestureBound = false;
   }
 
-  private async startMic() {
-    // 麦克风需安全上下文（HTTPS / localhost）；http 局域网下静默跳过，只保留扬声器。
-    if (this.micCtx || this.micStarting || this.micUnavailable || !this.socket || !this.socket.connected) return;
-    const md = navigator.mediaDevices;
-    if (!window.isSecureContext || !md || !md.getUserMedia) return;
-    this.watchMicDevices(md);
-    this.micStarting = true;
-    try {
-      if (!(await this.hasAudioInputDevice(md))) {
-        this.micUnavailable = true;
-        return;
-      }
-      const stream = await md.getUserMedia({ audio: true });
-      if (this.destroyed || !this.active) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      this.micStream = stream;
-      const Ctx = audioContextCtor();
-      this.micCtx = new Ctx();
-      this.micSource = this.micCtx!.createMediaStreamSource(stream);
-      this.micNode = this.micCtx!.createScriptProcessor(512, 1, 1);
-      this.micSource.connect(this.micNode);
-      this.micNode.connect(this.micCtx!.destination);
-      this.micNode.onaudioprocess = (e) => {
-        if (!this.active || !this.socket?.connected) return;
-        const input = e.inputBuffer.getChannelData(0);
-        // 简单能量门限：近乎静音不上传，省带宽（替代 kclient 的 JSON.size 启发式）
-        let peak = 0;
-        for (let i = 0; i < input.length; i++) {
-          const a = input[i] < 0 ? -input[i] : input[i];
-          if (a > peak) peak = a;
-        }
-        if (peak < 0.01) return;
-        const i16 = Int16Array.from(input, (x) => Math.max(-32768, Math.min(32767, x * 32767)));
-        this.socket.emit('micdata', i16.buffer);
-      };
-    } catch (error) {
-      if (isExpectedMicUnavailableError(error)) {
-        this.micUnavailable = true;
-        return;
-      }
-      console.warn('启动麦克风桥接失败', error);
-      this.stopMic();
-    } finally {
-      this.micStarting = false;
-    }
-  }
-
-  private async hasAudioInputDevice(md: MediaDevices): Promise<boolean> {
-    if (!md.enumerateDevices) return true;
-    const devices = await md.enumerateDevices();
-    return devices.some((device) => device.kind === 'audioinput');
-  }
-
-  private watchMicDevices(md: MediaDevices) {
-    if (this.micDeviceChangeBound) return;
-    md.addEventListener('devicechange', this.resetMicAvailability);
-    this.micDeviceChangeBound = true;
-  }
-
-  private unwatchMicDevices() {
-    if (!this.micDeviceChangeBound) return;
-    navigator.mediaDevices?.removeEventListener('devicechange', this.resetMicAvailability);
-    this.micDeviceChangeBound = false;
-  }
-
-  private stopMic() {
-    try {
-      if (this.micNode) this.micNode.onaudioprocess = null;
-      this.micNode?.disconnect();
-      this.micSource?.disconnect();
-      this.micStream?.getTracks().forEach((t) => t.stop());
-      this.micCtx?.close();
-    } catch (error) {
-      console.warn('停止麦克风桥接失败', error);
-    }
-    this.micNode = null;
-    this.micSource = null;
-    this.micStream = null;
-    this.micCtx = null;
-  }
-
   private requestSocketConnect() {
     try {
       const connect = this.socket?.connect ?? this.socket?.open;
@@ -447,8 +329,6 @@ export class VncAudio {
     this.destroyed = true;
     this.reconnectWatchdog.destroy();
     this.close();
-    this.stopMic();
-    this.unwatchMicDevices();
     try {
       this.socket?.disconnect();
     } catch (error) {

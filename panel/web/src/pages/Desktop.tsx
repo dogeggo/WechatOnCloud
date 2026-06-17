@@ -352,7 +352,7 @@ export default function InstanceView({
               className="iv-frame"
               src={desktopFrameSrc}
               title={`${profile.label}桌面`}
-              allow="clipboard-read; clipboard-write; microphone; camera; autoplay"
+              allow="clipboard-read; clipboard-write; autoplay"
               onLoad={vnc.handleFrameLoad}
               onFocus={() => vnc.reconnectIfDisconnected()}
               onMouseDown={() => vnc.reconnectIfDisconnected()}
@@ -369,12 +369,6 @@ export default function InstanceView({
                     ? "声音自动开启，点一下画面即可出声"
                     : "省流模式已关闭音频"}
                 </div>
-                {!window.isSecureContext && (
-                  <div className="iv-loading-warn">
-                    当前非 HTTPS
-                    访问，浏览器将禁用麦克风与摄像头（音频播放不受影响）
-                  </div>
-                )}
               </div>
             )}
 

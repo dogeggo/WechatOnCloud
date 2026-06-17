@@ -1,5 +1,4 @@
 import { hostname } from "node:os";
-import { existsSync, readdirSync } from "node:fs";
 import { PassThrough, Transform } from "node:stream";
 import zlib from "node:zlib";
 import Docker from "dockerode";
@@ -14,7 +13,6 @@ import {
   assertInstanceId,
   assertProjectContainerName,
   assertProjectVolumeName,
-  assertVideoDevice,
   isProjectContainerName,
   isProjectVolumeName,
   normalizeDockerNetworkName,
@@ -190,32 +188,6 @@ export async function ensureNetwork(): Promise<string | null> {
   return networkName;
 }
 
-// 摄像头直通：把宿主的 v4l2 视频设备映射进实例容器
-// （浏览器摄像头 → KasmVNC → 容器内 /dev/videoN(v4l2loopback) → 应用实例）。
-// 来源优先级：
-//   1) WOC_VIDEO_DEVICES 显式指定（逗号分隔，如 /dev/video0,/dev/video1）——Ubuntu/无法自动探测时用；
-//   2) 自动探测：把宿主 /dev 以只读挂到面板的 /host-dev（compose 可选），扫描其中的 videoN。
-// 一个都找不到则返回空：音频/麦克风不受影响，仅摄像头不可用（优雅降级）。
-function videoDevices(): string[] {
-  const explicit = (process.env.WOC_VIDEO_DEVICES || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (explicit.length) return explicit.map(assertVideoDevice);
-  for (const dir of ["/host-dev", "/dev"]) {
-    try {
-      if (!existsSync(dir)) continue;
-      const vids = readdirSync(dir)
-        .filter((n) => /^video\d+$/.test(n))
-        .map((n) => assertVideoDevice(`/dev/${n}`)); // 宿主侧设备路径
-      if (vids.length) return vids;
-    } catch {
-      /* 无权限/不可读，忽略 */
-    }
-  }
-  return [];
-}
-
 function envList(inst: Instance): string[] {
   const vncProfileYaml = Buffer.from(kasmVncServerProfileYaml(inst.vncServerProfile), "utf8").toString("base64");
   const env = [
@@ -267,8 +239,6 @@ export async function runInstance(inst: Instance): Promise<void> {
   } catch {
     /* 不存在，正常 */
   }
-  // 摄像头设备（探测不到则为空数组 → 仅摄像头不可用，音频/麦克风照常）
-  const vids = videoDevices();
   const hostConfig: Docker.HostConfig = {
     Binds: [`${assertProjectVolumeName(inst.volumeName)}:/config`],
     NetworkMode: net || undefined,
@@ -286,18 +256,6 @@ export async function runInstance(inst: Instance): Promise<void> {
   if (INSTANCE_MEM > 0) {
     hostConfig.Memory = INSTANCE_MEM;
     hostConfig.MemorySwap = INSTANCE_MEM; // 禁止 swap 膨胀：限制即为硬上限
-  }
-  if (vids.length) {
-    hostConfig.Devices = vids.map((d) => {
-      const path = assertVideoDevice(d);
-      return {
-        PathOnHost: path,
-        PathInContainer: path,
-        CgroupPermissions: "rwm",
-      };
-    });
-    hostConfig.GroupAdd = ["video"]; // 让容器内 abc 用户能访问 /dev/videoN
-    console.log(`[docker] 实例 ${inst.id} 挂载摄像头设备: ${vids.join(", ")}`);
   }
   // 伪装成真实有线网卡 MAC（厂商 OUI），替代容器默认的本地管理位 MAC。
   const mac = realisticMac(inst.id);

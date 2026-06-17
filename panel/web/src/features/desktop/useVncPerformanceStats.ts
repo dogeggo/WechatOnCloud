@@ -149,7 +149,7 @@ export function useVncPerformanceStats({
         }
       }
 
-      if (!stopped) timer = window.setTimeout(measureLatency, 3000);
+      if (!stopped) timer = window.setTimeout(measureLatency, 5000);
     };
 
     void measureLatency();

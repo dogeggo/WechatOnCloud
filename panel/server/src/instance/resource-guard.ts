@@ -2,7 +2,6 @@ export const INSTANCE_ID_RE = /^[0-9a-f]{10}$/;
 export const CONTAINER_NAME_RE = /^woc-app-[0-9a-f]{10}$/;
 export const VOLUME_NAME_RE = /^woc-data-[0-9a-f]{10}$/;
 export const NETWORK_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
-export const VIDEO_DEVICE_RE = /^\/dev\/video\d+$/;
 
 export function isProjectContainerName(name: string): boolean {
   return CONTAINER_NAME_RE.test(name);
@@ -50,7 +49,3 @@ export function normalizeDockerNetworkName(raw: string | null | undefined): stri
   return name;
 }
 
-export function assertVideoDevice(path: string): string {
-  if (!VIDEO_DEVICE_RE.test(path)) throw new Error(`视频设备路径不合法：${path || '(empty)'}`);
-  return path;
-}

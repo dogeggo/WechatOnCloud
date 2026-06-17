@@ -42,7 +42,7 @@ export function registerSecurityHeaders(app: FastifyInstance): void {
     reply.header('referrer-policy', 'no-referrer');
     reply.header('x-frame-options', 'SAMEORIGIN');
     reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
-    reply.header('permissions-policy', 'camera=(self), microphone=(self), fullscreen=(self)');
+    reply.header('permissions-policy', 'camera=(), microphone=(), fullscreen=(self)');
     reply.header(
       'content-security-policy',
       [
