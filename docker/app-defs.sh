@@ -57,6 +57,7 @@ woc_apply_software_rendering_env() {
 }
 
 woc_app_def() {
+  APP_REOPEN=
   case "${1:-wechat}" in
     wechat)
       APP_BIN=/config/wechat/opt/wechat/wechat
@@ -75,6 +76,7 @@ woc_app_def() {
     qq)
       APP_BIN=/config/qq/opt/QQ/qq
       APP_LAUNCH="$APP_BIN $(woc_chromium_software_flags_inline)"
+      APP_REOPEN="$APP_BIN"
       APP_NAME=QQ
       APP_WINDOW_CLASS_RE='QQ|qq'
       ;;

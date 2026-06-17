@@ -10,6 +10,7 @@ import {
   isAppInstalled,
   isRuntimeOffline,
 } from "../domain/instances";
+import { vncServerProfileFrameRate } from "../domain/vncServerProfile";
 import { VNC_STREAM_PROFILES } from "../domain/vncStream";
 import { useClipboardBridge } from "../features/desktop/useClipboardBridge";
 import { DESKTOP_CLIENT_REPLACED_EVENT } from "../features/desktop/desktopClientEvents";
@@ -572,15 +573,15 @@ function VncPerformanceBadges({
   const latency = stats.latencyMs === null ? "--" : `${stats.latencyMs}ms`;
   const jitter =
     stats.latencyJitterMs === null ? "--" : `${stats.latencyJitterMs}ms`;
-  const liveFps =
-    stats.fps === null ? "--" : stats.fps <= 0 ? "静止" : `${stats.fps}fps`;
+  const measuredFps = capMeasuredFps(stats.fps, targetFps);
+  const liveFps = formatFps(measuredFps);
   const fps = targetFps === null ? liveFps : `${targetFps}fps`;
   const frameInterval =
     targetFps !== null
       ? `${Math.round(1000 / targetFps)}ms`
-      : stats.frameIntervalMs === null
+      : measuredFps === null || measuredFps <= 0
         ? "--"
-        : `${stats.frameIntervalMs}ms`;
+        : `${Math.round(1000 / measuredFps)}ms`;
   const resolution = stats.resolution
     ? `${stats.resolution.width}x${stats.resolution.height}`
     : "--";
@@ -601,7 +602,7 @@ function VncPerformanceBadges({
     { key: "latency", label: "延迟", value: latency },
     { key: "jitter", label: "抖动", value: jitter },
     { key: "fps", label: "帧率", value: fps },
-    { key: "liveFps", label: "刷新", value: liveFps },
+    { key: "liveFps", label: "绘制", value: liveFps },
     { key: "frame", label: "帧时", value: frameInterval },
     { key: "resolution", label: "分辨率", value: resolution },
     { key: "viewport", label: "视窗", value: viewport },
@@ -700,11 +701,16 @@ function VncPerformanceBadges({
   );
 }
 
-function vncServerProfileFrameRate(
-  profile: InstanceWithStatus["vncServerProfile"] | undefined,
+function capMeasuredFps(
+  fps: number | null,
+  targetFps: number | null,
 ): number | null {
-  if (profile === "speed") return 15;
-  if (profile === "balanced") return 24;
-  if (profile === "quality") return 30;
-  return null;
+  if (fps === null) return null;
+  if (fps <= 0) return 0;
+  return targetFps === null ? fps : Math.min(fps, targetFps);
+}
+
+function formatFps(fps: number | null): string {
+  if (fps === null) return "--";
+  return fps <= 0 ? "静止" : `${fps}fps`;
 }

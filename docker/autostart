@@ -45,9 +45,13 @@ restore_minimized_windows() {
 }
 
 app_window_ids() {
-    local class_ids pattern pid
+    local visible_arg=() class_ids pattern pid
+    if [ "${1:-}" = "visible" ]; then
+        visible_arg=(--onlyvisible)
+    fi
+
     if [ -n "${APP_WINDOW_CLASS_RE:-}" ]; then
-        class_ids="$(xdotool search --onlyvisible --class "${APP_WINDOW_CLASS_RE}" 2>/dev/null || true)"
+        class_ids="$(xdotool search "${visible_arg[@]}" --class "${APP_WINDOW_CLASS_RE}" 2>/dev/null || true)"
         if [ -n "${class_ids}" ]; then
             printf '%s\n' "${class_ids}" | awk 'NF && !seen[$0]++'
             return 0
@@ -57,8 +61,15 @@ app_window_ids() {
     pattern="${APP_PROCESS_PATTERN:-${APP_BIN:-}}"
     [ -n "${pattern}" ] || return 0
     for pid in $(pgrep -f "${pattern}" 2>/dev/null || true); do
-        xdotool search --onlyvisible --pid "${pid}" 2>/dev/null || true
+        xdotool search "${visible_arg[@]}" --pid "${pid}" 2>/dev/null || true
     done | awk 'NF && !seen[$0]++'
+}
+
+app_process_running() {
+    local pattern
+    pattern="${APP_PROCESS_PATTERN:-${APP_BIN:-}}"
+    [ -n "${pattern}" ] || return 1
+    pgrep -f "${pattern}" >/dev/null 2>&1
 }
 
 largest_window_id() {
@@ -86,6 +97,7 @@ largest_window_id() {
 maximize_window() {
     local w="$1" wm_w dw dh
     [ -n "${w}" ] || return 0
+    xdotool windowmap "${w}" windowraise "${w}" windowactivate "${w}" 2>/dev/null || true
     if command -v wmctrl >/dev/null 2>&1; then
         case "${w}" in
             *[!0-9]* ) wm_w="${w}" ;;
@@ -93,6 +105,7 @@ maximize_window() {
         esac
         wmctrl -i -r "${wm_w}" -b remove,hidden,shaded 2>/dev/null || true
         wmctrl -i -r "${wm_w}" -b add,maximized_vert,maximized_horz 2>/dev/null || true
+        xdotool windowraise "${w}" windowactivate "${w}" 2>/dev/null || true
         return 0
     fi
 
@@ -101,11 +114,33 @@ maximize_window() {
     xdotool windowmove "${w}" 0 0 windowsize "${w}" "${dw}" "${dh}" 2>/dev/null || true
 }
 
+last_app_reopen_at=0
+reopen_app_window() {
+    local now
+    [ -n "${APP_REOPEN:-}" ] || return 0
+    app_process_running || return 0
+    now="$(date +%s)"
+    [ $((now - last_app_reopen_at)) -ge 6 ] || return 0
+    last_app_reopen_at="${now}"
+    echo "[autostart] ${APP_NAME} 进程仍在但窗口不可见，尝试重新打开主界面"
+    "${APP_REOPEN}" >/dev/null 2>&1 &
+}
+
 sync_app_window_size() {
     local w
+    w="$(app_window_ids visible | largest_window_id)"
+    if [ -n "${w}" ]; then
+        maximize_window "${w}"
+        return 0
+    fi
+
     w="$(app_window_ids | largest_window_id)"
-    [ -n "${w}" ] || return 0
-    maximize_window "${w}"
+    if [ -n "${w}" ]; then
+        maximize_window "${w}"
+        return 0
+    fi
+
+    reopen_app_window
 }
 
 # 窗口看守：每 2s 恢复最小化窗口，并把当前应用主窗口重新最大化。
