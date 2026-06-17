@@ -84,6 +84,15 @@ active_non_app_window() {
     return 0
 }
 
+active_app_window_id() {
+    local w
+    w="$(xdotool getactivewindow 2>/dev/null || true)"
+    [ -n "${w}" ] || return 1
+    window_is_visible "${w}" || return 1
+    window_matches_app "${w}" || return 1
+    printf '%s\n' "${w}"
+}
+
 app_process_running() {
     local pattern
     pattern="${APP_PROCESS_PATTERN:-${APP_BIN:-}}"
@@ -201,11 +210,17 @@ restart_hidden_app_window() {
 }
 
 sync_app_window_size() {
-    local w
+    local w active_w
     active_non_app_window && return 0
 
     w="$(app_window_ids visible | largest_window_id)"
     if [ -n "${w}" ]; then
+        # 微信/QQ 的图片预览等窗口通常仍属于同一个应用进程/窗口类。
+        # 当前台是这类同应用子窗口时，不要把最大的主窗口重新激活，否则会来回抢焦点。
+        active_w="$(active_app_window_id || true)"
+        if [ -n "${active_w}" ] && [ "${active_w}" != "${w}" ]; then
+            return 0
+        fi
         maximize_window "${w}"
         return 0
     fi
@@ -214,6 +229,10 @@ sync_app_window_size() {
 
     w="$(app_window_ids | largest_window_id)"
     if [ -n "${w}" ]; then
+        active_w="$(active_app_window_id || true)"
+        if [ -n "${active_w}" ] && [ "${active_w}" != "${w}" ]; then
+            return 0
+        fi
         maximize_window "${w}"
         return 0
     fi
