@@ -91,6 +91,20 @@ app_process_running() {
     pgrep -f "${pattern}" >/dev/null 2>&1
 }
 
+app_process_max_age_seconds() {
+    local pattern pid age max_age=0
+    pattern="${APP_PROCESS_PATTERN:-${APP_BIN:-}}"
+    [ -n "${pattern}" ] || return 1
+    for pid in $(pgrep -f "${pattern}" 2>/dev/null || true); do
+        age="$(ps -o etimes= -p "${pid}" 2>/dev/null | awk 'NF{print $1; exit}')"
+        case "${age:-}" in
+            ''|*[!0-9]* ) continue ;;
+        esac
+        [ "${age}" -gt "${max_age}" ] && max_age="${age}"
+    done
+    printf '%s\n' "${max_age}"
+}
+
 largest_window_id() {
     local w width height area best= best_area=0
     while IFS= read -r w; do
@@ -125,7 +139,6 @@ maximize_window() {
         wmctrl -i -r "${wm_w}" -b remove,hidden,shaded 2>/dev/null || true
         wmctrl -i -r "${wm_w}" -b add,maximized_vert,maximized_horz 2>/dev/null || true
         xdotool windowraise "${w}" windowactivate "${w}" 2>/dev/null || true
-        return 0
     fi
 
     read -r dw dh < <(xdotool getdisplaygeometry 2>/dev/null || true)
@@ -136,17 +149,19 @@ maximize_window() {
 restore_minimized_app_windows() {
     # 防“最小化后丢失”：本桌面（openbox）无任务栏，窗口被最小化就无处恢复。
     # 只处理当前应用窗口；若浏览器/文件选择器等非应用窗口在前台，不抢焦点。
-    local all vis w
+    local w
     active_non_app_window && return 0
-    [ -n "${APP_REOPEN:-}" ] && return 0
-    all="$(app_window_ids)"
-    vis="$(app_window_ids visible)"
-    for w in ${all}; do
-        printf '%s\n' "${vis}" | grep -qx "${w}" || maximize_window "${w}"
-    done
+    w="$(app_window_ids visible | largest_window_id)"
+    [ -n "${w}" ] && return 0
+
+    restart_hidden_app_window && return 0
+
+    w="$(app_window_ids | largest_window_id)"
+    [ -n "${w}" ] && maximize_window "${w}"
 }
 
 last_app_reopen_at=0
+last_app_hidden_restart_at=0
 reopen_app_window() {
     local now
     active_non_app_window && return 0
@@ -159,6 +174,32 @@ reopen_app_window() {
     "${APP_REOPEN}" >/dev/null 2>&1 &
 }
 
+restart_hidden_app_window() {
+    local now age grace pattern pids pid
+    [ "${APP_RESTART_ON_HIDE:-}" = "1" ] || return 1
+    app_process_running || return 1
+
+    grace="${APP_RESTART_ON_HIDE_GRACE:-15}"
+    age="$(app_process_max_age_seconds)"
+    [ "${age:-0}" -ge "${grace}" ] 2>/dev/null || return 0
+
+    now="$(date +%s)"
+    [ $((now - last_app_hidden_restart_at)) -ge 10 ] || return 0
+    last_app_hidden_restart_at="${now}"
+
+    pattern="${APP_PROCESS_PATTERN:-${APP_BIN:-}}"
+    pids="$(pgrep -f "${pattern}" 2>/dev/null || true)"
+    [ -n "${pids}" ] || return 0
+
+    echo "[autostart] ${APP_NAME} 窗口不可见，重启应用以恢复界面"
+    kill -TERM ${pids} 2>/dev/null || true
+    sleep 2
+    for pid in ${pids}; do
+        kill -0 "${pid}" 2>/dev/null && kill -KILL "${pid}" 2>/dev/null || true
+    done
+    return 0
+}
+
 sync_app_window_size() {
     local w
     active_non_app_window && return 0
@@ -168,6 +209,8 @@ sync_app_window_size() {
         maximize_window "${w}"
         return 0
     fi
+
+    restart_hidden_app_window && return 0
 
     w="$(app_window_ids | largest_window_id)"
     if [ -n "${w}" ]; then
