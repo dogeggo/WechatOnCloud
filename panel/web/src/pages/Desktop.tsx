@@ -384,7 +384,7 @@ export default function InstanceView({
               className="iv-frame"
               src={desktopFrameSrc}
               title={`${profile.label}桌面`}
-              allow="autoplay"
+              allow="clipboard-read; clipboard-write; autoplay"
               onLoad={vnc.handleFrameLoad}
               onFocus={() => vnc.reconnectIfDisconnected()}
               onMouseDown={() => vnc.reconnectIfDisconnected()}
