@@ -12,11 +12,6 @@ const STREAM_RECONNECT_MAX_DELAY = 15000;
 
 export type BrowserNotificationStatus = 'unsupported' | 'blocked' | 'off' | 'on';
 
-type BadgingNavigator = Navigator & {
-  setAppBadge?: (contents?: number) => Promise<void>;
-  clearAppBadge?: () => Promise<void>;
-};
-
 function notificationPermission(): NotificationPermission | 'unsupported' {
   return 'Notification' in window ? Notification.permission : 'unsupported';
 }
@@ -61,22 +56,7 @@ function toastText(event: InstanceNotificationEvent): string {
 }
 
 function updateDocumentTitle(unreadCount: number, baseTitle: string): void {
-  document.title = unreadCount > 0 ? `(${unreadCount}) ${baseTitle}` : baseTitle;
-}
-
-async function updateAppBadge(unreadCount: number): Promise<void> {
-  const badge = navigator as BadgingNavigator;
-  try {
-    if (unreadCount > 0 && badge.setAppBadge) {
-      await badge.setAppBadge(unreadCount);
-      return;
-    }
-    if (unreadCount === 0 && badge.clearAppBadge) {
-      await badge.clearAppBadge();
-    }
-  } catch {
-    /* badge support varies by browser, OS and install mode */
-  }
+  document.title = unreadCount > 0 ? `(${unreadCount}) 未读` : baseTitle;
 }
 
 export function useBrowserNotifications() {
@@ -204,7 +184,6 @@ export function useBrowserNotifications() {
   useEffect(() => {
     const unreadCount = unreadInstanceIds.length;
     updateDocumentTitle(unreadCount, titleRef.current);
-    void updateAppBadge(unreadCount);
   }, [unreadInstanceIds]);
 
   useEffect(() => {
