@@ -46,7 +46,19 @@ export default function AppShell() {
   useEffect(() => setDrawer(false), [loc.pathname]); // 路由变化关抽屉
 
   useEffect(() => {
-    if (activeInstanceId) browserNotifications.clearUnreadInstance(activeInstanceId);
+    if (!activeInstanceId) return;
+    const clearWhenFocused = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        browserNotifications.clearUnreadInstance(activeInstanceId);
+      }
+    };
+    clearWhenFocused();
+    window.addEventListener('focus', clearWhenFocused);
+    document.addEventListener('visibilitychange', clearWhenFocused);
+    return () => {
+      window.removeEventListener('focus', clearWhenFocused);
+      document.removeEventListener('visibilitychange', clearWhenFocused);
+    };
   }, [activeInstanceId, browserNotifications.clearUnreadInstance, browserNotifications.unreadInstanceIds]);
 
   // 路由切换时刷新共享实例列表：主页和实例页依赖这里的上下文；管理页自己在加载时会单独刷新一遍。
