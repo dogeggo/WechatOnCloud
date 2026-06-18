@@ -30,7 +30,9 @@ DISPLAY = os.environ.get("DISPLAY", ":1")
 POLL_INTERVAL_SEC = 2
 FALLBACK_COOLDOWN_SEC = 20
 DBUS_DEDUPE_WINDOW_SEC = 4
+WECHAT_BADGE_COOLDOWN_SEC = 6
 WECHAT_GENERIC_BODY = "检测到微信消息提醒窗口"
+WECHAT_IGNORED_TEXTS = {"微信", "wechat", "weixin"}
 
 next_notification_id = 1
 last_dbus_notification_at = 0.0
@@ -225,6 +227,15 @@ def dedupe_texts(values, limit=240):
     return texts
 
 
+def useful_wechat_texts(values):
+    texts = []
+    for text in dedupe_texts(values, 240):
+        if text.casefold() in WECHAT_IGNORED_TEXTS:
+            continue
+        texts.append(text)
+    return texts
+
+
 def get_pyatspi():
     global pyatspi_module, pyatspi_import_attempted
     if not WECHAT_ACCESSIBILITY_ENABLED:
@@ -349,43 +360,145 @@ def wechat_accessibility_texts(window_info):
     return []
 
 
+def wechat_accessibility_desktop():
+    pyatspi = get_pyatspi()
+    if pyatspi is None:
+        return None
+    try:
+        return pyatspi.Registry.getDesktop(0)
+    except Exception as e:
+        log(f"读取微信可访问性桌面失败：{e}")
+        return None
+
+
+def wechat_app_roots():
+    desktop = wechat_accessibility_desktop()
+    if desktop is None:
+        return []
+    roots = []
+    for child in atspi_children(desktop):
+        try:
+            name = clean_text(getattr(child, "name", ""), 120).casefold()
+        except Exception:
+            name = ""
+        if "wechat" in name or "微信" in name:
+            roots.append(child)
+    return roots
+
+
+def atspi_node_text(obj):
+    values = []
+    for attr in ("name", "description"):
+        try:
+            values.append(getattr(obj, attr, ""))
+        except Exception:
+            pass
+    try:
+        text_iface = obj.queryText()
+        char_count = int(getattr(text_iface, "characterCount", 0) or 0)
+        if char_count > 0:
+            values.append(text_iface.getText(0, min(char_count, 240)))
+    except Exception:
+        pass
+    return " | ".join(dedupe_texts(values, 240))
+
+
+def wechat_unread_badge_count():
+    total = 0
+    stack = [(root, 0) for root in wechat_app_roots()]
+    visited = 0
+    while stack and visited < 260:
+        obj, depth = stack.pop(0)
+        visited += 1
+        text = atspi_node_text(obj)
+        for match in re.finditer(r"(\d+)\s*条新消息", text):
+            total += int(match.group(1))
+        if depth < 8:
+            for child in atspi_children(obj):
+                stack.append((child, depth + 1))
+    return total
+
+
 def wechat_notification_body(window_info):
     texts = []
     texts.extend(window_info.get("titles") or [])
     texts.extend(wechat_accessibility_texts(window_info))
-    filtered = [text for text in dedupe_texts(texts, 240) if text not in ("微信", "WeChat")]
+    filtered = useful_wechat_texts(texts)
     return clean_text(" ".join(filtered), 500) if filtered else WECHAT_GENERIC_BODY
+
+
+def wechat_notification_snapshot(window_info):
+    body = wechat_notification_body(window_info)
+    has_body = body != WECHAT_GENERIC_BODY
+    return {
+        "body": body,
+        "signature": body if has_body else WECHAT_GENERIC_BODY,
+    }
 
 
 def watch_wechat_fallback():
     initialized = False
-    previous_utility_windows = {}
+    previous_window_signatures = {}
+    previous_badge_count = 0
+    last_badge_notification_at = 0.0
     log("已启动微信提醒窗口兜底探测")
     while True:
         time.sleep(POLL_INTERVAL_SEC)
         utility_windows = wechat_visible_utility_windows()
+        window_snapshots = {}
+        current_window_signatures = {}
+        for window_id, window_info in utility_windows.items():
+            snapshot = wechat_notification_snapshot(window_info)
+            window_snapshots[window_id] = snapshot
+            current_window_signatures[window_id] = snapshot["signature"]
+
         if not initialized:
-            previous_utility_windows = utility_windows
+            previous_window_signatures = current_window_signatures
             initialized = True
             log(f"微信提醒窗口基线 utilityWindows={len(utility_windows)}")
             continue
 
-        new_utility_window_ids = set(utility_windows) - set(previous_utility_windows)
-        previous_utility_windows = utility_windows
-        if new_utility_window_ids:
-            bodies = []
-            for window_id in sorted(new_utility_window_ids):
-                bodies.append(wechat_notification_body(utility_windows[window_id]))
+        changed_window_ids = [
+            window_id
+            for window_id in sorted(current_window_signatures)
+            if previous_window_signatures.get(window_id) != current_window_signatures[window_id]
+        ]
+        previous_window_signatures = current_window_signatures
+        if changed_window_ids:
+            snapshots = [window_snapshots[window_id] for window_id in changed_window_ids]
+            bodies = [snapshot["body"] for snapshot in snapshots]
             body = clean_text("；".join(dedupe_texts(bodies, 240)), 500) or WECHAT_GENERIC_BODY
             source = "wechat-utility-window-accessibility" if body != WECHAT_GENERIC_BODY else "wechat-utility-window"
+            signature = ",".join(
+                f"{window_id}:{current_window_signatures[window_id]}"
+                for window_id in changed_window_ids
+            )
             post_fallback_notification(
                 "微信",
                 "微信有新消息",
                 body,
                 source,
-                f"wechat-window:{','.join(sorted(new_utility_window_ids))}:{body[:80]}",
+                f"wechat-window:{signature[:180]}",
             )
             continue
+
+        badge_count = wechat_unread_badge_count()
+        if badge_count <= 0:
+            previous_badge_count = 0
+            continue
+        now = time.monotonic()
+        if badge_count > previous_badge_count and now - last_badge_notification_at >= WECHAT_BADGE_COOLDOWN_SEC:
+            previous_badge_count = badge_count
+            last_badge_notification_at = now
+            post_fallback_notification(
+                "微信",
+                "微信有新消息",
+                f"检测到 {badge_count} 条微信新消息",
+                "wechat-main-window-unread-badge",
+                f"wechat-badge:{badge_count}",
+            )
+            continue
+        previous_badge_count = badge_count
 
 
 def start_fallback_watchers():
