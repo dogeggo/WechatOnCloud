@@ -11,6 +11,7 @@ const STREAM_RECONNECT_INITIAL_DELAY = 1000;
 const STREAM_RECONNECT_MAX_DELAY = 15000;
 
 export type BrowserNotificationStatus = 'unsupported' | 'blocked' | 'off' | 'on';
+type UnreadInstance = { instanceId: string; count: number };
 
 function notificationPermission(): NotificationPermission | 'unsupported' {
   return 'Notification' in window ? Notification.permission : 'unsupported';
@@ -24,21 +25,44 @@ function initialEnabled(): boolean {
   }
 }
 
-function loadUnreadInstanceIds(): string[] {
+function loadUnreadInstances(): UnreadInstance[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(UNREAD_STORAGE_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+    if (!Array.isArray(parsed)) return [];
+    const counts = new Map<string, number>();
+    for (const item of parsed) {
+      if (typeof item === 'string' && item) {
+        counts.set(item, Math.max(1, counts.get(item) || 0));
+        continue;
+      }
+      if (!item || typeof item !== 'object') continue;
+      const instanceId = (item as { instanceId?: unknown }).instanceId;
+      const count = (item as { count?: unknown }).count;
+      if (typeof instanceId !== 'string' || !instanceId) continue;
+      const normalizedCount = Number(count);
+      if (!Number.isFinite(normalizedCount) || normalizedCount < 1) continue;
+      counts.set(instanceId, (counts.get(instanceId) || 0) + Math.floor(normalizedCount));
+    }
+    return Array.from(counts, ([instanceId, count]) => ({ instanceId, count }));
   } catch {
     return [];
   }
 }
 
-function saveUnreadInstanceIds(ids: string[]): void {
+function saveUnreadInstances(items: UnreadInstance[]): void {
   try {
-    localStorage.setItem(UNREAD_STORAGE_KEY, JSON.stringify(ids));
+    localStorage.setItem(UNREAD_STORAGE_KEY, JSON.stringify(items));
   } catch {
     /* ignore storage errors */
   }
+}
+
+function unreadInstanceIds(items: UnreadInstance[]): string[] {
+  return items.map((item) => item.instanceId);
+}
+
+function unreadTotal(items: UnreadInstance[]): number {
+  return items.reduce((sum, item) => sum + item.count, 0);
 }
 
 function compact(text: string, max = 90): string {
@@ -64,7 +88,9 @@ export function useBrowserNotifications() {
   const { toast } = useUI();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(notificationPermission);
-  const [unreadInstanceIds, setUnreadInstanceIds] = useState<string[]>(loadUnreadInstanceIds);
+  const [unreadInstances, setUnreadInstances] = useState<UnreadInstance[]>(loadUnreadInstances);
+  const unreadIds = useMemo(() => unreadInstanceIds(unreadInstances), [unreadInstances]);
+  const unreadCount = useMemo(() => unreadTotal(unreadInstances), [unreadInstances]);
   const enabledRef = useRef(enabled);
   const permissionRef = useRef(permission);
   const titleRef = useRef(document.title || '云应用');
@@ -129,10 +155,12 @@ export function useBrowserNotifications() {
         const first = seenRef.current.values().next().value;
         if (first) seenRef.current.delete(first);
       }
-      setUnreadInstanceIds((ids) => {
-        if (ids.includes(event.instanceId)) return ids;
-        const next = [...ids, event.instanceId];
-        saveUnreadInstanceIds(next);
+      setUnreadInstances((items) => {
+        const current = items.find((item) => item.instanceId === event.instanceId);
+        const next = current
+          ? items.map((item) => item.instanceId === event.instanceId ? { ...item, count: item.count + 1 } : item)
+          : [...items, { instanceId: event.instanceId, count: 1 }];
+        saveUnreadInstances(next);
         return next;
       });
 
@@ -165,26 +193,25 @@ export function useBrowserNotifications() {
   );
 
   const clearUnreadInstance = useCallback((instanceId: string) => {
-    setUnreadInstanceIds((ids) => {
-      const next = ids.filter((id) => id !== instanceId);
-      if (next.length === ids.length) return ids;
-      saveUnreadInstanceIds(next);
+    setUnreadInstances((items) => {
+      const next = items.filter((item) => item.instanceId !== instanceId);
+      if (next.length === items.length) return items;
+      saveUnreadInstances(next);
       return next;
     });
   }, []);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key === UNREAD_STORAGE_KEY) setUnreadInstanceIds(loadUnreadInstanceIds());
+      if (event.key === UNREAD_STORAGE_KEY) setUnreadInstances(loadUnreadInstances());
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   useEffect(() => {
-    const unreadCount = unreadInstanceIds.length;
     updateDocumentTitle(unreadCount, titleRef.current);
-  }, [unreadInstanceIds]);
+  }, [unreadCount]);
 
   useEffect(() => {
     const onNotification = (e: MessageEvent) => {
@@ -288,7 +315,7 @@ export function useBrowserNotifications() {
 
   return {
     notificationStatus: status,
-    unreadInstanceIds,
+    unreadInstanceIds: unreadIds,
     clearUnreadInstance,
     toggleBrowserNotifications,
   };
