@@ -510,7 +510,7 @@ function VncPerformanceBadges({
   const latency = stats.latencyMs === null ? "--" : `${stats.latencyMs}ms`;
   const jitter =
     stats.latencyJitterMs === null ? "--" : `${stats.latencyJitterMs}ms`;
-  const measuredFps = capMeasuredFps(stats.fps, targetFps);
+  const measuredFps = capMeasuredFps(stats.fps);
   const liveFps = formatFps(measuredFps);
   const fps = targetFps === null ? liveFps : `${targetFps}fps`;
   const frameInterval =
@@ -638,13 +638,10 @@ function VncPerformanceBadges({
   );
 }
 
-function capMeasuredFps(
-  fps: number | null,
-  targetFps: number | null,
-): number | null {
+function capMeasuredFps(fps: number | null): number | null {
   if (fps === null) return null;
   if (fps <= 0) return 0;
-  return targetFps === null ? fps : targetFps;
+  return fps;
 }
 
 function formatFps(fps: number | null): string {
