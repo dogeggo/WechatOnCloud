@@ -86,6 +86,33 @@ export function applyVncStreamSettings(
   }
 }
 
+export function requestVncFullRefresh(frame: HTMLIFrameElement | null): boolean {
+  try {
+    const win = frame?.contentWindow;
+    const rfb = readNoVncRfb(win);
+    if (!isObjectRecord(rfb)) return false;
+
+    const sock = isObjectRecord(rfb._sock) ? rfb._sock : null;
+    const width = typeof rfb._fbWidth === 'number' ? rfb._fbWidth : 0;
+    const height = typeof rfb._fbHeight === 'number' ? rfb._fbHeight : 0;
+    const messages = (rfb as {
+      constructor?: {
+        messages?: {
+          fbUpdateRequest?: (...args: unknown[]) => void;
+        };
+      };
+    }).constructor?.messages;
+
+    if (!sock || !messages || typeof messages.fbUpdateRequest !== 'function') return false;
+    if (width <= 0 || height <= 0) return false;
+
+    messages.fbUpdateRequest(sock, false, 0, 0, width, height);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function syncVncFrameSize(frame: HTMLIFrameElement | null): boolean {
   try {
     const win = frame?.contentWindow;

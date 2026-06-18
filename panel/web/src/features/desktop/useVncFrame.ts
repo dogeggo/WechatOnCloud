@@ -9,6 +9,7 @@ import {
   focusVncFrame,
   injectVncStyle,
   isVncFrameDisconnected,
+  requestVncFullRefresh,
   syncVncFrameSize,
 } from './desktopFrame';
 import type { VncStreamSettings } from '../../domain/vncStream';
@@ -88,8 +89,9 @@ export function useVncFrame({
 
   useEffect(() => {
     if (!showVnc || !frameLoaded) return;
-    applyVncStreamSettings(frameRef.current, frameStream);
-  }, [frameLoaded, frameRef, frameStream, showVnc]);
+    const applied = applyVncStreamSettings(frameRef.current, frameStream);
+    if (active && applied) requestVncFullRefresh(frameRef.current);
+  }, [active, frameLoaded, frameRef, frameStream, showVnc]);
 
   useEffect(() => {
     const wasActive = activeRef.current;
