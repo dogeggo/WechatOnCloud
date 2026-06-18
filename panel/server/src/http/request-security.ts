@@ -50,7 +50,7 @@ export function registerSecurityHeaders(app: FastifyInstance): void {
         "base-uri 'self'",
         "form-action 'self'",
         "frame-ancestors 'self'",
-        "img-src 'self' data: blob: https://*.googleusercontent.com",
+        "img-src 'self' data: blob: https://*.googleusercontent.com https://bing.com https://*.bing.com",
         "media-src 'self' blob:",
         "connect-src 'self' ws: wss:",
         "style-src 'self' 'unsafe-inline'",
@@ -87,6 +87,7 @@ function isUnsafeMethod(method: string): boolean {
 function isProtectedPath(path: string): boolean {
   if (path.startsWith('/desktop/')) return true;
   if (!path.startsWith('/api/')) return false;
+  if (path === '/api/login-wallpaper') return false;
   return path !== '/api/auth/login' && path !== '/api/auth/callback';
 }
 

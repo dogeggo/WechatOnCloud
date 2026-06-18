@@ -45,6 +45,10 @@ export default function AppShell() {
 
   useEffect(() => setDrawer(false), [loc.pathname]); // 路由变化关抽屉
 
+  useEffect(() => {
+    if (activeInstanceId) browserNotifications.clearUnreadInstance(activeInstanceId);
+  }, [activeInstanceId, browserNotifications.clearUnreadInstance, browserNotifications.unreadInstanceIds]);
+
   // 路由切换时刷新共享实例列表：主页和实例页依赖这里的上下文；管理页自己在加载时会单独刷新一遍。
   // 不清空旧数据，拉取期间沿用旧列表，无闪烁。
   useEffect(() => {
@@ -110,6 +114,7 @@ export default function AppShell() {
         <Sidebar
           collapsed={railed}
           notificationStatus={browserNotifications.notificationStatus}
+          unreadInstanceIds={browserNotifications.unreadInstanceIds}
           onToggleCollapsed={toggleCollapsed}
           onToggleNotifications={browserNotifications.toggleBrowserNotifications}
         />
@@ -117,7 +122,7 @@ export default function AppShell() {
         <main className="workspace">
           <div className={'workspace-route' + (showingCachedInstance ? ' hidden' : '')}>
             <Routes>
-              <Route path="/" element={<HomeView onOpenMenu={openMenu} />} />
+              <Route path="/" element={<HomeView onOpenMenu={openMenu} unreadInstanceIds={browserNotifications.unreadInstanceIds} />} />
               <Route path="/admin" element={<Admin onOpenMenu={openMenu} />} />
               <Route path="/i/:id" element={showingCachedInstance ? null : <InstanceView onOpenMenu={openMenu} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
@@ -137,11 +142,13 @@ export default function AppShell() {
 function Sidebar({
   collapsed,
   notificationStatus,
+  unreadInstanceIds,
   onToggleCollapsed,
   onToggleNotifications,
 }: {
   collapsed: boolean;
   notificationStatus: BrowserNotificationStatus;
+  unreadInstanceIds: string[];
   onToggleCollapsed: () => void;
   onToggleNotifications: () => void;
 }) {
@@ -177,10 +184,12 @@ function Sidebar({
         {instances.map((inst) => {
           const on = loc.pathname === `/i/${inst.id}`;
           const st = sidebarStatus(inst);
+          const unread = unreadInstanceIds.includes(inst.id);
           return (
             <button key={inst.id} className={'sb-item sb-inst' + (on ? ' on' : '')} onClick={() => go(`/i/${inst.id}`)} title={inst.name}>
               <span className="sb-avatar">
                 <InstanceIcon icon={inst.icon} appType={inst.appType} size={32} radius={9} />
+                {unread && <span className="app-unread-dot" />}
                 <span className={'sb-dot ' + st.cls} />
               </span>
               {!collapsed && <span className="sb-label">{inst.name}</span>}
@@ -254,7 +263,7 @@ function notificationText(status: BrowserNotificationStatus): string {
   return '关';
 }
 
-function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
+function HomeView({ onOpenMenu, unreadInstanceIds }: { onOpenMenu: () => void; unreadInstanceIds: string[] }) {
   const { user } = useAuth();
   const { instances, loaded } = useInstances();
   const nav = useNavigate();
@@ -301,10 +310,12 @@ function HomeView({ onOpenMenu }: { onOpenMenu: () => void }) {
                 : inst.runtime === 'running'
                   ? profile.needsInstall ? `待下载安装${profile.label}` : `${profile.label} 尚未就绪`
                   : '';
+              const unread = unreadInstanceIds.includes(inst.id);
               return (
                 <button key={inst.id} className="home-card" onClick={() => nav(`/i/${inst.id}`)}>
                   <span className="home-card-av">
                     <InstanceIcon icon={inst.icon} appType={inst.appType} size={42} radius={12} />
+                    {unread && <span className="app-unread-dot" />}
                   </span>
                   <span className="home-card-main">
                     <span className="home-card-name">{inst.name}</span>

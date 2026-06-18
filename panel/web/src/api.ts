@@ -34,6 +34,13 @@ export interface LoggedInDevice {
   userAgent: string;
   current: boolean;
 }
+export interface LoginWallpaper {
+  imageUrl: string;
+  title: string;
+  copyright: string;
+  copyrightLink: string;
+  fetchedAt: number;
+}
 export interface DesktopFile {
   name: string;
   size: number;
@@ -193,6 +200,7 @@ async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
 export const api = {
   me: () => req<{ user: PanelUser }>('/api/auth/me'),
   ping: () => req<{ ok: true; now: number }>(`/api/ping?t=${Date.now()}`),
+  loginWallpaper: () => req<LoginWallpaper>('/api/login-wallpaper'),
   loginUrl: (returnTo = '/') => `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
   logout: () => req('/api/auth/logout', { method: 'POST' }),
   listLoggedInDevices: () => req<{ devices: LoggedInDevice[] }>('/api/admin/sessions'),

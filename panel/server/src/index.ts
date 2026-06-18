@@ -20,6 +20,7 @@ import { initStore } from './instance/store.js';
 import { NotificationManager } from './notification/notification-manager.js';
 import { registerNotificationRoutes } from './notification/notification-routes.js';
 import { startWatchdog } from './watchdog/watchdog-manager.js';
+import { BingWallpaperManager } from './wallpaper/bing-wallpaper.js';
 
 initStore();
 
@@ -32,6 +33,7 @@ const auth = new AuthManager(
 const instances = new InstanceManager(panelConfig.watchdog, panelConfig.upload);
 const desktopClients = new DesktopClientManager();
 const notifications = new NotificationManager();
+const loginWallpaper = new BingWallpaperManager();
 
 const app = Fastify({
   logger: {
@@ -95,6 +97,10 @@ app.get('/api/auth/login', async (req, reply) => auth.login(req, reply));
 app.get('/api/auth/callback', async (req, reply) => auth.callback(req, reply, app.log));
 app.post('/api/auth/logout', async (req, reply) => auth.logout(req, reply));
 app.get('/api/auth/me', async (req, reply) => auth.me(req, reply));
+app.get('/api/login-wallpaper', async (_req, reply) => {
+  reply.header('cache-control', 'public, max-age=3600');
+  return handle(reply, () => loginWallpaper.current(), 502, '读取登录壁纸失败');
+});
 app.get('/api/ping', async (req, reply) => {
   const user = requireUser(req, reply);
   if (!user) return;

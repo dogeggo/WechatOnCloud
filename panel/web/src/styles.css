@@ -106,9 +106,40 @@ button {
 
 /* 登录 */
 .login-screen {
+  position: relative;
+  isolation: isolate;
   background:
     radial-gradient(60% 50% at 50% 0%, rgba(var(--green-rgb) / 0.1), transparent 70%),
     var(--base);
+  overflow: hidden;
+}
+.login-screen::before,
+.login-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.login-screen::before {
+  z-index: -2;
+  background-image: var(--login-wallpaper);
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transform: scale(1.02);
+  transition: opacity 0.35s ease;
+}
+.login-screen::after {
+  z-index: -1;
+  background:
+    radial-gradient(60% 50% at 50% 16%, rgba(255 255 255 / 0.42), transparent 70%),
+    linear-gradient(180deg, rgba(26 29 36 / 0.18), rgba(26 29 36 / 0.36));
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.login-screen.has-wallpaper::before,
+.login-screen.has-wallpaper::after {
+  opacity: 1;
 }
 .login-wrap {
   display: flex;
@@ -124,11 +155,23 @@ button {
   gap: 14px;
   padding: 28px 24px;
 }
+.login-screen.has-wallpaper .login-card {
+  background: rgba(255 255 255 / 0.72);
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255 255 255 / 0.66),
+    0 16px 48px rgba(26 29 36 / 0.22);
+}
 .login-foot {
   font-size: 12px;
   color: var(--muted);
   text-align: center;
   padding: 0 12px;
+}
+.login-screen.has-wallpaper .login-foot {
+  color: rgba(255 255 255 / 0.86);
+  text-shadow: 0 1px 2px rgba(26 29 36 / 0.38);
 }
 .brand {
   text-align: center;
@@ -1661,7 +1704,7 @@ button {
   align-items: center;
   justify-content: center;
   text-transform: uppercase;
-  overflow: hidden;
+  overflow: visible;
 }
 .sb-dot {
   position: absolute;
@@ -1671,6 +1714,20 @@ button {
   height: 11px;
   border-radius: 50%;
   border: 2px solid var(--surface);
+}
+.app-unread-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--danger);
+  border: 2px solid var(--surface);
+  box-shadow:
+    0 0 0 1px rgba(var(--danger-rgb) / 0.18),
+    0 2px 7px rgba(var(--danger-rgb) / 0.42);
+  z-index: 2;
 }
 .sb-stxt {
   flex: none;
@@ -2121,7 +2178,11 @@ button {
   align-items: center;
   justify-content: center;
   text-transform: uppercase;
-  overflow: hidden;
+  overflow: visible;
+}
+.home-card-av .app-unread-dot {
+  width: 13px;
+  height: 13px;
 }
 .home-card-main {
   position: relative;

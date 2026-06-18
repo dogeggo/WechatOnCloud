@@ -6,6 +6,7 @@ import { ReconnectWatchdog } from '../../utils/connectionWatchdog';
 import { dispatchDesktopClientReplaced } from '../desktop/desktopClientEvents';
 
 const STORAGE_KEY = 'woc_browser_notifications';
+const UNREAD_STORAGE_KEY = 'woc_notification_unread_instances';
 const STREAM_RECONNECT_INITIAL_DELAY = 1000;
 const STREAM_RECONNECT_MAX_DELAY = 15000;
 
@@ -20,6 +21,23 @@ function initialEnabled(): boolean {
     return localStorage.getItem(STORAGE_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+function loadUnreadInstanceIds(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(UNREAD_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUnreadInstanceIds(ids: string[]): void {
+  try {
+    localStorage.setItem(UNREAD_STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore storage errors */
   }
 }
 
@@ -42,6 +60,7 @@ export function useBrowserNotifications() {
   const { toast } = useUI();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(notificationPermission);
+  const [unreadInstanceIds, setUnreadInstanceIds] = useState<string[]>(loadUnreadInstanceIds);
   const enabledRef = useRef(enabled);
   const permissionRef = useRef(permission);
   const seenRef = useRef<Set<string>>(new Set());
@@ -105,6 +124,12 @@ export function useBrowserNotifications() {
         const first = seenRef.current.values().next().value;
         if (first) seenRef.current.delete(first);
       }
+      setUnreadInstanceIds((ids) => {
+        if (ids.includes(event.instanceId)) return ids;
+        const next = [...ids, event.instanceId];
+        saveUnreadInstanceIds(next);
+        return next;
+      });
 
       if ('Notification' in window) setPermission(Notification.permission);
       if (enabledRef.current && permissionRef.current === 'granted' && 'Notification' in window) {
@@ -133,6 +158,23 @@ export function useBrowserNotifications() {
     },
     [navigate, toast],
   );
+
+  const clearUnreadInstance = useCallback((instanceId: string) => {
+    setUnreadInstanceIds((ids) => {
+      const next = ids.filter((id) => id !== instanceId);
+      if (next.length === ids.length) return ids;
+      saveUnreadInstanceIds(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === UNREAD_STORAGE_KEY) setUnreadInstanceIds(loadUnreadInstanceIds());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     const onNotification = (e: MessageEvent) => {
@@ -236,6 +278,8 @@ export function useBrowserNotifications() {
 
   return {
     notificationStatus: status,
+    unreadInstanceIds,
+    clearUnreadInstance,
     toggleBrowserNotifications,
   };
 }
