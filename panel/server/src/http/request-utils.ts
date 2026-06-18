@@ -41,7 +41,7 @@ function isTrustedForwardSource(remoteAddress: string | undefined, trustedProxie
   return isTrustedProxy(normalizeIp(remoteAddress), trustedProxies);
 }
 
-function requestProtocol(
+export function requestProtocol(
   headers: IncomingMessage['headers'],
   remoteAddress: string | undefined,
   encrypted: boolean,
@@ -55,6 +55,11 @@ function requestProtocol(
     if (proto === 'http' || proto === 'https') return proto;
   }
   return encrypted ? 'https' : 'http';
+}
+
+export function isHttpsRequest(req: FastifyRequest | IncomingMessage, config: RequestTrustConfig): boolean {
+  const socket = 'raw' in req ? req.raw.socket : req.socket;
+  return requestProtocol(req.headers, socket.remoteAddress, !!(socket as any).encrypted, config.trustedProxies) === 'https';
 }
 
 function normalizeAuthority(raw: string | undefined): string {

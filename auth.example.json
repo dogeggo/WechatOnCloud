@@ -12,7 +12,6 @@
     "clientSecret": "YOUR_GOOGLE_CLIENT_SECRET",
     "redirectUri": "https://woc.example.com/api/auth/callback",
     "scope": "openid email profile",
-    "requireEmailVerified": true,
-    "cookieSecure": true
+    "requireEmailVerified": true
   }
 }

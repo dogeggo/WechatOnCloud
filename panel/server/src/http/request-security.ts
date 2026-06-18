@@ -1,8 +1,8 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PanelConfig } from '../config/panel-config.js';
 import { RateLimiter } from './rate-limiter.js';
 import { isRequestHostAllowed, parseHost } from './host-guard.js';
-import { clientIp, pathOf, sameOrigin } from './request-utils.js';
+import { clientIp, firstHeaderValue, isHttpsRequest, normalizeIp, pathOf, sameOrigin } from './request-utils.js';
 import type { AuthManager } from '../auth/auth-manager.js';
 
 export function registerHostGuard(app: FastifyInstance, config: PanelConfig): void {
@@ -68,6 +68,9 @@ export function registerRequestProtection(
 ): void {
   app.addHook('onRequest', async (req, reply) => {
     const path = pathOf(req.raw.url);
+    if (!isHttpsRequest(req, config) && !isInternalHttpPath(req, path)) {
+      return reply.code(426).send({ error: '请通过 HTTPS 访问面板' });
+    }
     if ((path.startsWith('/api/') || path.startsWith('/desktop/')) && isUnsafeMethod(req.method) && !sameOrigin(req, config)) {
       return reply.code(403).send({ error: '请求来源不被允许' });
     }
@@ -85,4 +88,24 @@ function isProtectedPath(path: string): boolean {
   if (path.startsWith('/desktop/')) return true;
   if (!path.startsWith('/api/')) return false;
   return path !== '/api/auth/login' && path !== '/api/auth/callback';
+}
+
+function isInternalHttpPath(req: FastifyRequest, path: string): boolean {
+  if (!path.startsWith('/_woc/internal/')) return false;
+  if (firstHeaderValue(req.headers.origin)) return false;
+  if (firstHeaderValue(req.headers['x-forwarded-proto'])) return false;
+  return isInternalAddress(req.raw.socket.remoteAddress);
+}
+
+function isInternalAddress(raw: string | undefined): boolean {
+  const ip = normalizeIp(raw);
+  if (ip === '127.0.0.1' || ip === '::1') return true;
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const o = [m[1], m[2], m[3], m[4]].map((part) => Number(part));
+  if (o.some((part) => Number.isNaN(part) || part < 0 || part > 255)) return false;
+  if (o[0] === 10) return true;
+  if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return true;
+  if (o[0] === 192 && o[1] === 168) return true;
+  return o[0] === 169 && o[1] === 254;
 }

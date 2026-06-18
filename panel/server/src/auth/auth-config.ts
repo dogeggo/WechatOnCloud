@@ -24,10 +24,6 @@ function asString(v: unknown, name: string): string {
   return v.trim();
 }
 
-function asOptionalBoolean(v: unknown): boolean | undefined {
-  return typeof v === 'boolean' ? v : undefined;
-}
-
 function normalizeEmailList(raw: unknown): string[] {
   const parts = Array.isArray(raw)
     ? raw
@@ -61,13 +57,6 @@ export function loadAuthConfig(file = DEFAULT_FILE): AuthConfig {
     throw new Error('认证配置 allowedEmails 或 adminEmails 至少要包含一个邮箱');
   }
 
-  const redirectUri = asString(oidc.redirectUri, 'oidc.redirectUri');
-  const redirectUrl = new URL(redirectUri);
-  const cookieSecure =
-    asOptionalBoolean(raw.cookieSecure) ??
-    asOptionalBoolean(oidc.cookieSecure) ??
-    redirectUrl.protocol === 'https:';
-
   return {
     file,
     allowedEmails,
@@ -76,10 +65,10 @@ export function loadAuthConfig(file = DEFAULT_FILE): AuthConfig {
       issuer: asString(oidc.issuer, 'oidc.issuer'),
       clientId: asString(oidc.clientId, 'oidc.clientId'),
       clientSecret: asString(oidc.clientSecret, 'oidc.clientSecret'),
-      redirectUri,
+      redirectUri: asString(oidc.redirectUri, 'oidc.redirectUri'),
       scope: typeof oidc.scope === 'string' && oidc.scope.trim() ? oidc.scope.trim() : 'openid email profile',
       requireEmailVerified: oidc.requireEmailVerified !== false,
-      cookieSecure,
+      cookieSecure: true,
     },
   };
 }

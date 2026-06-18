@@ -7,7 +7,7 @@ import { createGzip } from 'node:zlib';
 import type { AuthManager } from '../auth/auth-manager.js';
 import { instanceTarget } from '../docker/docker.js';
 import { isRequestHostAllowed } from '../http/host-guard.js';
-import { firstHeaderValue, sameOrigin, type RequestTrustConfig } from '../http/request-utils.js';
+import { firstHeaderValue, isHttpsRequest, sameOrigin, type RequestTrustConfig } from '../http/request-utils.js';
 import { canAccessInstance, findInstance, type Instance } from '../instance/store.js';
 import type { NotificationManager } from '../notification/notification-manager.js';
 import type { DesktopClientManager } from './desktop-client-manager.js';
@@ -111,7 +111,7 @@ function handleUpgrade(
     trustConfig.allowedHosts,
     req.socket.remoteAddress,
     trustConfig.trustedProxies,
-  ) || !sameOrigin(req, trustConfig)) {
+  ) || !isHttpsRequest(req, trustConfig) || !sameOrigin(req, trustConfig)) {
     socket.destroy();
     return;
   }

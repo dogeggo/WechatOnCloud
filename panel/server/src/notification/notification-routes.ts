@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AuthManager } from '../auth/auth-manager.js';
-import { sendError } from '../http/http-error.js';
+import { HttpError, sendError } from '../http/http-error.js';
 import { firstHeaderValue } from '../http/request-utils.js';
 import type { InstanceManager } from '../instance/instance-manager.js';
 import type { NotificationManager } from './notification-manager.js';
@@ -31,7 +31,14 @@ export function registerNotificationRoutes(
       notifications.receive(inst, firstHeaderValue(req.headers.authorization), routeBody(req));
       return { ok: true };
     } catch (e) {
+      if (isInternalAuthError(e)) {
+        return reply.code(401).send({ error: '通知上报密钥不正确' });
+      }
       return sendError(reply, e, 400, '通知上报失败');
     }
   });
+}
+
+function isInternalAuthError(error: unknown): boolean {
+  return error instanceof HttpError && (error.statusCode === 401 || error.statusCode === 404);
 }

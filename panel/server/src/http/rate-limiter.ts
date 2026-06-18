@@ -14,7 +14,7 @@ export interface RateLimitResult {
 
 function rateLimitGroup(path: string): RateLimitGroup | null {
   if (path.startsWith('/api/auth/')) return 'auth';
-  if (path.startsWith('/api/') || path.startsWith('/desktop/')) return 'api';
+  if (path.startsWith('/api/') || path.startsWith('/desktop/') || path.startsWith('/_woc/internal/')) return 'api';
   return null;
 }
 

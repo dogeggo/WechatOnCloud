@@ -34,7 +34,8 @@ export class AuthManager {
   ) {}
 
   currentSession(req: FastifyRequest) {
-    return this.applyCurrentRole(touchSession(req.cookies?.[this.sessionCookieName], this.requestSessionMeta(req)));
+    const token = req.cookies?.[this.sessionCookieName];
+    return this.applyCurrentRole(this.authorizedSession(token, touchSession(token, this.requestSessionMeta(req))));
   }
 
   currentUser(req: FastifyRequest): AuthUser | null {
@@ -52,7 +53,8 @@ export class AuthManager {
 
   rawSession(req: IncomingMessage) {
     const cookies = parseCookies(req.headers.cookie);
-    return this.applyCurrentRole(touchSession(cookies[this.sessionCookieName], this.rawRequestSessionMeta(req)));
+    const token = cookies[this.sessionCookieName];
+    return this.applyCurrentRole(this.authorizedSession(token, touchSession(token, this.rawRequestSessionMeta(req))));
   }
 
   trackSessionSocket(sessionId: string, socket: Socket): void {
@@ -227,6 +229,14 @@ export class AuthManager {
   private applyCurrentRole<T extends Session | null>(session: T): T {
     if (session) session.user = this.userWithCurrentRole(session.user);
     return session;
+  }
+
+  private authorizedSession(token: string | undefined, session: Session | null): Session | null {
+    if (!session) return null;
+    if (isEmailAllowed(session.user.email, this.config)) return session;
+    destroySession(token);
+    this.closeSessionSockets(session.id);
+    return null;
   }
 
   private publicSessionWithRole(session: PublicSession, current: boolean) {
