@@ -16,10 +16,11 @@ export function useVncStreamSettings() {
     writeVncStreamSettings(settings);
   }, [settings]);
 
-  const setProfile = useCallback((profile: VncStreamProfile) => {
+  const setProfile = useCallback((profile: VncStreamProfile): VncStreamSettings | null => {
     const option = VNC_STREAM_PROFILES.find((item) => item.profile === profile);
-    if (!option) return;
+    if (!option) return null;
     setSettings(option.settings);
+    return option.settings;
   }, []);
 
   const update = useCallback((next: Partial<VncStreamSettings>) => {

@@ -3,12 +3,7 @@ import { PassThrough, Transform } from "node:stream";
 import zlib from "node:zlib";
 import Docker from "dockerode";
 import { normalizeAppType, type AppType, type Instance } from "../instance/store.js";
-import {
-  DEFAULT_VNC_SERVER_PROFILE,
-  kasmVncServerProfileYaml,
-  normalizeVncServerProfile,
-  type VncServerProfile,
-} from "../desktop/vnc-server-profile.js";
+import { kasmVncServerConfigYaml } from "../desktop/vnc-server-config.js";
 import {
   singleFileFromTarStream,
   tarNameFitsHeader,
@@ -104,7 +99,6 @@ const docker = new Docker(); // 默认连 /var/run/docker.sock
 const VOLUME_PROJECT_LABEL = "com.dogeggo.woc.managed";
 const VOLUME_APP_TYPE_LABEL = "com.dogeggo.woc.app-type";
 const VOLUME_INSTANCE_ID_LABEL = "com.dogeggo.woc.instance-id";
-const CONTAINER_VNC_SERVER_PROFILE_LABEL = "com.dogeggo.woc.vnc-server-profile";
 
 // 面板自身所在的 docker 网络名；新实例都 attach 到它，便于按容器名互访。
 let networkName: string | null = normalizeDockerNetworkName(
@@ -142,33 +136,6 @@ function appTypeFromVolumeLabels(labels: unknown): AppType | undefined {
   const raw = (labels as Record<string, unknown>)[VOLUME_APP_TYPE_LABEL];
   if (raw == null || raw === "") return undefined;
   return normalizeAppType(raw);
-}
-
-function envValue(env: unknown, name: string): string | undefined {
-  if (!Array.isArray(env)) return undefined;
-  const prefix = `${name}=`;
-  const entry = env.find((item) => typeof item === "string" && item.startsWith(prefix));
-  return typeof entry === "string" ? entry.slice(prefix.length) : undefined;
-}
-
-function normalizedVncServerProfile(value: unknown): VncServerProfile | undefined {
-  try {
-    return normalizeVncServerProfile(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function containerVncServerProfile(info: any): VncServerProfile | undefined {
-  const labelValue = info?.Config?.Labels?.[CONTAINER_VNC_SERVER_PROFILE_LABEL];
-  return normalizedVncServerProfile(labelValue)
-    ?? normalizedVncServerProfile(envValue(info?.Config?.Env, "WOC_VNC_SERVER_PROFILE"));
-}
-
-function shouldRecreateForInstanceConfig(inst: Instance, info: any): boolean {
-  const currentProfile = containerVncServerProfile(info);
-  if (currentProfile) return currentProfile !== inst.vncServerProfile;
-  return inst.vncServerProfile !== DEFAULT_VNC_SERVER_PROFILE;
 }
 
 async function ensureProjectVolume(inst: Instance): Promise<void> {
@@ -222,7 +189,7 @@ export async function ensureNetwork(): Promise<string | null> {
 }
 
 function envList(inst: Instance): string[] {
-  const vncProfileYaml = Buffer.from(kasmVncServerProfileYaml(inst.vncServerProfile), "utf8").toString("base64");
+  const vncConfigYaml = Buffer.from(kasmVncServerConfigYaml(), "utf8").toString("base64");
   const env = [
     `PUID=${PUID}`,
     `PGID=${PGID}`,
@@ -243,8 +210,7 @@ function envList(inst: Instance): string[] {
   env.push(`WOC_NOTIFY_TOKEN=${inst.kasmPassword}`);
   env.push(`WOC_PANEL_INTERNAL_URL=${PANEL_INTERNAL_URL}`);
   env.push(`WOC_PANEL_INTERNAL_HOST=${PANEL_INTERNAL_HOST}`);
-  env.push(`WOC_VNC_SERVER_PROFILE=${inst.vncServerProfile}`);
-  env.push(`WOC_VNC_SERVER_PROFILE_YAML_B64=${vncProfileYaml}`);
+  env.push(`WOC_VNC_SERVER_CONFIG_YAML_B64=${vncConfigYaml}`);
   return env;
 }
 
@@ -303,7 +269,6 @@ export async function runInstance(inst: Instance): Promise<void> {
       [VOLUME_PROJECT_LABEL]: "true",
       [VOLUME_APP_TYPE_LABEL]: inst.appType,
       [VOLUME_INSTANCE_ID_LABEL]: inst.id,
-      [CONTAINER_VNC_SERVER_PROFILE_LABEL]: inst.vncServerProfile,
     },
     ExposedPorts: { "3000/tcp": {} },
     HostConfig: hostConfig,
@@ -336,10 +301,6 @@ export async function ensureRunning(inst: Instance): Promise<void> {
   try {
     const c = projectContainer(inst);
     const info = await c.inspect();
-    if (shouldRecreateForInstanceConfig(inst, info)) {
-      await runInstance(inst);
-      return;
-    }
     if (!info.State?.Running) await c.start();
   } catch {
     await runInstance(inst);

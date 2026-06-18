@@ -1,6 +1,20 @@
 export interface VncFrameStreamSettings {
   quality: number;
   compression: number;
+  dynamicQualityMin: number;
+  dynamicQualityMax: number;
+  treatLossless: number;
+  jpegVideoQuality: number;
+  webpVideoQuality: number;
+  videoQuality: number;
+  videoArea: number;
+  videoTime: number;
+  videoOutTime: number;
+  videoScaling: number;
+  maxVideoResolutionX: number;
+  maxVideoResolutionY: number;
+  frameRate: number;
+  enableWebP: boolean;
 }
 
 const VNC_STYLE_ID = 'woc-vnc-style';
@@ -80,6 +94,22 @@ export function applyVncStreamSettings(
     if (!isObjectRecord(rfb)) return false;
     rfb.qualityLevel = clampVncLevel(settings.quality);
     rfb.compressionLevel = clampVncLevel(settings.compression);
+    rfb.dynamicQualityMin = clampVncLevel(settings.dynamicQualityMin);
+    rfb.dynamicQualityMax = clampVncLevel(settings.dynamicQualityMax);
+    rfb.treatLossless = clampVncLevel(settings.treatLossless);
+    rfb.jpegVideoQuality = clampVncLevel(settings.jpegVideoQuality);
+    rfb.webpVideoQuality = clampVncLevel(settings.webpVideoQuality);
+    rfb.videoQuality = clampInteger(settings.videoQuality, 0, 10);
+    rfb.videoArea = clampInteger(settings.videoArea, 0, 100);
+    rfb.videoTime = clampInteger(settings.videoTime, 0, 100);
+    rfb.videoOutTime = clampInteger(settings.videoOutTime, 1, 100);
+    rfb.videoScaling = clampInteger(settings.videoScaling, 0, 2);
+    rfb.maxVideoResolutionX = clampInteger(settings.maxVideoResolutionX, 100, 7680);
+    rfb.maxVideoResolutionY = clampInteger(settings.maxVideoResolutionY, 100, 4320);
+    rfb.frameRate = clampInteger(settings.frameRate, 1, 120);
+    rfb.enableWebP = settings.enableWebP;
+    rfb.preferBandwidth = false;
+    callNoArgMethod(rfb, 'updateConnectionSettings');
     return true;
   } catch {
     return false;
@@ -89,6 +119,7 @@ export function applyVncStreamSettings(
 export function requestVncFullRefresh(frame: HTMLIFrameElement | null): boolean {
   try {
     const win = frame?.contentWindow;
+    if (!win) return false;
     const rfb = readNoVncRfb(win);
     if (!isObjectRecord(rfb)) return false;
 
@@ -219,6 +250,11 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 function clampVncLevel(value: number): number {
   if (!Number.isFinite(value)) return 6;
   return Math.max(0, Math.min(9, Math.round(value)));
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, Math.round(value)));
 }
 
 export function installImeCandidateAnchor(doc: Document): () => void {

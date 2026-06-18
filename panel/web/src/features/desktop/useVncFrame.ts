@@ -14,7 +14,24 @@ import {
 } from './desktopFrame';
 import type { VncStreamSettings } from '../../domain/vncStream';
 
-const INACTIVE_VNC_STREAM_SETTINGS = { quality: 2, compression: 9 } as const;
+const INACTIVE_VNC_STREAM_SETTINGS = {
+  quality: 2,
+  compression: 9,
+  dynamicQualityMin: 1,
+  dynamicQualityMax: 3,
+  treatLossless: 5,
+  jpegVideoQuality: 2,
+  webpVideoQuality: 2,
+  videoQuality: 10,
+  videoArea: 25,
+  videoTime: 2,
+  videoOutTime: 1,
+  videoScaling: 0,
+  maxVideoResolutionX: 640,
+  maxVideoResolutionY: 360,
+  frameRate: 8,
+  enableWebP: true,
+} as const;
 
 export function useVncFrame({
   active,

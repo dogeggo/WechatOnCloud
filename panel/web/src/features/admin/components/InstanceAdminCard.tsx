@@ -7,7 +7,6 @@ import {
   appProfile,
   type AppInstallAction,
 } from "../../../domain/instances";
-import { vncServerProfileLabel } from "../../../domain/vncServerProfile";
 
 export function InstanceAdminCard({
   inst,
@@ -23,7 +22,6 @@ export function InstanceAdminCard({
   onLogs,
   onDelete,
   onSecurity,
-  onVncServerProfile,
   onVolume,
   showOwner = false,
 }: {
@@ -40,7 +38,6 @@ export function InstanceAdminCard({
   onLogs: () => void;
   onDelete: () => void;
   onSecurity: () => void;
-  onVncServerProfile: () => void;
   onVolume: () => void;
   showOwner?: boolean;
 }) {
@@ -69,10 +66,11 @@ export function InstanceAdminCard({
         <span className={"tag " + badge.cls}>{badge.text}</span>
       </div>
       <div className="inst-sub">{sub}</div>
-      <div className="inst-meta-line">
-        {showOwner && <div>创建者：{inst.createdBy}</div>}
-        <div>VNC编码：{vncServerProfileLabel(inst.vncServerProfile)}</div>
-      </div>
+      {showOwner && (
+        <div className="inst-meta-line">
+          <div>创建者：{inst.createdBy}</div>
+        </div>
+      )}
 
       {working && (
         <div className="app-progress">
@@ -180,13 +178,6 @@ export function InstanceAdminCard({
                     title="内存阈值自愈"
                   >
                     安全
-                  </button>
-                  <button
-                    className="btn-text"
-                    onClick={onVncServerProfile}
-                    title="调整 KasmVNC 服务端编码参数，保存后重启实例容器"
-                  >
-                    VNC编码
                   </button>
                   <button
                     className="btn-text"

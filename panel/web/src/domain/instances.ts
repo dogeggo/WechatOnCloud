@@ -178,6 +178,20 @@ export function desktopUrl(id: string, clientId: string, stream: VncStreamSettin
     clipboard_seamless: 'true',
     quality: String(stream.quality),
     compression: String(stream.compression),
+    dynamic_quality_min: String(stream.dynamicQualityMin),
+    dynamic_quality_max: String(stream.dynamicQualityMax),
+    treat_lossless: String(stream.treatLossless),
+    jpeg_video_quality: String(stream.jpegVideoQuality),
+    webp_video_quality: String(stream.webpVideoQuality),
+    video_quality: String(stream.videoQuality),
+    video_area: String(stream.videoArea),
+    video_time: String(stream.videoTime),
+    video_out_time: String(stream.videoOutTime),
+    video_scaling: String(stream.videoScaling),
+    max_video_resolution_x: String(stream.maxVideoResolutionX),
+    max_video_resolution_y: String(stream.maxVideoResolutionY),
+    framerate: String(stream.frameRate),
+    enable_webp: String(stream.enableWebP),
   });
   return `/desktop/${id}/vnc/index.html?${params.toString()}`;
 }

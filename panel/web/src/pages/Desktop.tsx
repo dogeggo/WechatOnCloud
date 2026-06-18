@@ -10,7 +10,6 @@ import {
   isAppInstalled,
   isRuntimeOffline,
 } from "../domain/instances";
-import { vncServerProfileFrameRate } from "../domain/vncServerProfile";
 import { VNC_STREAM_PROFILES } from "../domain/vncStream";
 import { DESKTOP_CLIENT_REPLACED_EVENT } from "../features/desktop/desktopClientEvents";
 import { useDesktopFiles } from "../features/desktop/useDesktopFiles";
@@ -92,7 +91,7 @@ export default function InstanceView({
     frameLoaded: vnc.frameLoaded,
     frameRef,
   });
-  const targetFps = vncServerProfileFrameRate(inst?.vncServerProfile);
+  const targetFps = stream.settings.frameRate;
   const desktopFiles = useDesktopFiles({
     active,
     showVnc: effectiveShowVnc,
@@ -259,11 +258,14 @@ export default function InstanceView({
                   }
                   title={option.title}
                   onClick={() => {
-                    stream.setProfile(option.profile);
+                    if (stream.settings.profile === option.profile) return;
+                    const nextStream = stream.setProfile(option.profile);
+                    if (nextStream) streamRef.current = nextStream;
+                    vnc.reconnect();
                     toast(
                       option.settings.audio
-                        ? `${option.label}模式已启用`
-                        : `${option.label}模式已启用，音频已关闭`,
+                        ? `${option.label}模式已启用，正在重连`
+                        : `${option.label}模式已启用，音频已关闭，正在重连`,
                       "ok",
                     );
                   }}

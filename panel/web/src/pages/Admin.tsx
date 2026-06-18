@@ -11,7 +11,6 @@ import { InstanceAdminCard } from '../features/admin/components/InstanceAdminCar
 import { InstanceIconEditor } from '../features/admin/components/InstanceIconEditor';
 import { InstanceLogs } from '../features/admin/components/InstanceLogs';
 import { InstanceSecurity } from '../features/admin/components/InstanceSecurity';
-import { InstanceVncServerProfile } from '../features/admin/components/InstanceVncServerProfile';
 import { RenameInstance } from '../features/admin/components/RenameInstance';
 import { VolumeManager } from '../features/admin/components/VolumeManager';
 import { useAdminPanel } from '../features/admin/useAdminPanel';
@@ -44,7 +43,6 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [deleteInst, setDeleteInst] = useState<InstanceWithStatus | null>(null);
   const [renameInst, setRenameInst] = useState<InstanceWithStatus | null>(null);
   const [securityInst, setSecurityInst] = useState<InstanceWithStatus | null>(null);
-  const [vncServerInst, setVncServerInst] = useState<InstanceWithStatus | null>(null);
   const [volumeInst, setVolumeInst] = useState<InstanceWithStatus | null>(null);
   const [iconInst, setIconInst] = useState<InstanceWithStatus | null>(null);
   const [logsInst, setLogsInst] = useState<InstanceWithStatus | null>(null);
@@ -101,7 +99,6 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
                 onLogs={() => setLogsInst(inst)}
                 onDelete={() => setDeleteInst(inst)}
                 onSecurity={() => setSecurityInst(inst)}
-                onVncServerProfile={() => setVncServerInst(inst)}
                 onVolume={() => setVolumeInst(inst)}
                 showOwner={isAdmin}
               />
@@ -257,16 +254,6 @@ export default function Admin({ onOpenMenu }: { onOpenMenu: () => void }) {
             }
             patchInstance(instance);
             toast('已保存安全阈值', 'ok');
-          }}
-        />
-      )}
-      {vncServerInst && (
-        <InstanceVncServerProfile
-          inst={vncServerInst}
-          onClose={() => setVncServerInst(null)}
-          onDone={(instance) => {
-            patchInstance(instance);
-            load();
           }}
         />
       )}
