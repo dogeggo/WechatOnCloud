@@ -261,7 +261,6 @@ export default function InstanceView({
                     if (stream.settings.profile === option.profile) return;
                     const nextStream = stream.setProfile(option.profile);
                     if (nextStream) streamRef.current = nextStream;
-                    vnc.reconnect();
                     toast(
                       option.settings.audio
                         ? `${option.label}模式已启用，正在重连`

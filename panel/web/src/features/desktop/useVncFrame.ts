@@ -14,25 +14,6 @@ import {
 } from './desktopFrame';
 import type { VncStreamSettings } from '../../domain/vncStream';
 
-const INACTIVE_VNC_STREAM_SETTINGS = {
-  quality: 2,
-  compression: 9,
-  dynamicQualityMin: 1,
-  dynamicQualityMax: 3,
-  treatLossless: 5,
-  jpegVideoQuality: 2,
-  webpVideoQuality: 2,
-  videoQuality: 10,
-  videoArea: 25,
-  videoTime: 2,
-  videoOutTime: 1,
-  videoScaling: 0,
-  maxVideoResolutionX: 640,
-  maxVideoResolutionY: 360,
-  frameRate: 8,
-  enableWebP: true,
-} as const;
-
 export function useVncFrame({
   active,
   showVnc,
@@ -50,14 +31,15 @@ export function useVncFrame({
   const [loadStuck, setLoadStuck] = useState(false);
   const [vncNonce, setVncNonce] = useState(0);
   const activeRef = useRef(active);
+  const streamKey = createVncStreamKey(stream);
+  const streamKeyRef = useRef(streamKey);
 
   const focusFrame = useCallback(() => focusVncFrame(frameRef.current), [frameRef]);
-  const frameStream = active ? stream : INACTIVE_VNC_STREAM_SETTINGS;
 
   const syncFrame = useCallback((shouldFocus: boolean) => {
     if (shouldFocus) focusVncFrame(frameRef.current);
     injectVncStyle(frameRef.current);
-    applyVncStreamSettings(frameRef.current, shouldFocus ? stream : INACTIVE_VNC_STREAM_SETTINGS);
+    applyVncStreamSettings(frameRef.current, stream);
     if (shouldFocus) syncVncFrameSize(frameRef.current);
   }, [frameRef, stream]);
 
@@ -106,9 +88,16 @@ export function useVncFrame({
 
   useEffect(() => {
     if (!showVnc || !frameLoaded) return;
-    const applied = applyVncStreamSettings(frameRef.current, frameStream);
+    const applied = applyVncStreamSettings(frameRef.current, stream);
     if (active && applied) requestVncFullRefresh(frameRef.current);
-  }, [active, frameLoaded, frameRef, frameStream, showVnc]);
+  }, [active, frameLoaded, frameRef, showVnc, stream]);
+
+  useEffect(() => {
+    const previous = streamKeyRef.current;
+    streamKeyRef.current = streamKey;
+    if (previous === streamKey || !showVnc) return;
+    reconnect();
+  }, [reconnect, showVnc, streamKey]);
 
   useEffect(() => {
     const wasActive = activeRef.current;
@@ -171,4 +160,26 @@ export function useVncFrame({
     focusFrame,
     handleFrameLoad,
   };
+}
+
+function createVncStreamKey(stream: VncStreamSettings): string {
+  return [
+    stream.profile,
+    stream.quality,
+    stream.compression,
+    stream.dynamicQualityMin,
+    stream.dynamicQualityMax,
+    stream.treatLossless,
+    stream.jpegVideoQuality,
+    stream.webpVideoQuality,
+    stream.videoQuality,
+    stream.videoArea,
+    stream.videoTime,
+    stream.videoOutTime,
+    stream.videoScaling,
+    stream.maxVideoResolutionX,
+    stream.maxVideoResolutionY,
+    stream.frameRate,
+    stream.enableWebP ? 1 : 0,
+  ].join(':');
 }

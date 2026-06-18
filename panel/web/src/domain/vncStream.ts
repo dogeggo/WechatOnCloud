@@ -29,6 +29,11 @@ export interface VncStreamProfileOption {
 }
 
 const VNC_STREAM_SETTINGS_KEY = 'woc_vnc_stream_settings';
+export const VNC_STREAM_SETTINGS_EVENT = 'woc:vnc-stream-settings';
+
+export interface VncStreamSettingsChange {
+  settings: VncStreamSettings;
+}
 
 export const VNC_STREAM_PROFILES: VncStreamProfileOption[] = [
   {
@@ -123,8 +128,19 @@ export function readVncStreamSettings(): VncStreamSettings {
   }
 }
 
-export function writeVncStreamSettings(settings: VncStreamSettings): void {
-  window.localStorage.setItem(VNC_STREAM_SETTINGS_KEY, JSON.stringify(normalizeVncStreamSettings(settings)));
+export function isVncStreamSettingsKey(key: string | null): boolean {
+  return key === VNC_STREAM_SETTINGS_KEY;
+}
+
+export function writeVncStreamSettings(settings: VncStreamSettings): VncStreamSettings {
+  const normalized = normalizeVncStreamSettings(settings);
+  window.localStorage.setItem(VNC_STREAM_SETTINGS_KEY, JSON.stringify(normalized));
+  window.dispatchEvent(
+    new CustomEvent<VncStreamSettingsChange>(VNC_STREAM_SETTINGS_EVENT, {
+      detail: { settings: normalized },
+    }),
+  );
+  return normalized;
 }
 
 export function normalizeVncStreamSettings(settings: Partial<VncStreamSettings>): VncStreamSettings {
