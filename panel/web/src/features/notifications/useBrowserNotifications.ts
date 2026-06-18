@@ -12,6 +12,11 @@ const STREAM_RECONNECT_MAX_DELAY = 15000;
 
 export type BrowserNotificationStatus = 'unsupported' | 'blocked' | 'off' | 'on';
 
+type BadgingNavigator = Navigator & {
+  setAppBadge?: (contents?: number) => Promise<void>;
+  clearAppBadge?: () => Promise<void>;
+};
+
 function notificationPermission(): NotificationPermission | 'unsupported' {
   return 'Notification' in window ? Notification.permission : 'unsupported';
 }
@@ -55,6 +60,25 @@ function toastText(event: InstanceNotificationEvent): string {
   return compact(`${event.instanceName} · ${event.title}${detail}`);
 }
 
+function updateDocumentTitle(unreadCount: number, baseTitle: string): void {
+  document.title = unreadCount > 0 ? `(${unreadCount}) ${baseTitle}` : baseTitle;
+}
+
+async function updateAppBadge(unreadCount: number): Promise<void> {
+  const badge = navigator as BadgingNavigator;
+  try {
+    if (unreadCount > 0 && badge.setAppBadge) {
+      await badge.setAppBadge(unreadCount);
+      return;
+    }
+    if (unreadCount === 0 && badge.clearAppBadge) {
+      await badge.clearAppBadge();
+    }
+  } catch {
+    /* badge support varies by browser, OS and install mode */
+  }
+}
+
 export function useBrowserNotifications() {
   const navigate = useNavigate();
   const { toast } = useUI();
@@ -63,6 +87,7 @@ export function useBrowserNotifications() {
   const [unreadInstanceIds, setUnreadInstanceIds] = useState<string[]>(loadUnreadInstanceIds);
   const enabledRef = useRef(enabled);
   const permissionRef = useRef(permission);
+  const titleRef = useRef(document.title || '云应用');
   const seenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -175,6 +200,12 @@ export function useBrowserNotifications() {
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  useEffect(() => {
+    const unreadCount = unreadInstanceIds.length;
+    updateDocumentTitle(unreadCount, titleRef.current);
+    void updateAppBadge(unreadCount);
+  }, [unreadInstanceIds]);
 
   useEffect(() => {
     const onNotification = (e: MessageEvent) => {

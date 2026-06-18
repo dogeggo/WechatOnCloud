@@ -229,11 +229,7 @@ export default function InstanceView({
             >
               重连
             </button>
-            <div
-              className="ws-mode ws-keep"
-              role="group"
-              aria-label="VNC 常驻"
-            >
+            <div className="ws-mode ws-keep" role="group" aria-label="VNC 常驻">
               <button
                 className={"ws-mode-btn" + (!vncKeepAlive ? " on" : "")}
                 title="切换到其他页面时断开 VNC 连接"
@@ -484,7 +480,6 @@ export default function InstanceView({
                 </div>
               </div>
             )}
-
           </div>
         </div>
       )}
@@ -649,7 +644,7 @@ function capMeasuredFps(
 ): number | null {
   if (fps === null) return null;
   if (fps <= 0) return 0;
-  return targetFps === null ? fps : Math.min(fps, targetFps);
+  return targetFps === null ? fps : targetFps;
 }
 
 function formatFps(fps: number | null): string {
