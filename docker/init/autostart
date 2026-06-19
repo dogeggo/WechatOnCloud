@@ -27,10 +27,66 @@ APP_TYPE="${WOC_APP_TYPE:-wechat}"
 woc_apply_software_rendering_env
 woc_app_def "$APP_TYPE" || exit 1
 
+AUTOSTART_KEY="$(printf '%s-%s' "${APP_TYPE}" "${DISPLAY:-:1}" | tr -c 'A-Za-z0-9_.-' '_')"
+AUTOSTART_STATE_DIR=/tmp/woc-autostart
+AUTOSTART_PID_FILE="${AUTOSTART_STATE_DIR}/${AUTOSTART_KEY}.pid"
+AUTOSTART_WATCHER_PID_FILE="${AUTOSTART_STATE_DIR}/${AUTOSTART_KEY}.watcher.pid"
+NOTIFY_PID=
+
+process_alive() {
+    local pid="$1"
+    case "${pid:-}" in
+        ''|*[!0-9]* ) return 1 ;;
+    esac
+    kill -0 "${pid}" 2>/dev/null
+}
+
+stop_pid_file_process() {
+    local file="$1" pid current
+    [ -f "${file}" ] || return 0
+    pid="$(cat "${file}" 2>/dev/null || true)"
+    current="$$"
+    if [ "${pid:-}" = "${current}" ]; then
+        return 0
+    fi
+    if process_alive "${pid:-}"; then
+        kill -TERM "${pid}" 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            process_alive "${pid}" || break
+            sleep 0.2
+        done
+        process_alive "${pid}" && kill -KILL "${pid}" 2>/dev/null || true
+    fi
+    rm -f "${file}"
+}
+
+cleanup_autostart() {
+    local pid current
+    current="$$"
+    if [ -f "${AUTOSTART_WATCHER_PID_FILE}" ]; then
+        pid="$(cat "${AUTOSTART_WATCHER_PID_FILE}" 2>/dev/null || true)"
+        process_alive "${pid:-}" && kill -TERM "${pid}" 2>/dev/null || true
+        rm -f "${AUTOSTART_WATCHER_PID_FILE}"
+    fi
+    process_alive "${NOTIFY_PID:-}" && kill -TERM "${NOTIFY_PID}" 2>/dev/null || true
+    if [ -f "${AUTOSTART_PID_FILE}" ] && [ "$(cat "${AUTOSTART_PID_FILE}" 2>/dev/null || true)" = "${current}" ]; then
+        rm -f "${AUTOSTART_PID_FILE}"
+    fi
+}
+
+mkdir -p "${AUTOSTART_STATE_DIR}"
+stop_pid_file_process "${AUTOSTART_WATCHER_PID_FILE}"
+stop_pid_file_process "${AUTOSTART_PID_FILE}"
+printf '%s\n' "$$" > "${AUTOSTART_PID_FILE}"
+trap cleanup_autostart EXIT
+trap 'cleanup_autostart; exit 0' INT TERM
+
 # 桌面通知桥必须在应用启动前接管 org.freedesktop.Notifications，
 # 否则部分客户端启动时探测不到通知服务后不会再重试。
 if command -v woc-notifyd >/dev/null 2>&1; then
+    pkill -f 'python3 /usr/local/bin/woc-notifyd|/usr/local/bin/woc-notifyd|woc-notifyd' 2>/dev/null || true
     woc-notifyd &
+    NOTIFY_PID="$!"
 fi
 
 app_window_ids() {
@@ -275,10 +331,13 @@ sync_app_window_size() {
 (
     export DISPLAY="${DISPLAY:-:1}"
     while sleep 2; do
+        [ -f "${AUTOSTART_PID_FILE}" ] || exit 0
+        [ "$(cat "${AUTOSTART_PID_FILE}" 2>/dev/null || true)" = "$$" ] || exit 0
         restore_minimized_app_windows
         sync_app_window_size
     done
 ) &
+printf '%s\n' "$!" > "${AUTOSTART_WATCHER_PID_FILE}"
 
 # 1) 等待应用安装就绪（需要安装的应用首次需在面板点「下载并安装」；Chromium 随镜像就绪）
 notified=0
@@ -294,6 +353,10 @@ done
 while true; do
     if [ -n "${APP_BIN:-}" ] && [ ! -x "${APP_BIN}" ]; then
         # 更新过程中本体被临时挪走，等就位再继续
+        sleep 2
+        continue
+    fi
+    if app_process_running; then
         sleep 2
         continue
     fi

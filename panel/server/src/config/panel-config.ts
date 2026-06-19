@@ -1,10 +1,11 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseAllowedHosts, parseTrustedProxies, type TrustedProxy } from '../http/host-guard.js';
+import { MIB, instanceMemoryLimitMB } from './instance-memory.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export const MIB = 1024 * 1024;
+export { MIB };
 
 export interface UploadLimits {
   transferBytes: number;
@@ -24,6 +25,7 @@ export interface RateLimitConfig {
 export interface WatchdogConfig {
   defaultSoftMB: number;
   defaultHardMB: number;
+  hardMaxMB: number;
   intervalSec: number;
   enabled: boolean;
 }
@@ -54,6 +56,15 @@ const defaultSoftMB = envInt('WOC_INSTANCE_MEM_SOFT_MB', 1500, 0, 20480);
 const defaultHardMB = envInt('WOC_INSTANCE_MEM_HARD_MB', 2500, 0, 20480);
 const watchdogIntervalSec = envInt('WOC_WATCHDOG_INTERVAL_SEC', 300, 0, 86400);
 
+if (defaultSoftMB > 0 && defaultHardMB > 0 && defaultSoftMB >= defaultHardMB) {
+  throw new Error('WOC_INSTANCE_MEM_SOFT_MB 必须小于 WOC_INSTANCE_MEM_HARD_MB');
+}
+if (instanceMemoryLimitMB > 0 && defaultHardMB > instanceMemoryLimitMB) {
+  throw new Error(
+    `WOC_INSTANCE_MEM_HARD_MB 不能超过 WOC_INSTANCE_MEM_GB 对应的 ${instanceMemoryLimitMB} MiB`,
+  );
+}
+
 export const panelConfig: PanelConfig = {
   port: envInt('PORT', 8080, 1, 65535),
   host: process.env.HOST || '0.0.0.0',
@@ -78,6 +89,7 @@ export const panelConfig: PanelConfig = {
   watchdog: {
     defaultSoftMB,
     defaultHardMB,
+    hardMaxMB: instanceMemoryLimitMB,
     intervalSec: watchdogIntervalSec,
     enabled: watchdogIntervalSec > 0 && (defaultSoftMB > 0 || defaultHardMB > 0),
   },

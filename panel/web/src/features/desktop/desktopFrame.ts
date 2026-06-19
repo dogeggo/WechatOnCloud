@@ -423,7 +423,7 @@ function ensureImePreview(doc: Document): HTMLElement {
 }
 
 function readImePreview(doc: Document | null): HTMLElement | null {
-  return doc?.getElementById(IME_PREVIEW_ID);
+  return doc?.getElementById(IME_PREVIEW_ID) ?? null;
 }
 
 function clampImeAnchor(doc: Document, clientX: number, clientY: number): { x: number; y: number } {

@@ -78,7 +78,7 @@ export function useInstanceSecurity({
     try {
       soft = parseOptionalMiB(softStr);
       hard = parseOptionalMiB(hardStr);
-      validateMemLimits(soft, hard);
+      validateMemLimits(soft, hard, data?.hardMax ?? null);
     } catch (error) {
       setErr(errorMessage(error, '阈值格式错误'));
       return;

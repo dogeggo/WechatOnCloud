@@ -85,6 +85,7 @@ export interface MemLimits {
   hard: number | null;
   defaultSoft: number;
   defaultHard: number;
+  hardMax: number | null;
   currentMB: number;
   watchdogEnabled: boolean;
   intervalSec: number;

@@ -4,6 +4,7 @@ import zlib from "node:zlib";
 import Docker from "dockerode";
 import { normalizeAppType, type AppType, type Instance } from "../instance/store.js";
 import { kasmVncServerConfigYaml } from "../desktop/vnc-server-config.js";
+import { instanceMemoryLimitBytes } from "../config/instance-memory.js";
 import {
   singleFileFromTarStream,
   tarNameFitsHeader,
@@ -40,9 +41,6 @@ const SHM_SIZE = 1024 * 1024 * 1024; // 1gb
 
 // 可选：给每个实例容器设内存上限（GiB），作为 Xvnc 等异常增长时的兜底，避免拖垮宿主。
 // 默认 0 = 不限制（保持原行为）。命中上限时容器内 OOM 杀进程、由 s6 自动重启 VNC。
-const INSTANCE_MEM_GB = Number(process.env.WOC_INSTANCE_MEM_GB) || 0;
-const INSTANCE_MEM =
-  INSTANCE_MEM_GB > 0 ? Math.floor(INSTANCE_MEM_GB * 1024 * 1024 * 1024) : 0;
 
 // 设备伪装：把 /etc/os-release 伪装成 deepin（部分客户端官方支持的发行版，且 Deepin 本就基于 Debian，
 // 与本镜像的 Debian 用户态一致，不会自相矛盾）。默认开启；设 WOC_SPOOF_OS=0 关闭恢复 Debian。
@@ -252,9 +250,9 @@ export async function runInstance(inst: Instance): Promise<void> {
     ShmSize: SHM_SIZE,
     RestartPolicy: { Name: "unless-stopped" },
   };
-  if (INSTANCE_MEM > 0) {
-    hostConfig.Memory = INSTANCE_MEM;
-    hostConfig.MemorySwap = INSTANCE_MEM; // 禁止 swap 膨胀：限制即为硬上限
+  if (instanceMemoryLimitBytes > 0) {
+    hostConfig.Memory = instanceMemoryLimitBytes;
+    hostConfig.MemorySwap = instanceMemoryLimitBytes; // 禁止 swap 膨胀：限制即为硬上限
   }
   // 伪装成真实有线网卡 MAC（厂商 OUI），替代容器默认的本地管理位 MAC。
   const mac = realisticMac(inst.id);

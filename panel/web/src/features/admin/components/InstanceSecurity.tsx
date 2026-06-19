@@ -40,6 +40,12 @@ export function InstanceSecurity({
                 <span className="muted">soft {panel.data.defaultSoft} · hard {panel.data.defaultHard}</span>
               </div>
               <div className="security-row">
+                <span>hard 上限</span>
+                <span className="muted">
+                  {panel.data.hardMax == null ? '不受实例内存上限限制' : `${panel.data.hardMax} MiB`}
+                </span>
+              </div>
+              <div className="security-row">
                 <span>巡检间隔</span>
                 <span className="muted">
                   {panel.data.watchdogEnabled ? `每 ${panel.data.intervalSec}s` : 'watchdog 已关闭'}
@@ -59,12 +65,13 @@ export function InstanceSecurity({
             <input
               className="input"
               inputMode="numeric"
+              max={panel.data.hardMax ?? undefined}
               placeholder={`${panel.data.defaultHard}`}
               value={panel.hardStr}
               onChange={(e) => panel.setHardStr(e.target.value.replace(/[^0-9]/g, ''))}
             />
             <div className="muted small" style={{ marginTop: 6 }}>
-              提示：日常活跃内存约 1500 MiB；soft 建议略高于此（如 2000），hard 建议远低于宿主可用内存（如 3000~4000）。
+              提示：日常活跃内存约 1500 MiB；soft 建议略低于 hard。设置了实例容器内存上限时，hard 不能超过该上限。
             </div>
 
             <div className="field-label" style={{ marginTop: 16 }}>设备身份（machine-id）</div>

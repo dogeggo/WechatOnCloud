@@ -59,6 +59,7 @@ export interface MemoryLimitInfo {
   hard: number | null;
   defaultSoft: number;
   defaultHard: number;
+  hardMax: number | null;
   currentMB: number;
   watchdogEnabled: boolean;
   intervalSec: number;
@@ -166,6 +167,7 @@ export class InstanceManager {
       hard: inst.memHardLimitMB ?? null,
       defaultSoft: this.watchdog.defaultSoftMB,
       defaultHard: this.watchdog.defaultHardMB,
+      hardMax: this.watchdog.hardMaxMB > 0 ? this.watchdog.hardMaxMB : null,
       currentMB,
       watchdogEnabled: this.watchdog.enabled,
       intervalSec: this.watchdog.intervalSec,
@@ -178,6 +180,7 @@ export class InstanceManager {
     const hard = parseLimitPatch(body?.hard, 'hard');
     const finalSoft = soft === undefined ? inst.memSoftLimitMB ?? null : soft;
     const finalHard = hard === undefined ? inst.memHardLimitMB ?? null : hard;
+    this.assertMemoryLimits(finalSoft, finalHard);
     try {
       return { instance: setInstanceMemLimits(inst.id, finalSoft, finalHard) };
     } catch (e: any) {
@@ -363,6 +366,15 @@ export class InstanceManager {
       soft: inst.memSoftLimitMB ?? this.watchdog.defaultSoftMB,
       hard: inst.memHardLimitMB ?? this.watchdog.defaultHardMB,
     };
+  }
+
+  private assertMemoryLimits(soft: number | null, hard: number | null): void {
+    if (soft != null && hard != null && soft >= hard) {
+      throw httpError(400, 'soft 阈值需小于 hard 阈值');
+    }
+    if (this.watchdog.hardMaxMB > 0 && hard != null && hard > this.watchdog.hardMaxMB) {
+      throw httpError(400, `hard 阈值不能超过实例容器内存上限 ${this.watchdog.hardMaxMB} MiB`);
+    }
   }
 
   private requireAdmin(actor: InstanceActor): void {
