@@ -30,6 +30,8 @@ const IME_PREVIEW_HORIZONTAL_PADDING = 0;
 const IME_PREVIEW_HEIGHT = 22;
 const IME_PREVIEW_FONT = '16px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
 const IME_PREVIEW_BOX_FONT = '16px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
+const IME_CANDIDATE_OFFSET_Y = 28;
+const IME_PREVIEW_OFFSET_Y = -22;
 const DEFAULT_IME_ANCHOR_X = 24;
 const DEFAULT_IME_ANCHOR_Y = 24;
 const IME_REFOCUS_DELAYS = [0, 80, 240] as const;
@@ -41,7 +43,7 @@ const VNC_CONTROL_STYLE =
   '#noVNC_control_bar{background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.55)!important;box-shadow:0 0 24px rgba(0,0,0,.55)!important;}' +
   '#noVNC_control_bar_handle{opacity:1!important;background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.5)!important;}' +
   '#noVNC_keyboardinput{position:fixed!important;left:24px!important;top:24px!important;width:2px!important;height:24px!important;min-width:2px!important;min-height:24px!important;margin:0!important;padding:0!important;border:0!important;outline:0!important;opacity:.01!important;overflow:hidden!important;resize:none!important;background:transparent!important;color:transparent!important;caret-color:transparent!important;pointer-events:none!important;}' +
-  '#woc-ime-preview{position:fixed!important;left:24px!important;top:24px!important;width:1px!important;height:22px!important;min-width:1px!important;min-height:22px!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;outline:0!important;opacity:0!important;overflow:visible!important;background:transparent!important;color:#fff!important;text-shadow:0 1px 2px rgba(0,0,0,.96),0 0 2px rgba(0,0,0,.72)!important;box-shadow:none!important;pointer-events:none!important;z-index:2147483647!important;font:16px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif!important;white-space:pre!important;transition:opacity .06s ease!important;}' +
+  '#woc-ime-preview{position:fixed!important;left:24px!important;top:2px!important;width:1px!important;height:22px!important;min-width:1px!important;min-height:22px!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;outline:0!important;opacity:0!important;overflow:visible!important;background:transparent!important;color:#111!important;font-weight:400!important;text-shadow:none!important;box-shadow:none!important;pointer-events:none!important;z-index:2147483647!important;font:16px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif!important;white-space:pre!important;transition:opacity .06s ease!important;}' +
   '#woc-ime-preview.woc-ime-preview--active{opacity:1!important;}';
 
 export function enableKasmImeMode(): void {
@@ -275,11 +277,11 @@ export function installImeCandidateAnchor(doc: Document): () => void {
 
   const applyAnchor = () => {
     anchor = clampImeAnchor(doc, anchor.x, anchor.y);
-    setImePreviewStyle(ensureImePreview(doc), anchor.x, anchor.y);
+    setImePreviewStyle(ensureImePreview(doc), anchor);
     const input = readVncKeyboardInput(doc);
     keyboardInput = input;
     if (!input) return false;
-    setImeAnchorStyle(input, anchor.x, anchor.y);
+    setImeAnchorStyle(input, anchor);
     return true;
   };
 
@@ -428,12 +430,14 @@ function clampImeAnchor(doc: Document, clientX: number, clientY: number): { x: n
   const win = doc.defaultView;
   const viewportWidth = doc.documentElement.clientWidth || win?.innerWidth || 0;
   const viewportHeight = doc.documentElement.clientHeight || win?.innerHeight || 0;
-  const previewWidth = readImePreviewWidth(doc);
   const maxX = viewportWidth
-    ? Math.max(IME_ANCHOR_MARGIN, viewportWidth - IME_ANCHOR_MARGIN - previewWidth)
+    ? Math.max(IME_ANCHOR_MARGIN, viewportWidth - IME_ANCHOR_MARGIN - IME_HIDDEN_INPUT_WIDTH)
     : clientX;
   const maxY = viewportHeight
-    ? Math.max(IME_ANCHOR_MARGIN, viewportHeight - IME_ANCHOR_MARGIN - IME_ANCHOR_HEIGHT)
+    ? Math.max(
+        IME_ANCHOR_MARGIN - IME_PREVIEW_OFFSET_Y,
+        viewportHeight - IME_ANCHOR_MARGIN - IME_CANDIDATE_OFFSET_Y - IME_HIDDEN_INPUT_HEIGHT,
+      )
     : clientY;
   return {
     x: Math.round(Math.min(Math.max(clientX, IME_ANCHOR_MARGIN), maxX)),
@@ -441,7 +445,25 @@ function clampImeAnchor(doc: Document, clientX: number, clientY: number): { x: n
   };
 }
 
-function setImeAnchorStyle(input: HTMLElement, x: number, y: number): void {
+function offsetImePoint(
+  doc: Document,
+  anchor: { x: number; y: number },
+  offsetX: number,
+  offsetY: number,
+): { x: number; y: number } {
+  const win = doc.defaultView;
+  const viewportWidth = doc.documentElement.clientWidth || win?.innerWidth || 0;
+  const viewportHeight = doc.documentElement.clientHeight || win?.innerHeight || 0;
+  const maxX = viewportWidth ? Math.max(IME_ANCHOR_MARGIN, viewportWidth - IME_ANCHOR_MARGIN) : anchor.x + offsetX;
+  const maxY = viewportHeight ? Math.max(IME_ANCHOR_MARGIN, viewportHeight - IME_ANCHOR_MARGIN) : anchor.y + offsetY;
+  return {
+    x: Math.round(Math.min(Math.max(anchor.x + offsetX, IME_ANCHOR_MARGIN), maxX)),
+    y: Math.round(Math.min(Math.max(anchor.y + offsetY, IME_ANCHOR_MARGIN), maxY)),
+  };
+}
+
+function setImeAnchorStyle(input: HTMLElement, anchor: { x: number; y: number }): void {
+  const inputPosition = offsetImePoint(input.ownerDocument, anchor, 0, IME_CANDIDATE_OFFSET_Y);
   input.setAttribute('autocomplete', 'off');
   input.setAttribute('autocapitalize', 'off');
   input.setAttribute('spellcheck', 'false');
@@ -450,8 +472,8 @@ function setImeAnchorStyle(input: HTMLElement, x: number, y: number): void {
     input.setAttribute('rows', '1');
   }
   input.style.setProperty('position', 'fixed', 'important');
-  input.style.setProperty('left', `${x}px`, 'important');
-  input.style.setProperty('top', `${y}px`, 'important');
+  input.style.setProperty('left', `${inputPosition.x}px`, 'important');
+  input.style.setProperty('top', `${inputPosition.y}px`, 'important');
   input.style.setProperty('width', `${IME_HIDDEN_INPUT_WIDTH}px`, 'important');
   input.style.setProperty('height', `${IME_HIDDEN_INPUT_HEIGHT}px`, 'important');
   input.style.setProperty('min-width', `${IME_HIDDEN_INPUT_WIDTH}px`, 'important');
@@ -469,12 +491,12 @@ function setImeAnchorStyle(input: HTMLElement, x: number, y: number): void {
   input.style.setProperty('pointer-events', 'none', 'important');
 }
 
-function setImePreviewStyle(preview: HTMLElement, x: number, y: number): void {
+function setImePreviewStyle(preview: HTMLElement, anchor: { x: number; y: number }): void {
   const previewWidth = readImePreviewWidth(preview.ownerDocument, preview.textContent || '');
-  const clampedAnchor = clampImeAnchor(preview.ownerDocument, x, y);
+  const previewPosition = offsetImePoint(preview.ownerDocument, anchor, 0, IME_PREVIEW_OFFSET_Y);
   preview.style.setProperty('position', 'fixed', 'important');
-  preview.style.setProperty('left', `${clampedAnchor.x}px`, 'important');
-  preview.style.setProperty('top', `${clampedAnchor.y}px`, 'important');
+  preview.style.setProperty('left', `${previewPosition.x}px`, 'important');
+  preview.style.setProperty('top', `${previewPosition.y}px`, 'important');
   preview.style.setProperty('width', `${previewWidth}px`, 'important');
   preview.style.setProperty('height', `${IME_PREVIEW_HEIGHT}px`, 'important');
   preview.style.setProperty('min-width', `${IME_PREVIEW_MIN_WIDTH}px`, 'important');
@@ -486,8 +508,9 @@ function setImePreviewStyle(preview: HTMLElement, x: number, y: number): void {
   preview.style.setProperty('outline', '0', 'important');
   preview.style.setProperty('overflow', 'visible', 'important');
   preview.style.setProperty('background', 'transparent', 'important');
-  preview.style.setProperty('color', '#fff', 'important');
-  preview.style.setProperty('text-shadow', '0 1px 2px rgba(0,0,0,.96), 0 0 2px rgba(0,0,0,.72)', 'important');
+  preview.style.setProperty('color', '#111', 'important');
+  preview.style.setProperty('font-weight', '400', 'important');
+  preview.style.setProperty('text-shadow', 'none', 'important');
   preview.style.setProperty('box-shadow', 'none', 'important');
   preview.style.setProperty('pointer-events', 'none', 'important');
   preview.style.setProperty('z-index', '2147483647', 'important');
