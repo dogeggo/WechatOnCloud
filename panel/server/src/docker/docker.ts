@@ -489,34 +489,64 @@ export async function instanceMemoryMB(inst: Instance): Promise<number> {
 export interface InstanceMemoryStats {
   usedBytes: number;
   maxBytes: number | null;
+  cpuPercent: number | null;
 }
 
 export async function instanceMemoryStats(inst: Instance): Promise<InstanceMemoryStats> {
   const c = projectContainer(inst);
-  const [usedBytes, info] = await Promise.all([
-    instanceMemoryUsedBytes(inst),
+  const [stats, info] = await Promise.all([
+    instanceContainerStats(inst),
     c.inspect().catch(() => null),
   ]);
   const configuredMaxBytes = Number((info as any)?.HostConfig?.Memory) || 0;
   return {
-    usedBytes,
+    usedBytes: containerMemoryUsedBytes(stats),
     maxBytes: configuredMaxBytes > 0 ? configuredMaxBytes : null,
+    cpuPercent: containerCpuPercent(stats),
   };
 }
 
 async function instanceMemoryUsedBytes(inst: Instance): Promise<number> {
   try {
-    const s: any = await projectContainer(inst).stats({ stream: false } as any);
-    const usage = Number(s?.memory_stats?.usage) || 0;
-    const inactive =
-      Number(
-        s?.memory_stats?.stats?.inactive_file ??
-          s?.memory_stats?.stats?.total_inactive_file,
-      ) || 0;
-    return Math.max(0, usage - inactive);
+    return containerMemoryUsedBytes(await instanceContainerStats(inst));
   } catch {
     return 0;
   }
+}
+
+async function instanceContainerStats(inst: Instance): Promise<any> {
+  try {
+    return await projectContainer(inst).stats({ stream: false } as any);
+  } catch {
+    return null;
+  }
+}
+
+function containerMemoryUsedBytes(stats: any): number {
+  const usage = Number(stats?.memory_stats?.usage) || 0;
+  const inactive =
+    Number(
+      stats?.memory_stats?.stats?.inactive_file ??
+        stats?.memory_stats?.stats?.total_inactive_file,
+    ) || 0;
+  return Math.max(0, usage - inactive);
+}
+
+function containerCpuPercent(stats: any): number | null {
+  const cpuDelta =
+    Number(stats?.cpu_stats?.cpu_usage?.total_usage) -
+    Number(stats?.precpu_stats?.cpu_usage?.total_usage);
+  const systemDelta =
+    Number(stats?.cpu_stats?.system_cpu_usage) -
+    Number(stats?.precpu_stats?.system_cpu_usage);
+  const onlineCpus =
+    Number(stats?.cpu_stats?.online_cpus) ||
+    (Array.isArray(stats?.cpu_stats?.cpu_usage?.percpu_usage)
+      ? stats.cpu_stats.cpu_usage.percpu_usage.length
+      : 0);
+  if (!Number.isFinite(cpuDelta) || !Number.isFinite(systemDelta)) return null;
+  if (cpuDelta <= 0 || systemDelta <= 0 || onlineCpus <= 0) return null;
+  return Math.round((cpuDelta / systemDelta) * onlineCpus * 1000) / 10;
 }
 
 export async function instanceRuntime(inst: Instance): Promise<RuntimeState> {

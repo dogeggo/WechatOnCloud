@@ -46,15 +46,10 @@ export interface DesktopFile {
   size: number;
 }
 
-export interface AppMemoryStats {
+export interface AppMetrics {
   usedBytes: number;
   maxBytes: number | null;
-}
-
-export interface PingResult {
-  ok: true;
-  now: number;
-  appMemory: AppMemoryStats;
+  cpuPercent: number | null;
 }
 
 export type AppPhase = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error';
@@ -209,8 +204,9 @@ async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
 
 export const api = {
   me: () => req<{ user: PanelUser }>('/api/auth/me'),
-  ping: (instanceId: string) =>
-    req<PingResult>(`/api/ping?instanceId=${encodeURIComponent(instanceId)}&t=${Date.now()}`),
+  ping: () => req<{ ok: true; now: number }>(`/api/ping?t=${Date.now()}`),
+  instanceMetrics: (id: string) =>
+    req<AppMetrics>(`/api/instances/${encodeURIComponent(id)}/metrics?t=${Date.now()}`),
   loginWallpaper: () => req<LoginWallpaper>('/api/login-wallpaper'),
   loginUrl: (returnTo = '/') => `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
   logout: () => req('/api/auth/logout', { method: 'POST' }),

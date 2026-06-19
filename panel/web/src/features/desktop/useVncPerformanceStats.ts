@@ -15,7 +15,7 @@ export interface VncPerformanceStats {
   scalePercent: number | null;
   appMemoryUsedBytes: number | null;
   appMemoryMaxBytes: number | null;
-  websocketBufferedBytes: number | null;
+  appCpuPercent: number | null;
 }
 
 const EMPTY_STATS: VncPerformanceStats = {
@@ -27,7 +27,7 @@ const EMPTY_STATS: VncPerformanceStats = {
   scalePercent: null,
   appMemoryUsedBytes: null,
   appMemoryMaxBytes: null,
-  websocketBufferedBytes: null,
+  appCpuPercent: null,
 };
 const LATENCY_SAMPLE_SIZE = 6;
 
@@ -45,12 +45,29 @@ export function useVncPerformanceStats({
   instanceId: string | undefined;
 }): VncPerformanceStats {
   const [stats, setStats] = useState<VncPerformanceStats>(EMPTY_STATS);
-  const enabled = active && showVnc && frameLoaded && !!instanceId;
+  const enabled = active && showVnc && frameLoaded;
+  const metricsEnabled = enabled && !!instanceId;
 
   useEffect(() => {
     if (enabled) return;
     setStats(EMPTY_STATS);
   }, [enabled]);
+
+  useEffect(() => {
+    if (metricsEnabled) return;
+    setStats((current) =>
+      current.appMemoryUsedBytes === null
+        && current.appMemoryMaxBytes === null
+        && current.appCpuPercent === null
+        ? current
+        : {
+          ...current,
+          appMemoryUsedBytes: null,
+          appMemoryMaxBytes: null,
+          appCpuPercent: null,
+        },
+    );
+  }, [metricsEnabled]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -119,8 +136,6 @@ export function useVncPerformanceStats({
 
   useEffect(() => {
     if (!enabled) return;
-    const currentInstanceId = instanceId;
-    if (!currentInstanceId) return;
 
     let stopped = false;
     let timer = 0;
@@ -129,36 +144,28 @@ export function useVncPerformanceStats({
     const measureLatency = async () => {
       const startedAt = performance.now();
       try {
-        const ping = await api.ping(currentInstanceId);
+        await api.ping();
         if (stopped) return;
         const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
         latencySamples.push(latencyMs);
         if (latencySamples.length > LATENCY_SAMPLE_SIZE) latencySamples.shift();
         const latencyJitterMs = latencySamples.length >= 2 ? calculateJitter(latencySamples) : null;
-        const appMemoryUsedBytes = normalizeMemoryBytes(ping.appMemory.usedBytes);
-        const appMemoryMaxBytes = normalizeMemoryBytes(ping.appMemory.maxBytes);
         setStats((current) =>
           current.latencyMs === latencyMs
             && current.latencyJitterMs === latencyJitterMs
-            && current.appMemoryUsedBytes === appMemoryUsedBytes
-            && current.appMemoryMaxBytes === appMemoryMaxBytes
             ? current
-            : { ...current, latencyMs, latencyJitterMs, appMemoryUsedBytes, appMemoryMaxBytes },
+            : { ...current, latencyMs, latencyJitterMs },
         );
       } catch {
         if (!stopped) {
           setStats((current) =>
             current.latencyMs === null
               && current.latencyJitterMs === null
-              && current.appMemoryUsedBytes === null
-              && current.appMemoryMaxBytes === null
               ? current
               : {
                 ...current,
                 latencyMs: null,
                 latencyJitterMs: null,
-                appMemoryUsedBytes: null,
-                appMemoryMaxBytes: null,
               },
           );
         }
@@ -172,19 +179,65 @@ export function useVncPerformanceStats({
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [enabled, instanceId]);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!metricsEnabled) return;
+    const currentInstanceId = instanceId;
+    if (!currentInstanceId) return;
+
+    let stopped = false;
+    let timer = 0;
+
+    const syncAppMetrics = async () => {
+      try {
+        const metrics = await api.instanceMetrics(currentInstanceId);
+        if (stopped) return;
+        const appMemoryUsedBytes = normalizeMetricNumber(metrics.usedBytes);
+        const appMemoryMaxBytes = normalizeMetricNumber(metrics.maxBytes);
+        const appCpuPercent = normalizeMetricNumber(metrics.cpuPercent);
+        setStats((current) =>
+          current.appMemoryUsedBytes === appMemoryUsedBytes
+            && current.appMemoryMaxBytes === appMemoryMaxBytes
+            && current.appCpuPercent === appCpuPercent
+            ? current
+            : { ...current, appMemoryUsedBytes, appMemoryMaxBytes, appCpuPercent },
+        );
+      } catch {
+        if (!stopped) {
+          setStats((current) =>
+            current.appMemoryUsedBytes === null
+              && current.appMemoryMaxBytes === null
+              && current.appCpuPercent === null
+              ? current
+              : {
+                ...current,
+                appMemoryUsedBytes: null,
+                appMemoryMaxBytes: null,
+                appCpuPercent: null,
+              },
+          );
+        }
+      }
+
+      if (!stopped) timer = window.setTimeout(syncAppMetrics, 10000);
+    };
+
+    void syncAppMetrics();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [metricsEnabled, instanceId]);
 
   return stats;
 }
 
 function readRuntimeStats(frame: HTMLIFrameElement | null): Pick<
   VncPerformanceStats,
-  'resolution' | 'viewport' | 'scalePercent' | 'websocketBufferedBytes'
+  'resolution' | 'viewport' | 'scalePercent'
 > {
-  return {
-    ...readFrameGeometry(frame),
-    websocketBufferedBytes: readWebsocketBufferedBytes(frame),
-  };
+  return readFrameGeometry(frame);
 }
 
 function installCanvasDrawMonitor(frame: HTMLIFrameElement | null): boolean {
@@ -306,22 +359,6 @@ function readFrameGeometry(frame: HTMLIFrameElement | null): Pick<
   }
 }
 
-function readWebsocketBufferedBytes(frame: HTMLIFrameElement | null): number | null {
-  try {
-    const win = frame?.contentWindow as (Window & { UI?: unknown; rfb?: unknown }) | null | undefined;
-    const rfb = objectRecord(objectRecord(win?.UI)?.rfb) || objectRecord(win?.rfb);
-    const sock = objectRecord(rfb?._sock);
-    const websocket = objectRecord(sock?._websocket) || objectRecord(sock?._webSocket)
-      || objectRecord(sock?.websocket) || objectRecord(sock?.webSocket)
-      || objectRecord(sock?._ws) || objectRecord(sock?.ws)
-      || objectRecord(rfb?._websocket) || objectRecord(rfb?._webSocket);
-    const bufferedAmount = websocket?.bufferedAmount;
-    return typeof bufferedAmount === 'number' && Number.isFinite(bufferedAmount) ? Math.max(0, bufferedAmount) : null;
-  } catch {
-    return null;
-  }
-}
-
 function sizeOrNull(width: number | undefined, height: number | undefined): VncFrameResolution | null {
   const roundedWidth = Math.round(width || 0);
   const roundedHeight = Math.round(height || 0);
@@ -348,26 +385,21 @@ function calculateJitter(samples: number[]): number {
   return Math.round(total / (samples.length - 1));
 }
 
-function normalizeMemoryBytes(value: number): number | null {
+function normalizeMetricNumber(value: number | null): number | null {
   return Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-function objectRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
 }
 
 function sameRuntimeStats(
   current: VncPerformanceStats,
   next: Pick<
     VncPerformanceStats,
-    'resolution' | 'viewport' | 'scalePercent' | 'websocketBufferedBytes'
+    'resolution' | 'viewport' | 'scalePercent'
   >,
 ): boolean {
   return (
     sameResolution(current.resolution, next.resolution)
     && sameResolution(current.viewport, next.viewport)
     && current.scalePercent === next.scalePercent
-    && current.websocketBufferedBytes === next.websocketBufferedBytes
   );
 }
 

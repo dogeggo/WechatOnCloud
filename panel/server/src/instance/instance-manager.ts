@@ -66,9 +66,10 @@ export interface MemoryLimitInfo {
   intervalSec: number;
 }
 
-export interface ApplicationMemoryInfo {
+export interface ApplicationMetricsInfo {
   usedBytes: number;
   maxBytes: number | null;
+  cpuPercent: number | null;
 }
 
 export class InstanceManager {
@@ -180,7 +181,7 @@ export class InstanceManager {
     };
   }
 
-  async applicationMemory(actor: InstanceActor, id: unknown): Promise<ApplicationMemoryInfo> {
+  async applicationMetrics(actor: InstanceActor, id: unknown): Promise<ApplicationMetricsInfo> {
     return await instanceMemoryStats(this.requireInstanceForActor(id, actor));
   }
 

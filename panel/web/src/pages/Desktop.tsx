@@ -527,11 +527,11 @@ function VncPerformanceBadges({
       ? "--"
       : formatBytes(stats.appMemoryUsedBytes);
   const appMemoryMax =
-    stats.appMemoryMaxBytes === null ? "不限制" : formatBytes(stats.appMemoryMaxBytes);
-  const buffer =
-    stats.websocketBufferedBytes === null
-      ? null
-      : formatBytes(stats.websocketBufferedBytes);
+    stats.appMemoryMaxBytes === null
+      ? "不限制"
+      : formatBytes(stats.appMemoryMaxBytes);
+  const appCpu =
+    stats.appCpuPercent === null ? "--" : `${stats.appCpuPercent.toFixed(1)}%`;
   const summary = `${latency} · ${liveFps}`;
   const items = [
     { key: "latency", label: "延迟", value: latency },
@@ -544,12 +544,10 @@ function VncPerformanceBadges({
     ...(stats.appMemoryUsedBytes === null
       ? []
       : [
-        { key: "appMemory", label: "应用内存", value: appMemory },
-        { key: "appMemoryMax", label: "最大内存", value: appMemoryMax },
-      ]),
-    ...(buffer === null
-      ? []
-      : [{ key: "buffer", label: "缓冲", value: buffer }]),
+          { key: "appCpu", label: "CPU", value: appCpu },
+          { key: "appMemory", label: "内存", value: appMemory },
+          { key: "appMemoryMax", label: "最大内存", value: appMemoryMax },
+        ]),
   ];
   const title = items.map((item) => `${item.label}：${item.value}`).join("；");
   const popoverStyle = popoverPosition
