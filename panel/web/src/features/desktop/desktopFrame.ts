@@ -21,15 +21,18 @@ const VNC_STYLE_ID = 'woc-vnc-style';
 const VNC_KEYBOARD_INPUT_ID = 'noVNC_keyboardinput';
 const IME_PREVIEW_ID = 'woc-ime-preview';
 const IME_ANCHOR_MARGIN = 8;
-const IME_ANCHOR_WIDTH = 280;
-const IME_ANCHOR_MIN_WIDTH = 120;
 const IME_ANCHOR_HEIGHT = 34;
 const IME_HIDDEN_INPUT_WIDTH = 2;
 const IME_HIDDEN_INPUT_HEIGHT = 24;
+const IME_PREVIEW_MIN_WIDTH = 1;
+const IME_PREVIEW_MAX_WIDTH = 360;
+const IME_PREVIEW_HORIZONTAL_PADDING = 0;
+const IME_PREVIEW_HEIGHT = 22;
+const IME_PREVIEW_FONT = '16px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
+const IME_PREVIEW_BOX_FONT = '16px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
 const DEFAULT_IME_ANCHOR_X = 24;
 const DEFAULT_IME_ANCHOR_Y = 24;
 const IME_REFOCUS_DELAYS = [0, 80, 240] as const;
-const IME_PREVIEW_HIDE_DELAY_MS = 900;
 const IME_FOCUS_SKIP_SELECTOR =
   'input,textarea,select,button,[contenteditable="true"],#noVNC_control_bar_anchor,#noVNC_control_bar,#noVNC_control_bar_handle';
 
@@ -38,7 +41,7 @@ const VNC_CONTROL_STYLE =
   '#noVNC_control_bar{background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.55)!important;box-shadow:0 0 24px rgba(0,0,0,.55)!important;}' +
   '#noVNC_control_bar_handle{opacity:1!important;background:rgba(18,22,30,.96)!important;border:1px solid rgba(255,255,255,.5)!important;}' +
   '#noVNC_keyboardinput{position:fixed!important;left:24px!important;top:24px!important;width:2px!important;height:24px!important;min-width:2px!important;min-height:24px!important;margin:0!important;padding:0!important;border:0!important;outline:0!important;opacity:.01!important;overflow:hidden!important;resize:none!important;background:transparent!important;color:transparent!important;caret-color:transparent!important;pointer-events:none!important;}' +
-  '#woc-ime-preview{position:fixed!important;left:24px!important;top:24px!important;width:280px!important;height:34px!important;min-width:120px!important;min-height:34px!important;margin:0!important;padding:5px 9px!important;border:1px solid rgba(255,255,255,.55)!important;border-radius:8px!important;outline:0!important;opacity:0!important;overflow:hidden!important;background:rgba(18,22,30,.28)!important;color:#fff!important;text-shadow:0 1px 2px rgba(0,0,0,.86)!important;box-shadow:0 4px 14px rgba(0,0,0,.2),inset 0 0 0 1px rgba(0,0,0,.12)!important;pointer-events:none!important;z-index:2147483647!important;font:16px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif!important;white-space:pre!important;transition:opacity .12s ease!important;}' +
+  '#woc-ime-preview{position:fixed!important;left:24px!important;top:24px!important;width:1px!important;height:22px!important;min-width:1px!important;min-height:22px!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;outline:0!important;opacity:0!important;overflow:visible!important;background:transparent!important;color:#fff!important;text-shadow:0 1px 2px rgba(0,0,0,.96),0 0 2px rgba(0,0,0,.72)!important;box-shadow:none!important;pointer-events:none!important;z-index:2147483647!important;font:16px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif!important;white-space:pre!important;transition:opacity .06s ease!important;}' +
   '#woc-ime-preview.woc-ime-preview--active{opacity:1!important;}';
 
 export function enableKasmImeMode(): void {
@@ -268,10 +271,10 @@ export function installImeCandidateAnchor(doc: Document): () => void {
   let anchor = clampImeAnchor(doc, DEFAULT_IME_ANCHOR_X, DEFAULT_IME_ANCHOR_Y);
   let keyboardInput: HTMLElement | null = null;
   let focusTimers: number[] = [];
-  let previewHideTimer: number | null = null;
   const win = doc.defaultView;
 
   const applyAnchor = () => {
+    anchor = clampImeAnchor(doc, anchor.x, anchor.y);
     setImePreviewStyle(ensureImePreview(doc), anchor.x, anchor.y);
     const input = readVncKeyboardInput(doc);
     keyboardInput = input;
@@ -291,33 +294,18 @@ export function installImeCandidateAnchor(doc: Document): () => void {
     focusTimers = [];
   };
 
-  const clearPreviewHideTimer = () => {
-    if (previewHideTimer === null || !win) return;
-    win.clearTimeout(previewHideTimer);
-    previewHideTimer = null;
-  };
-
   const setPreviewText = (text: string, keepVisible: boolean) => {
-    clearPreviewHideTimer();
     const preview = ensureImePreview(doc);
     preview.textContent = text;
+    applyAnchor();
     preview.classList.toggle('woc-ime-preview--active', keepVisible || text.length > 0);
   };
 
   const hidePreview = () => {
-    clearPreviewHideTimer();
     const preview = readImePreview(doc);
     if (!preview) return;
     preview.textContent = '';
     preview.classList.remove('woc-ime-preview--active');
-  };
-
-  const schedulePreviewHide = () => {
-    if (!win) return;
-    clearPreviewHideTimer();
-    previewHideTimer = win.setTimeout(() => {
-      hidePreview();
-    }, IME_PREVIEW_HIDE_DELAY_MS);
   };
 
   const focusKeyboardInput = () => {
@@ -355,9 +343,7 @@ export function installImeCandidateAnchor(doc: Document): () => void {
   };
   const onCompositionEnd = (event: Event) => {
     if (!isVncKeyboardInputTarget(event.target)) return;
-    const text = (event as CompositionEvent).data || '';
-    if (text) setPreviewText(text, true);
-    schedulePreviewHide();
+    hidePreview();
   };
   const onFrameFocus = () => scheduleKeyboardFocus();
   const onVisibilityChange = () => {
@@ -385,7 +371,6 @@ export function installImeCandidateAnchor(doc: Document): () => void {
 
   return () => {
     clearFocusTimers();
-    clearPreviewHideTimer();
     readImePreview(doc)?.remove();
     observer.disconnect();
     doc.removeEventListener('pointerdown', onPointerDown, true);
@@ -443,9 +428,9 @@ function clampImeAnchor(doc: Document, clientX: number, clientY: number): { x: n
   const win = doc.defaultView;
   const viewportWidth = doc.documentElement.clientWidth || win?.innerWidth || 0;
   const viewportHeight = doc.documentElement.clientHeight || win?.innerHeight || 0;
-  const inputWidth = readImeInputWidth(doc);
+  const previewWidth = readImePreviewWidth(doc);
   const maxX = viewportWidth
-    ? Math.max(IME_ANCHOR_MARGIN, viewportWidth - IME_ANCHOR_MARGIN - inputWidth)
+    ? Math.max(IME_ANCHOR_MARGIN, viewportWidth - IME_ANCHOR_MARGIN - previewWidth)
     : clientX;
   const maxY = viewportHeight
     ? Math.max(IME_ANCHOR_MARGIN, viewportHeight - IME_ANCHOR_MARGIN - IME_ANCHOR_HEIGHT)
@@ -485,39 +470,50 @@ function setImeAnchorStyle(input: HTMLElement, x: number, y: number): void {
 }
 
 function setImePreviewStyle(preview: HTMLElement, x: number, y: number): void {
-  const inputWidth = readImeInputWidth(preview.ownerDocument);
+  const previewWidth = readImePreviewWidth(preview.ownerDocument, preview.textContent || '');
+  const clampedAnchor = clampImeAnchor(preview.ownerDocument, x, y);
   preview.style.setProperty('position', 'fixed', 'important');
-  preview.style.setProperty('left', `${x}px`, 'important');
-  preview.style.setProperty('top', `${y}px`, 'important');
-  preview.style.setProperty('width', `${inputWidth}px`, 'important');
-  preview.style.setProperty('height', `${IME_ANCHOR_HEIGHT}px`, 'important');
-  preview.style.setProperty('min-width', `${IME_ANCHOR_MIN_WIDTH}px`, 'important');
-  preview.style.setProperty('min-height', `${IME_ANCHOR_HEIGHT}px`, 'important');
+  preview.style.setProperty('left', `${clampedAnchor.x}px`, 'important');
+  preview.style.setProperty('top', `${clampedAnchor.y}px`, 'important');
+  preview.style.setProperty('width', `${previewWidth}px`, 'important');
+  preview.style.setProperty('height', `${IME_PREVIEW_HEIGHT}px`, 'important');
+  preview.style.setProperty('min-width', `${IME_PREVIEW_MIN_WIDTH}px`, 'important');
+  preview.style.setProperty('min-height', `${IME_PREVIEW_HEIGHT}px`, 'important');
   preview.style.setProperty('margin', '0', 'important');
-  preview.style.setProperty('padding', '5px 9px', 'important');
-  preview.style.setProperty('border', '1px solid rgba(255,255,255,.55)', 'important');
-  preview.style.setProperty('border-radius', '8px', 'important');
+  preview.style.setProperty('padding', '0', 'important');
+  preview.style.setProperty('border', '0', 'important');
+  preview.style.setProperty('border-radius', '0', 'important');
   preview.style.setProperty('outline', '0', 'important');
-  preview.style.setProperty('overflow', 'hidden', 'important');
-  preview.style.setProperty('background', 'rgba(18,22,30,.28)', 'important');
+  preview.style.setProperty('overflow', 'visible', 'important');
+  preview.style.setProperty('background', 'transparent', 'important');
   preview.style.setProperty('color', '#fff', 'important');
-  preview.style.setProperty('text-shadow', '0 1px 2px rgba(0,0,0,.86)', 'important');
-  preview.style.setProperty('box-shadow', '0 4px 14px rgba(0,0,0,.2), inset 0 0 0 1px rgba(0,0,0,.12)', 'important');
+  preview.style.setProperty('text-shadow', '0 1px 2px rgba(0,0,0,.96), 0 0 2px rgba(0,0,0,.72)', 'important');
+  preview.style.setProperty('box-shadow', 'none', 'important');
   preview.style.setProperty('pointer-events', 'none', 'important');
   preview.style.setProperty('z-index', '2147483647', 'important');
   preview.style.setProperty(
     'font',
-    '16px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif',
+    IME_PREVIEW_BOX_FONT,
     'important',
   );
   preview.style.setProperty('white-space', 'pre', 'important');
-  preview.style.setProperty('transition', 'opacity .12s ease', 'important');
+  preview.style.setProperty('transition', 'opacity .06s ease', 'important');
 }
 
-function readImeInputWidth(doc: Document): number {
+function readImePreviewWidth(doc: Document, text = readImePreview(doc)?.textContent || ''): number {
   const win = doc.defaultView;
   const viewportWidth = doc.documentElement.clientWidth || win?.innerWidth || 0;
-  if (!viewportWidth) return IME_ANCHOR_WIDTH;
-  const available = viewportWidth - IME_ANCHOR_MARGIN * 2;
-  return Math.max(IME_ANCHOR_MIN_WIDTH, Math.min(IME_ANCHOR_WIDTH, available));
+  const available = Math.max(IME_PREVIEW_MIN_WIDTH, viewportWidth - IME_ANCHOR_MARGIN * 2);
+  const maxWidth = Math.min(IME_PREVIEW_MAX_WIDTH, available);
+  const measuredWidth = Math.ceil(measureImeTextWidth(doc, text) + IME_PREVIEW_HORIZONTAL_PADDING);
+  return Math.max(IME_PREVIEW_MIN_WIDTH, Math.min(maxWidth, measuredWidth));
+}
+
+function measureImeTextWidth(doc: Document, text: string): number {
+  if (!text) return 0;
+  const canvas = doc.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return text.length * 16;
+  context.font = IME_PREVIEW_FONT;
+  return context.measureText(text).width;
 }
