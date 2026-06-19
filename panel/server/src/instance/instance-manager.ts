@@ -22,6 +22,7 @@ import {
   ensureRunning,
   instanceLogs,
   instanceMemoryMB,
+  instanceMemoryStats,
   instanceRuntime,
   inspectVolumeAppType,
   keyInInstance,
@@ -63,6 +64,11 @@ export interface MemoryLimitInfo {
   currentMB: number;
   watchdogEnabled: boolean;
   intervalSec: number;
+}
+
+export interface ApplicationMemoryInfo {
+  usedBytes: number;
+  maxBytes: number | null;
 }
 
 export class InstanceManager {
@@ -172,6 +178,10 @@ export class InstanceManager {
       watchdogEnabled: this.watchdog.enabled,
       intervalSec: this.watchdog.intervalSec,
     };
+  }
+
+  async applicationMemory(actor: InstanceActor, id: unknown): Promise<ApplicationMemoryInfo> {
+    return await instanceMemoryStats(this.requireInstanceForActor(id, actor));
   }
 
   updateMemoryLimits(actor: InstanceActor, id: unknown, body: any) {

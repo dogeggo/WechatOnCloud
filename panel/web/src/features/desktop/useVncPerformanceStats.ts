@@ -10,12 +10,11 @@ export interface VncPerformanceStats {
   latencyMs: number | null;
   latencyJitterMs: number | null;
   fps: number | null;
-  frameIntervalMs: number | null;
   resolution: VncFrameResolution | null;
   viewport: VncFrameResolution | null;
   scalePercent: number | null;
-  devicePixelRatio: number | null;
-  heapUsedBytes: number | null;
+  appMemoryUsedBytes: number | null;
+  appMemoryMaxBytes: number | null;
   websocketBufferedBytes: number | null;
 }
 
@@ -23,12 +22,11 @@ const EMPTY_STATS: VncPerformanceStats = {
   latencyMs: null,
   latencyJitterMs: null,
   fps: null,
-  frameIntervalMs: null,
   resolution: null,
   viewport: null,
   scalePercent: null,
-  devicePixelRatio: null,
-  heapUsedBytes: null,
+  appMemoryUsedBytes: null,
+  appMemoryMaxBytes: null,
   websocketBufferedBytes: null,
 };
 const LATENCY_SAMPLE_SIZE = 6;
@@ -38,14 +36,16 @@ export function useVncPerformanceStats({
   showVnc,
   frameLoaded,
   frameRef,
+  instanceId,
 }: {
   active: boolean;
   showVnc: boolean;
   frameLoaded: boolean;
   frameRef: RefObject<HTMLIFrameElement>;
+  instanceId: string | undefined;
 }): VncPerformanceStats {
   const [stats, setStats] = useState<VncPerformanceStats>(EMPTY_STATS);
-  const enabled = active && showVnc && frameLoaded;
+  const enabled = active && showVnc && frameLoaded && !!instanceId;
 
   useEffect(() => {
     if (enabled) return;
@@ -76,11 +76,10 @@ export function useVncPerformanceStats({
       const elapsed = now - sampleStartedAt;
       if (elapsed >= 1000) {
         const fps = sampleSeen ? Math.max(0, Math.round((renderedFrames * 1000) / elapsed)) : null;
-        const frameIntervalMs = fps && fps > 0 ? Math.round(1000 / fps) : null;
         setStats((current) =>
-          current.fps === fps && current.frameIntervalMs === frameIntervalMs
+          current.fps === fps
             ? current
-            : { ...current, fps, frameIntervalMs },
+            : { ...current, fps },
         );
         renderedFrames = 0;
         sampleSeen = false;
@@ -120,6 +119,8 @@ export function useVncPerformanceStats({
 
   useEffect(() => {
     if (!enabled) return;
+    const currentInstanceId = instanceId;
+    if (!currentInstanceId) return;
 
     let stopped = false;
     let timer = 0;
@@ -128,23 +129,37 @@ export function useVncPerformanceStats({
     const measureLatency = async () => {
       const startedAt = performance.now();
       try {
-        await api.ping();
+        const ping = await api.ping(currentInstanceId);
         if (stopped) return;
         const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
         latencySamples.push(latencyMs);
         if (latencySamples.length > LATENCY_SAMPLE_SIZE) latencySamples.shift();
         const latencyJitterMs = latencySamples.length >= 2 ? calculateJitter(latencySamples) : null;
+        const appMemoryUsedBytes = normalizeMemoryBytes(ping.appMemory.usedBytes);
+        const appMemoryMaxBytes = normalizeMemoryBytes(ping.appMemory.maxBytes);
         setStats((current) =>
-          current.latencyMs === latencyMs && current.latencyJitterMs === latencyJitterMs
+          current.latencyMs === latencyMs
+            && current.latencyJitterMs === latencyJitterMs
+            && current.appMemoryUsedBytes === appMemoryUsedBytes
+            && current.appMemoryMaxBytes === appMemoryMaxBytes
             ? current
-            : { ...current, latencyMs, latencyJitterMs },
+            : { ...current, latencyMs, latencyJitterMs, appMemoryUsedBytes, appMemoryMaxBytes },
         );
       } catch {
         if (!stopped) {
           setStats((current) =>
-            current.latencyMs === null && current.latencyJitterMs === null
+            current.latencyMs === null
+              && current.latencyJitterMs === null
+              && current.appMemoryUsedBytes === null
+              && current.appMemoryMaxBytes === null
               ? current
-              : { ...current, latencyMs: null, latencyJitterMs: null },
+              : {
+                ...current,
+                latencyMs: null,
+                latencyJitterMs: null,
+                appMemoryUsedBytes: null,
+                appMemoryMaxBytes: null,
+              },
           );
         }
       }
@@ -157,19 +172,17 @@ export function useVncPerformanceStats({
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [enabled]);
+  }, [enabled, instanceId]);
 
   return stats;
 }
 
 function readRuntimeStats(frame: HTMLIFrameElement | null): Pick<
   VncPerformanceStats,
-  'resolution' | 'viewport' | 'scalePercent' | 'devicePixelRatio' | 'heapUsedBytes' | 'websocketBufferedBytes'
+  'resolution' | 'viewport' | 'scalePercent' | 'websocketBufferedBytes'
 > {
   return {
     ...readFrameGeometry(frame),
-    devicePixelRatio: readDevicePixelRatio(frame),
-    heapUsedBytes: readHeapUsedBytes(),
     websocketBufferedBytes: readWebsocketBufferedBytes(frame),
   };
 }
@@ -293,22 +306,6 @@ function readFrameGeometry(frame: HTMLIFrameElement | null): Pick<
   }
 }
 
-function readDevicePixelRatio(frame: HTMLIFrameElement | null): number | null {
-  try {
-    const ratio = frame?.contentWindow?.devicePixelRatio || window.devicePixelRatio;
-    if (!Number.isFinite(ratio) || ratio <= 0) return null;
-    return Math.round(ratio * 100) / 100;
-  } catch {
-    return Number.isFinite(window.devicePixelRatio) ? Math.round(window.devicePixelRatio * 100) / 100 : null;
-  }
-}
-
-function readHeapUsedBytes(): number | null {
-  const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory;
-  const used = memory?.usedJSHeapSize;
-  return typeof used === 'number' && Number.isFinite(used) && used >= 0 ? used : null;
-}
-
 function readWebsocketBufferedBytes(frame: HTMLIFrameElement | null): number | null {
   try {
     const win = frame?.contentWindow as (Window & { UI?: unknown; rfb?: unknown }) | null | undefined;
@@ -351,6 +348,10 @@ function calculateJitter(samples: number[]): number {
   return Math.round(total / (samples.length - 1));
 }
 
+function normalizeMemoryBytes(value: number): number | null {
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 function objectRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null;
 }
@@ -359,15 +360,13 @@ function sameRuntimeStats(
   current: VncPerformanceStats,
   next: Pick<
     VncPerformanceStats,
-    'resolution' | 'viewport' | 'scalePercent' | 'devicePixelRatio' | 'heapUsedBytes' | 'websocketBufferedBytes'
+    'resolution' | 'viewport' | 'scalePercent' | 'websocketBufferedBytes'
   >,
 ): boolean {
   return (
     sameResolution(current.resolution, next.resolution)
     && sameResolution(current.viewport, next.viewport)
     && current.scalePercent === next.scalePercent
-    && current.devicePixelRatio === next.devicePixelRatio
-    && current.heapUsedBytes === next.heapUsedBytes
     && current.websocketBufferedBytes === next.websocketBufferedBytes
   );
 }

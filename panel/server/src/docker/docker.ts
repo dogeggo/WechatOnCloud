@@ -483,17 +483,37 @@ export async function removeContainerById(
 // 用于 watchdog 检测 KasmVNC/Xvnc 长跑泄漏（21 小时可涨到 ~9 GiB），无法读取时返回 0（视为"暂未知"，
 // 不触发自愈，避免容器刚启动 stats 不可用就被误杀）。一次性 stats、不订阅 stream。
 export async function instanceMemoryMB(inst: Instance): Promise<number> {
+  return Math.round((await instanceMemoryUsedBytes(inst)) / 1024 / 1024);
+}
+
+export interface InstanceMemoryStats {
+  usedBytes: number;
+  maxBytes: number | null;
+}
+
+export async function instanceMemoryStats(inst: Instance): Promise<InstanceMemoryStats> {
+  const c = projectContainer(inst);
+  const [usedBytes, info] = await Promise.all([
+    instanceMemoryUsedBytes(inst),
+    c.inspect().catch(() => null),
+  ]);
+  const configuredMaxBytes = Number((info as any)?.HostConfig?.Memory) || 0;
+  return {
+    usedBytes,
+    maxBytes: configuredMaxBytes > 0 ? configuredMaxBytes : null,
+  };
+}
+
+async function instanceMemoryUsedBytes(inst: Instance): Promise<number> {
   try {
-    const c = projectContainer(inst);
-    const s: any = await c.stats({ stream: false } as any);
+    const s: any = await projectContainer(inst).stats({ stream: false } as any);
     const usage = Number(s?.memory_stats?.usage) || 0;
     const inactive =
       Number(
         s?.memory_stats?.stats?.inactive_file ??
           s?.memory_stats?.stats?.total_inactive_file,
       ) || 0;
-    const bytes = Math.max(0, usage - inactive);
-    return Math.round(bytes / 1024 / 1024);
+    return Math.max(0, usage - inactive);
   } catch {
     return 0;
   }

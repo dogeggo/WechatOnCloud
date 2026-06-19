@@ -90,6 +90,7 @@ export default function InstanceView({
     showVnc: effectiveShowVnc,
     frameLoaded: vnc.frameLoaded,
     frameRef,
+    instanceId: id,
   });
   const targetFps = stream.settings.frameRate;
   const desktopFiles = useDesktopFiles({
@@ -514,12 +515,6 @@ function VncPerformanceBadges({
   const measuredFps = capMeasuredFps(stats.fps);
   const liveFps = formatFps(measuredFps);
   const fps = targetFps === null ? liveFps : `${targetFps}fps`;
-  const frameInterval =
-    targetFps !== null
-      ? `${Math.round(1000 / targetFps)}ms`
-      : measuredFps === null || measuredFps <= 0
-        ? "--"
-        : `${Math.round(1000 / measuredFps)}ms`;
   const resolution = stats.resolution
     ? `${stats.resolution.width}x${stats.resolution.height}`
     : "--";
@@ -527,10 +522,12 @@ function VncPerformanceBadges({
     ? `${stats.viewport.width}x${stats.viewport.height}`
     : "--";
   const scale = stats.scalePercent === null ? "--" : `${stats.scalePercent}%`;
-  const dpr =
-    stats.devicePixelRatio === null ? "--" : `${stats.devicePixelRatio}x`;
-  const heap =
-    stats.heapUsedBytes === null ? "--" : formatBytes(stats.heapUsedBytes);
+  const appMemory =
+    stats.appMemoryUsedBytes === null
+      ? "--"
+      : formatBytes(stats.appMemoryUsedBytes);
+  const appMemoryMax =
+    stats.appMemoryMaxBytes === null ? "不限制" : formatBytes(stats.appMemoryMaxBytes);
   const buffer =
     stats.websocketBufferedBytes === null
       ? null
@@ -541,14 +538,15 @@ function VncPerformanceBadges({
     { key: "jitter", label: "抖动", value: jitter },
     { key: "fps", label: "帧率", value: fps },
     { key: "liveFps", label: "绘制", value: liveFps },
-    { key: "frame", label: "帧时", value: frameInterval },
     { key: "resolution", label: "分辨率", value: resolution },
     { key: "viewport", label: "视窗", value: viewport },
     { key: "scale", label: "缩放", value: scale },
-    { key: "dpr", label: "DPR", value: dpr },
-    ...(stats.heapUsedBytes === null
+    ...(stats.appMemoryUsedBytes === null
       ? []
-      : [{ key: "heap", label: "内存", value: heap }]),
+      : [
+        { key: "appMemory", label: "应用内存", value: appMemory },
+        { key: "appMemoryMax", label: "最大内存", value: appMemoryMax },
+      ]),
     ...(buffer === null
       ? []
       : [{ key: "buffer", label: "缓冲", value: buffer }]),

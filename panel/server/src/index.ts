@@ -105,7 +105,16 @@ app.get('/api/ping', async (req, reply) => {
   const user = requireUser(req, reply);
   if (!user) return;
   reply.header('cache-control', 'no-store');
-  return { ok: true, now: Date.now() };
+  return handle(
+    reply,
+    async () => ({
+      ok: true,
+      now: Date.now(),
+      appMemory: await instances.applicationMemory(user, routeQuery(req).instanceId),
+    }),
+    500,
+    '读取应用内存失败',
+  );
 });
 app.get('/api/admin/sessions', async (req, reply) => auth.currentUserSessions(req, reply));
 app.delete('/api/admin/sessions/:id', async (req, reply) => auth.removeCurrentUserSession(req, reply));
