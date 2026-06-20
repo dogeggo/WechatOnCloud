@@ -12,6 +12,7 @@ import {
   destroySessionById,
   findSessionById,
   listSessions,
+  SESSION_TTL_SECONDS,
   touchSession,
   type AuthUser,
   type PublicSession,
@@ -33,17 +34,19 @@ export class AuthManager {
     private readonly trustedProxies: TrustedProxy[],
   ) {}
 
-  currentSession(req: FastifyRequest) {
+  currentSession(req: FastifyRequest, reply?: FastifyReply) {
     const token = req.cookies?.[this.sessionCookieName];
-    return this.applyCurrentRole(this.authorizedSession(token, touchSession(token, this.requestSessionMeta(req))));
+    const session = this.applyCurrentRole(this.authorizedSession(token, touchSession(token, this.requestSessionMeta(req))));
+    if (session && token && reply) this.setSessionCookie(reply, token);
+    return session;
   }
 
-  currentUser(req: FastifyRequest): AuthUser | null {
-    return this.currentSession(req)?.user ?? null;
+  currentUser(req: FastifyRequest, reply?: FastifyReply): AuthUser | null {
+    return this.currentSession(req, reply)?.user ?? null;
   }
 
   requireAuth(req: FastifyRequest, reply: FastifyReply): AuthUser | null {
-    const user = this.currentUser(req);
+    const user = this.currentUser(req, reply);
     if (!user) {
       reply.code(401).send({ error: '未登录' });
       return null;
@@ -125,7 +128,7 @@ export class AuthManager {
       const user = this.buildUser(claims, info);
 
       const token = createSession(user, this.requestSessionMeta(req));
-      reply.setCookie(this.sessionCookieName, token, this.sessionCookieOptions(60 * 60 * 12));
+      this.setSessionCookie(reply, token);
       return reply.redirect(flow.returnTo);
     } catch (e: any) {
       if (e instanceof LoginFlowError) return loginError(reply, e.message);
@@ -143,7 +146,7 @@ export class AuthManager {
   }
 
   me(req: FastifyRequest, reply: FastifyReply) {
-    const user = this.currentUser(req);
+    const user = this.currentUser(req, reply);
     if (!user) return reply.code(401).send({ error: '未登录' });
     return { user };
   }
@@ -198,12 +201,16 @@ export class AuthManager {
     };
   }
 
-  private sessionCookieOptions(maxAge: number) {
+  private setSessionCookie(reply: FastifyReply, token: string): void {
+    reply.setCookie(this.sessionCookieName, token, this.sessionCookieOptions());
+  }
+
+  private sessionCookieOptions() {
     return {
       httpOnly: true,
       sameSite: 'lax' as const,
       path: '/',
-      maxAge,
+      maxAge: SESSION_TTL_SECONDS,
       secure: this.config.oidc.cookieSecure,
     };
   }

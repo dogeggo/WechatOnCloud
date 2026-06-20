@@ -44,12 +44,14 @@ export interface LoginFlow {
   expires: number;
 }
 
-const SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 小时
+export const SESSION_TTL_SECONDS = 60 * 60 * 24; // 24 小时
+const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
 const FLOW_TTL_MS = 1000 * 60 * 10; // 10 分钟
 const TOUCH_PERSIST_INTERVAL_MS = 1000 * 60; // 最近活动最多延迟 1 分钟落盘
 const FILE = '/data/sessions.json';
 const sessions = new Map<string, Session>();
 const loginFlows = new Map<string, LoginFlow>();
+let sessionsPersistedAt = Date.now();
 
 function token() {
   return randomBytes(32).toString('hex');
@@ -94,6 +96,7 @@ function persistSessions() {
   };
   writeFileSync(tmp, JSON.stringify(data, null, 2));
   renameSync(tmp, FILE);
+  sessionsPersistedAt = Date.now();
 }
 
 function asTimestamp(v: unknown): number | null {
@@ -200,8 +203,9 @@ export function touchSession(t?: string, meta?: SessionMeta) {
   const m = cleanMeta(meta);
   const now = Date.now();
   // 管理页里的一个“设备”只对应一个 session cookie；IP/UA 仅作为最近访问元数据展示。
-  const shouldPersist = now - s.lastSeenAt >= TOUCH_PERSIST_INTERVAL_MS || m.ip !== s.ip || m.userAgent !== s.userAgent;
+  const shouldPersist = now - sessionsPersistedAt >= TOUCH_PERSIST_INTERVAL_MS || m.ip !== s.ip || m.userAgent !== s.userAgent;
   s.lastSeenAt = now;
+  s.expires = now + SESSION_TTL_MS;
   s.ip = m.ip;
   s.userAgent = m.userAgent;
   if (shouldPersist) persistSessions();
