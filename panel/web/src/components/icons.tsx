@@ -95,4 +95,19 @@ export const Icons = {
       <path d="M3 3l18 18" />
     </>,
   ),
+  externalLink: icon(
+    <>
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </>,
+  ),
+  linkOff: icon(
+    <>
+      <path d="M9.9 4.2A5 5 0 0 1 17 11.3l-1.4 1.4" />
+      <path d="M14.1 19.8A5 5 0 0 1 7 12.7l1.4-1.4" />
+      <path d="M8 8 3 3" />
+      <path d="M21 21 13 13" />
+    </>,
+  ),
 };

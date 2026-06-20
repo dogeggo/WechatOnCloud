@@ -1,8 +1,8 @@
 [Desktop Entry]
 Version=1.0
-Name=WOC Chromium
-Comment=Open links in Chromium for WechatOnCloud
-Exec=/usr/local/bin/woc-browser %U
+Name=WOC URL Handler
+Comment=Open links for WechatOnCloud
+Exec=/usr/local/bin/woc-open-url %U
 Terminal=false
 Type=Application
 Categories=Network;WebBrowser;

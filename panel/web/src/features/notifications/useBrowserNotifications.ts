@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, isUnauthorizedError, type DesktopClientReplacedEvent, type InstanceNotificationEvent } from '../../api';
+import {
+  api,
+  isUnauthorizedError,
+  type DesktopClientReplacedEvent,
+  type ExternalLinkEvent,
+  type InstanceNotificationEvent,
+} from '../../api';
+import { browserClientId } from '../../browserClient';
 import { useUI } from '../../ui';
 import { ReconnectWatchdog } from '../../utils/connectionWatchdog';
 import { dispatchDesktopClientReplaced } from '../desktop/desktopClientEvents';
 
 const STORAGE_KEY = 'woc_browser_notifications';
+const EXTERNAL_LINKS_STORAGE_KEY = 'woc_external_links';
 const UNREAD_STORAGE_KEY = 'woc_notification_unread_instances';
 const STREAM_RECONNECT_INITIAL_DELAY = 1000;
 const STREAM_RECONNECT_MAX_DELAY = 15000;
@@ -20,6 +28,14 @@ function notificationPermission(): NotificationPermission | 'unsupported' {
 function initialEnabled(): boolean {
   try {
     return localStorage.getItem(STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function initialExternalLinksEnabled(): boolean {
+  try {
+    return localStorage.getItem(EXTERNAL_LINKS_STORAGE_KEY) === '1';
   } catch {
     return false;
   }
@@ -87,18 +103,26 @@ export function useBrowserNotifications() {
   const navigate = useNavigate();
   const { toast } = useUI();
   const [enabled, setEnabled] = useState(initialEnabled);
+  const [externalLinksEnabled, setExternalLinksEnabled] = useState(initialExternalLinksEnabled);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(notificationPermission);
   const [unreadInstances, setUnreadInstances] = useState<UnreadInstance[]>(loadUnreadInstances);
   const unreadIds = useMemo(() => unreadInstanceIds(unreadInstances), [unreadInstances]);
   const unreadCount = useMemo(() => unreadTotal(unreadInstances), [unreadInstances]);
   const enabledRef = useRef(enabled);
+  const externalLinksEnabledRef = useRef(externalLinksEnabled);
   const permissionRef = useRef(permission);
   const titleRef = useRef(document.title || '云应用');
   const seenRef = useRef<Set<string>>(new Set());
+  const openedExternalLinksRef = useRef<Set<string>>(new Set());
+  const browserClientIdRef = useRef(browserClientId());
 
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
+
+  useEffect(() => {
+    externalLinksEnabledRef.current = externalLinksEnabled;
+  }, [externalLinksEnabled]);
 
   useEffect(() => {
     permissionRef.current = permission;
@@ -147,6 +171,21 @@ export function useBrowserNotifications() {
     toast(next ? '已开启浏览器通知' : '已关闭浏览器通知', 'ok');
   }, [setNotificationEnabled, toast]);
 
+  const setExternalLinkEnabled = useCallback((value: boolean) => {
+    try {
+      localStorage.setItem(EXTERNAL_LINKS_STORAGE_KEY, value ? '1' : '0');
+    } catch {
+      /* ignore storage errors */
+    }
+    setExternalLinksEnabled(value);
+  }, []);
+
+  const toggleExternalLinks = useCallback(() => {
+    const next = !externalLinksEnabledRef.current;
+    setExternalLinkEnabled(next);
+    toast(next ? '已开启外链在本机打开' : '已关闭外链接管', 'ok');
+  }, [setExternalLinkEnabled, toast]);
+
   const showNotification = useCallback(
     (event: InstanceNotificationEvent) => {
       if (seenRef.current.has(event.id)) return;
@@ -192,6 +231,25 @@ export function useBrowserNotifications() {
     [navigate, toast],
   );
 
+  const openExternalLink = useCallback((event: ExternalLinkEvent) => {
+    if (openedExternalLinksRef.current.has(event.id)) return;
+    openedExternalLinksRef.current.add(event.id);
+    if (openedExternalLinksRef.current.size > 300) {
+      const first = openedExternalLinksRef.current.values().next().value;
+      if (first) openedExternalLinksRef.current.delete(first);
+    }
+    if (!externalLinksEnabledRef.current) return;
+    const opened = window.open('about:blank', '_blank');
+    if (opened) {
+      opened.opener = null;
+      opened.location.href = event.url;
+      toast(`${event.instanceName} 外链已在本机打开`, 'ok');
+      return;
+    }
+    toast('浏览器拦截了新标签页，正在当前标签页打开外链', 'info');
+    window.setTimeout(() => window.location.assign(event.url), 80);
+  }, [toast]);
+
   const clearUnreadInstance = useCallback((instanceId: string) => {
     setUnreadInstances((items) => {
       const next = items.filter((item) => item.instanceId !== instanceId);
@@ -204,6 +262,7 @@ export function useBrowserNotifications() {
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key === UNREAD_STORAGE_KEY) setUnreadInstances(loadUnreadInstances());
+      if (event.key === EXTERNAL_LINKS_STORAGE_KEY) setExternalLinksEnabled(initialExternalLinksEnabled());
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -230,6 +289,14 @@ export function useBrowserNotifications() {
         /* ignore malformed desktop client event */
       }
     };
+    const onExternalLink = (e: MessageEvent) => {
+      try {
+        const event = JSON.parse(e.data) as ExternalLinkEvent;
+        if (event?.type === 'external-link') openExternalLink(event);
+      } catch {
+        /* ignore malformed external link event */
+      }
+    };
 
     let stream: EventSource | null = null;
     let disposed = false;
@@ -246,6 +313,7 @@ export function useBrowserNotifications() {
       if (!stream) return;
       stream.removeEventListener('notification', onNotification as EventListener);
       stream.removeEventListener('desktop-client-replaced', onDesktopClientReplaced as EventListener);
+      stream.removeEventListener('external-link', onExternalLink as EventListener);
       stream.onopen = null;
       stream.onerror = null;
       stream.close();
@@ -292,7 +360,7 @@ export function useBrowserNotifications() {
     function connect() {
       if (disposed) return;
       closeStream();
-      const next = new EventSource(api.notificationsStreamUrl());
+      const next = new EventSource(api.notificationsStreamUrl(externalLinksEnabled, browserClientIdRef.current));
       stream = next;
       next.onopen = () => {
         reconnectWatchdog.reset();
@@ -302,6 +370,7 @@ export function useBrowserNotifications() {
       };
       next.addEventListener('notification', onNotification as EventListener);
       next.addEventListener('desktop-client-replaced', onDesktopClientReplaced as EventListener);
+      next.addEventListener('external-link', onExternalLink as EventListener);
     }
 
     connect();
@@ -311,12 +380,14 @@ export function useBrowserNotifications() {
       reconnectWatchdog.destroy();
       closeStream();
     };
-  }, [navigate, showNotification]);
+  }, [externalLinksEnabled, navigate, openExternalLink, showNotification]);
 
   return {
     notificationStatus: status,
+    externalLinksEnabled,
     unreadInstanceIds: unreadIds,
     clearUnreadInstance,
     toggleBrowserNotifications,
+    toggleExternalLinks,
   };
 }

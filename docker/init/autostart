@@ -10,7 +10,7 @@ if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -z "${WOC_DBUS_SESSION_STARTED:-}
     exec dbus-run-session -- "$0" "$@"
 fi
 
-export BROWSER="${BROWSER:-/usr/local/bin/woc-browser}"
+export BROWSER="${BROWSER:-/usr/local/bin/woc-open-url}"
 
 if command -v xdg-mime >/dev/null 2>&1 && [ -f /usr/share/applications/woc-browser.desktop ]; then
     xdg-mime default woc-browser.desktop x-scheme-handler/http 2>/dev/null || true

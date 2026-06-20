@@ -126,9 +126,11 @@ export default function AppShell() {
         <Sidebar
           collapsed={railed}
           notificationStatus={browserNotifications.notificationStatus}
+          externalLinksEnabled={browserNotifications.externalLinksEnabled}
           unreadInstanceIds={browserNotifications.unreadInstanceIds}
           onToggleCollapsed={toggleCollapsed}
           onToggleNotifications={browserNotifications.toggleBrowserNotifications}
+          onToggleExternalLinks={browserNotifications.toggleExternalLinks}
         />
         <div className="shell-backdrop" onClick={() => setDrawer(false)} />
         <main className="workspace">
@@ -154,15 +156,19 @@ export default function AppShell() {
 function Sidebar({
   collapsed,
   notificationStatus,
+  externalLinksEnabled,
   unreadInstanceIds,
   onToggleCollapsed,
   onToggleNotifications,
+  onToggleExternalLinks,
 }: {
   collapsed: boolean;
   notificationStatus: BrowserNotificationStatus;
+  externalLinksEnabled: boolean;
   unreadInstanceIds: string[];
   onToggleCollapsed: () => void;
   onToggleNotifications: () => void;
+  onToggleExternalLinks: () => void;
 }) {
   const { user, logout } = useAuth();
   const { confirm } = useUI();
@@ -220,6 +226,15 @@ function Sidebar({
           <span className="sb-ic">{notificationStatus === 'on' ? Icons.bell : Icons.bellOff}</span>
           {!collapsed && <span className="sb-label">通知</span>}
           {!collapsed && <span className="sb-stxt">{notificationText(notificationStatus)}</span>}
+        </button>
+        <button
+          className={'sb-item' + (externalLinksEnabled ? ' on' : '')}
+          onClick={onToggleExternalLinks}
+          title={externalLinksEnabled ? '关闭外链在本机打开' : '开启外链在本机打开'}
+        >
+          <span className="sb-ic">{externalLinksEnabled ? Icons.externalLink : Icons.linkOff}</span>
+          {!collapsed && <span className="sb-label">外链</span>}
+          {!collapsed && <span className="sb-stxt">{externalLinksEnabled ? '本机' : '容器'}</span>}
         </button>
         <button className={'sb-item' + (loc.pathname === '/admin' ? ' on' : '')} onClick={() => go('/admin')} title="管理">
           <span className="sb-ic">{Icons.gear}</span>

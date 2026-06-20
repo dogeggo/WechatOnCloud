@@ -8,12 +8,14 @@ const DISPLACED_CLIENT_TTL_MS = 60_000;
 interface DesktopClientConnection {
   instanceId: string;
   clientId: string;
+  browserClientId: string;
   socket: Socket;
 }
 
 interface RegisterDesktopClientOptions {
   inst: Instance;
   clientId: string;
+  browserClientId: string;
   socket: Socket;
   notifications: NotificationManager;
   log: FastifyBaseLogger;
@@ -23,7 +25,7 @@ export class DesktopClientManager {
   private readonly active = new Map<string, DesktopClientConnection>();
   private readonly displacedUntil = new Map<string, number>();
 
-  register({ inst, clientId, socket, notifications, log }: RegisterDesktopClientOptions): boolean {
+  register({ inst, clientId, browserClientId, socket, notifications, log }: RegisterDesktopClientOptions): boolean {
     this.pruneDisplaced();
 
     const active = this.active.get(inst.id);
@@ -42,7 +44,7 @@ export class DesktopClientManager {
       active.socket.destroy();
     }
 
-    const current: DesktopClientConnection = { instanceId: inst.id, clientId, socket };
+    const current: DesktopClientConnection = { instanceId: inst.id, clientId, browserClientId, socket };
     this.active.set(inst.id, current);
     socket.once('close', () => this.release(current));
     return true;
@@ -62,6 +64,16 @@ export class DesktopClientManager {
       return false;
     }
     return true;
+  }
+
+  activeBrowserClientId(instanceId: string): string | null {
+    const active = this.active.get(instanceId);
+    if (!active) return null;
+    if (active.socket.destroyed) {
+      this.active.delete(instanceId);
+      return null;
+    }
+    return active.browserClientId || null;
   }
 
   private release(client: DesktopClientConnection): void {

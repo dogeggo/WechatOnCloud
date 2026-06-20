@@ -129,6 +129,17 @@ export interface DesktopClientReplacedEvent {
   createdAt: number;
 }
 
+export interface ExternalLinkEvent {
+  type: 'external-link';
+  id: string;
+  instanceId: string;
+  instanceName: string;
+  appType: AppType;
+  appName: string;
+  url: string;
+  createdAt: number;
+}
+
 export interface VolEntry {
   name: string;
   type: 'dir' | 'file' | 'link' | 'other';
@@ -246,7 +257,13 @@ export const api = {
   instanceAppStatus: (id: string) => req<{ status: AppStatus }>(`/api/instances/${id}/app/status`),
   instanceAppInstall: (id: string) => req(`/api/admin/instances/${id}/app/install`, { method: 'POST' }),
   instanceAppUpdate: (id: string) => req(`/api/admin/instances/${id}/app/update`, { method: 'POST' }),
-  notificationsStreamUrl: () => '/api/notifications/stream',
+  notificationsStreamUrl: (externalLinksEnabled = false, browserClientId = '') => {
+    const params = new URLSearchParams();
+    if (externalLinksEnabled) params.set('externalLinks', '1');
+    if (browserClientId) params.set('browserClient', browserClientId);
+    const query = params.toString();
+    return `/api/notifications/stream${query ? `?${query}` : ''}`;
+  },
   instanceStart: (id: string) => req(`/api/admin/instances/${id}/start`, { method: 'POST' }),
   instanceStop: (id: string) => req(`/api/admin/instances/${id}/stop`, { method: 'POST' }),
   instanceRestart: (id: string) => req(`/api/admin/instances/${id}/restart`, { method: 'POST' }),

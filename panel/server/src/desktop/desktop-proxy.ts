@@ -136,7 +136,17 @@ function handleUpgrade(
 
   req.url = prepared.rest;
   (req as any)._wocAuth = basicAuth(inst);
-  if (prepared.clientId && !desktopClients.register({ inst, clientId: prepared.clientId, socket, notifications, log })) {
+  if (
+    prepared.clientId &&
+    !desktopClients.register({
+      inst,
+      clientId: prepared.clientId,
+      browserClientId: prepared.browserClientId,
+      socket,
+      notifications,
+      log,
+    })
+  ) {
     return;
   }
   auth.trackSessionSocket(session.id, socket);
@@ -234,6 +244,7 @@ const DESKTOP_CLIENT_ID_RE = /^[0-9a-f]{32}$/;
 interface PreparedDesktopSocketRest {
   rest: string;
   clientId: string | null;
+  browserClientId: string;
 }
 
 function prepareDesktopSocketRest(rest: string): PreparedDesktopSocketRest | null {
@@ -242,12 +253,15 @@ function prepareDesktopSocketRest(rest: string): PreparedDesktopSocketRest | nul
     const pathname = url.pathname || '/';
     const isDesktopClient = pathname === '/websockify' || pathname === '/websockify/';
     const clientId = url.searchParams.get('wocClient') || '';
+    const browserClientId = url.searchParams.get('wocBrowserClient') || '';
     url.searchParams.delete('wocClient');
+    url.searchParams.delete('wocBrowserClient');
     const cleanedRest = `${pathname}${url.search}`;
 
-    if (!isDesktopClient) return { rest: cleanedRest, clientId: null };
+    if (!isDesktopClient) return { rest: cleanedRest, clientId: null, browserClientId: '' };
     if (!DESKTOP_CLIENT_ID_RE.test(clientId)) return null;
-    return { rest: cleanedRest, clientId };
+    if (!DESKTOP_CLIENT_ID_RE.test(browserClientId)) return null;
+    return { rest: cleanedRest, clientId, browserClientId };
   } catch {
     return null;
   }

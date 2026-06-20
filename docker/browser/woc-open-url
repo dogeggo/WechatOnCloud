@@ -1,0 +1,53 @@
+#!/bin/bash
+set -u
+
+PANEL_URL="${WOC_PANEL_INTERNAL_URL:-http://aoc-panel:8080}"
+PANEL_URL="${PANEL_URL%/}"
+PANEL_HOST="${WOC_PANEL_INTERNAL_HOST:-127.0.0.1}"
+INSTANCE_ID="${WOC_INSTANCE_ID:-}"
+TOKEN="${WOC_NOTIFY_TOKEN:-}"
+
+fallback_open() {
+  exec /usr/local/bin/woc-browser "$@"
+}
+
+json_escape() {
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$1"
+}
+
+post_url() {
+  local url="$1" payload response status body
+  [ -n "${INSTANCE_ID}" ] || return 1
+  [ -n "${TOKEN}" ] || return 1
+
+  payload="{\"url\":$(json_escape "$url")}"
+  response="$(
+    curl -sS --max-time 2 \
+      -H 'content-type: application/json; charset=utf-8' \
+      -H "authorization: Bearer ${TOKEN}" \
+      -H "host: ${PANEL_HOST}" \
+      -o - \
+      -w '\n%{http_code}' \
+      --data "${payload}" \
+      "${PANEL_URL}/_woc/internal/instances/${INSTANCE_ID}/external-links" 2>/dev/null
+  )" || return 1
+  status="$(printf '%s' "${response}" | tail -n 1)"
+  body="$(printf '%s' "${response}" | sed '$d')"
+  [ "${status}" = "200" ] || return 1
+  printf '%s' "${body}" | grep -q '"accepted"[[:space:]]*:[[:space:]]*true'
+}
+
+[ "$#" -gt 0 ] || fallback_open
+
+for url in "$@"; do
+  case "${url}" in
+    http://*|https://*)
+      if post_url "${url}"; then
+        continue
+      fi
+      ;;
+  esac
+  fallback_open "${url}"
+done
+
+exit 0

@@ -67,7 +67,7 @@ ENV LANG=zh_CN.UTF-8 \
     LIBGL_ALWAYS_SOFTWARE=1 \
     QTWEBENGINE_DISABLE_SANDBOX=1 \
     QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox \
-    BROWSER=/usr/local/bin/woc-browser
+    BROWSER=/usr/local/bin/woc-open-url
 
 # 本项目不依赖实例容器内的 cron / dockerd；从 s6 user bundle 移除，避免常驻空跑进程。
 RUN rm -f \
@@ -75,13 +75,13 @@ RUN rm -f \
     /etc/s6-overlay/s6-rc.d/user/contents.d/svc-docker
 
 # 微信内打开外链时可能走系统 URL handler，而不是 app-defs.sh 中的 Chromium 启动命令。
-# 用带 --no-sandbox 的 wrapper 做默认浏览器，避免容器/root 环境下 Chromium 直接退出。
-COPY browser/woc-browser /usr/local/bin/woc-browser
+# 默认 URL handler 先尝试把 http/https 上报给面板，由用户端浏览器打开；无人接管时回退到容器内 Chromium。
+COPY browser/woc-browser browser/woc-open-url /usr/local/bin/
 COPY browser/woc-browser.desktop /usr/share/applications/woc-browser.desktop
-RUN chmod 755 /usr/local/bin/woc-browser && \
+RUN chmod 755 /usr/local/bin/woc-browser /usr/local/bin/woc-open-url && \
     chmod 644 /usr/share/applications/woc-browser.desktop && \
-    update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/local/bin/woc-browser 200 && \
-    update-alternatives --install /usr/bin/gnome-www-browser gnome-www-browser /usr/local/bin/woc-browser 200
+    update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/local/bin/woc-open-url 200 && \
+    update-alternatives --install /usr/bin/gnome-www-browser gnome-www-browser /usr/local/bin/woc-open-url 200
 
 # 改 KasmVNC web 客户端的 webpack 产物 dist/*.bundle.js：
 #  (1) 默认开启 IME 输入模式：本地（客户端）输入法打中文，拼音联想在本地完成、只把成品汉字

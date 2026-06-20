@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import type { DesktopClientReplacedEvent, InstanceWithStatus } from "../api";
 import { api } from "../api";
+import { browserClientId } from "../browserClient";
 import { Icons } from "../components/icons";
 import {
   appProfile,
@@ -109,7 +110,7 @@ export default function InstanceView({
   const desktopFrameSrc = useMemo(() => {
     if (!id) return "about:blank";
     enableKasmImeMode();
-    return desktopUrl(id, desktopClientId, streamRef.current);
+    return desktopUrl(id, desktopClientId, browserClientId(), streamRef.current);
   }, [id, desktopClientId, vnc.vncNonce]);
 
   useEffect(() => {

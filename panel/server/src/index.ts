@@ -383,7 +383,7 @@ app.post('/api/admin/instances/:id/app/update', async (req, reply) => {
   return handle(reply, () => instances.triggerAppInstall(user, routeParams(req).id, 'update'), 500, '无法触发更新');
 });
 
-registerNotificationRoutes(app, auth, instances, notifications);
+registerNotificationRoutes(app, auth, instances, desktopClients, notifications);
 registerDesktopProxy(app, auth, panelConfig, desktopClients, notifications);
 
 await app.register(fstatic, { root: panelConfig.staticDir, wildcard: false, index: ['index.html'] });

@@ -166,10 +166,10 @@ export function appActionDoneMessage(action: AppInstallAction, type?: AppType): 
   return action === 'install' ? `已开始下载${appProfile(type).label}` : `已开始更新${appProfile(type).label}`;
 }
 
-export function desktopUrl(id: string, clientId: string, stream: VncStreamSettings): string {
+export function desktopUrl(id: string, clientId: string, browserClientId: string, stream: VncStreamSettings): string {
   const params = new URLSearchParams({
     autoconnect: '1',
-    path: `desktop/${id}/websockify?wocClient=${clientId}`,
+    path: `desktop/${id}/websockify?wocClient=${clientId}&wocBrowserClient=${browserClientId}`,
     resize: 'remote',
     reconnect: 'true',
     reconnect_delay: '2000',
