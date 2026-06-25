@@ -24,8 +24,9 @@ APP_TYPE=wechat
 APP_TYPE="${WOC_APP_TYPE:-wechat}"
 # shellcheck source=/dev/null
 . /woc/app-defs.sh
-woc_apply_software_rendering_env
 woc_app_def "$APP_TYPE" || exit 1
+woc_apply_app_runtime_env "${APP_RUNTIME_PROFILE:-software}" || exit 1
+woc_prepare_app_runtime "$APP_TYPE"
 
 AUTOSTART_KEY="$(printf '%s-%s' "${APP_TYPE}" "${DISPLAY:-:1}" | tr -c 'A-Za-z0-9_.-' '_')"
 AUTOSTART_STATE_DIR=/tmp/woc-autostart

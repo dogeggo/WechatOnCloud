@@ -5,6 +5,7 @@
 #   APP_PROCESS_PATTERN — pgrep -f 进程匹配，用于避免重复拉起与隐藏窗口恢复
 #   APP_WINDOW_CLASS_RE — 顶层主窗口 WM_CLASS 匹配，用于 autostart 最大化看守
 #   APP_RESTART_ON_HIDE — 窗口隐藏后重启应用恢复界面（用于 QQ/Electron 白屏规避）
+#   APP_RUNTIME_PROFILE — 运行时环境 profile（软件渲染、Telegram 内存收缩等）
 # 缺省类型为微信；未知类型直接报错。
 woc_chromium_software_flags() {
   printf '%s\n' \
@@ -60,10 +61,61 @@ woc_apply_software_rendering_env() {
   done < <(woc_chromium_software_flags)
 }
 
+woc_apply_telegram_runtime_env() {
+  unset LIBGL_ALWAYS_SOFTWARE
+  unset GALLIUM_DRIVER
+  unset MESA_LOADER_DRIVER_OVERRIDE
+  unset QT_OPENGL
+  unset QT_QUICK_BACKEND
+  unset QT_XCB_FORCE_SOFTWARE_OPENGL
+  unset QTWEBENGINE_DISABLE_SANDBOX
+  unset QTWEBENGINE_CHROMIUM_FLAGS
+  unset QT_LINUX_ACCESSIBILITY_ALWAYS_ON
+  unset GTK_MODULES
+  export MALLOC_ARENA_MAX=2
+  export MALLOC_TRIM_THRESHOLD_=131072
+  export MALLOC_MMAP_THRESHOLD_=131072
+}
+
+woc_disable_core_dumps() {
+  ulimit -c 0 2>/dev/null || true
+}
+
+woc_cleanup_telegram_core_files() {
+  local dir=/config/.local/share/TelegramDesktop
+  [ -d "$dir" ] || return 0
+  find "$dir" -maxdepth 1 -type f \( -name core -o -name 'core.*' \) -delete 2>/dev/null || true
+}
+
+woc_apply_app_runtime_env() {
+  case "${1:-software}" in
+    software)
+      woc_apply_software_rendering_env
+      ;;
+    telegram)
+      woc_apply_telegram_runtime_env
+      ;;
+    *)
+      echo "未知运行时 profile: ${1:-}" >&2
+      return 1
+      ;;
+  esac
+}
+
+woc_prepare_app_runtime() {
+  case "${1:-}" in
+    telegram)
+      woc_disable_core_dumps
+      woc_cleanup_telegram_core_files
+      ;;
+  esac
+}
+
 woc_app_def() {
   APP_REOPEN=
   APP_RESTART_ON_HIDE=
   APP_PROCESS_PATTERN=
+  APP_RUNTIME_PROFILE=software
   case "${1:-wechat}" in
     wechat)
       APP_BIN=/config/wechat/opt/wechat/wechat
@@ -95,6 +147,7 @@ woc_app_def() {
       APP_NAME=Telegram
       APP_PROCESS_PATTERN="$APP_BIN"
       APP_WINDOW_CLASS_RE='Telegram|telegram-desktop'
+      APP_RUNTIME_PROFILE=telegram
       ;;
     *)
       echo "未知应用类型: ${1:-}" >&2

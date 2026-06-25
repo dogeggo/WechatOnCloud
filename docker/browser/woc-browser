@@ -8,6 +8,7 @@ fi
 
 # shellcheck source=/dev/null
 . /woc/app-defs.sh
+woc_apply_software_rendering_env
 mapfile -t chromium_flags < <(woc_chromium_software_flags)
 
 chromium_flags+=(
