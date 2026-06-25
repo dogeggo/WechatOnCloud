@@ -106,13 +106,15 @@ RUN chmod 755 /usr/local/bin/woc-notifyd
 COPY app/deb-app-ctl.sh app/wechat-ctl.sh app/qq-ctl.sh app/telegram-ctl.sh /woc/
 RUN chmod 755 /woc/deb-app-ctl.sh /woc/wechat-ctl.sh /woc/qq-ctl.sh /woc/telegram-ctl.sh
 
-# 多应用：应用定义 + 通用安装/状态控制。deb 应用委托各自 ctl，Chromium 随镜像就绪。
-COPY app/app-defs.sh app/app-ctl.sh /woc/
-RUN chmod 644 /woc/app-defs.sh && chmod 755 /woc/app-ctl.sh
+# 多应用：应用定义 + runtime profile + 通用安装/状态控制。
+# deb 应用委托各自 ctl，Chromium 随镜像就绪。
+COPY app/chromium-flags.sh app/app-runtime.sh app/app-defs.sh app/app-ctl.sh /woc/
+RUN chmod 644 /woc/chromium-flags.sh /woc/app-runtime.sh /woc/app-defs.sh && chmod 755 /woc/app-ctl.sh
 
 # openbox 会话启动时执行此脚本：等待应用就绪 + 常驻拉起应用 + 最小化自动复原看守
 COPY init/autostart /defaults/autostart
-RUN chmod +x /defaults/autostart
+COPY init/window-guard.sh /woc/window-guard.sh
+RUN chmod 755 /defaults/autostart && chmod 644 /woc/window-guard.sh
 
 # 启动钩子（00）：给每个实例唯一且持久的 machine-id，避免所有实例共用镜像里烤死的同一个，
 # 触发客户端"设备农场"风控导致登录即被强制退出。须在 autostart（拉起应用）之前执行，故用 00 前缀。
