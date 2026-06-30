@@ -46,20 +46,22 @@ export default function AppShell() {
   useEffect(() => setDrawer(false), [loc.pathname]); // 路由变化关抽屉
 
   useEffect(() => {
-    if (!activeInstanceId) return;
     const clearWhenFocused = () => {
       if (document.visibilityState === 'visible' && document.hasFocus()) {
-        browserNotifications.clearUnreadInstance(activeInstanceId);
+        browserNotifications.setActiveInstanceForUnread(activeInstanceId ?? null);
       }
     };
+    browserNotifications.setActiveInstanceForUnread(activeInstanceId ?? null);
     clearWhenFocused();
     window.addEventListener('focus', clearWhenFocused);
+    window.addEventListener('pageshow', clearWhenFocused);
     document.addEventListener('visibilitychange', clearWhenFocused);
     return () => {
       window.removeEventListener('focus', clearWhenFocused);
+      window.removeEventListener('pageshow', clearWhenFocused);
       document.removeEventListener('visibilitychange', clearWhenFocused);
     };
-  }, [activeInstanceId, browserNotifications.clearUnreadInstance, browserNotifications.unreadInstanceIds]);
+  }, [activeInstanceId, browserNotifications.setActiveInstanceForUnread]);
 
   // 路由切换时刷新共享实例列表：主页和实例页依赖这里的上下文；管理页自己在加载时会单独刷新一遍。
   // 不清空旧数据，拉取期间沿用旧列表，无闪烁。

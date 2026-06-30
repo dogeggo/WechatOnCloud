@@ -21,6 +21,10 @@ const STREAM_RECONNECT_MAX_DELAY = 15000;
 export type BrowserNotificationStatus = 'unsupported' | 'blocked' | 'off' | 'on';
 type UnreadInstance = { instanceId: string; count: number };
 
+function isAppWindowFocused(): boolean {
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
+
 function notificationPermission(): NotificationPermission | 'unsupported' {
   return 'Notification' in window ? Notification.permission : 'unsupported';
 }
@@ -115,6 +119,7 @@ export function useBrowserNotifications() {
   const seenRef = useRef<Set<string>>(new Set());
   const openedExternalLinksRef = useRef<Set<string>>(new Set());
   const browserClientIdRef = useRef(browserClientId());
+  const activeInstanceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -194,14 +199,17 @@ export function useBrowserNotifications() {
         const first = seenRef.current.values().next().value;
         if (first) seenRef.current.delete(first);
       }
-      setUnreadInstances((items) => {
-        const current = items.find((item) => item.instanceId === event.instanceId);
-        const next = current
-          ? items.map((item) => item.instanceId === event.instanceId ? { ...item, count: item.count + 1 } : item)
-          : [...items, { instanceId: event.instanceId, count: 1 }];
-        saveUnreadInstances(next);
-        return next;
-      });
+      const currentAppFocused = activeInstanceIdRef.current === event.instanceId && isAppWindowFocused();
+      if (!currentAppFocused) {
+        setUnreadInstances((items) => {
+          const current = items.find((item) => item.instanceId === event.instanceId);
+          const next = current
+            ? items.map((item) => item.instanceId === event.instanceId ? { ...item, count: item.count + 1 } : item)
+            : [...items, { instanceId: event.instanceId, count: 1 }];
+          saveUnreadInstances(next);
+          return next;
+        });
+      }
 
       if ('Notification' in window) setPermission(Notification.permission);
       if (enabledRef.current && permissionRef.current === 'granted' && 'Notification' in window) {
@@ -258,6 +266,11 @@ export function useBrowserNotifications() {
       return next;
     });
   }, []);
+
+  const setActiveInstanceForUnread = useCallback((instanceId: string | null) => {
+    activeInstanceIdRef.current = instanceId;
+    if (instanceId && isAppWindowFocused()) clearUnreadInstance(instanceId);
+  }, [clearUnreadInstance]);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -387,6 +400,7 @@ export function useBrowserNotifications() {
     externalLinksEnabled,
     unreadInstanceIds: unreadIds,
     clearUnreadInstance,
+    setActiveInstanceForUnread,
     toggleBrowserNotifications,
     toggleExternalLinks,
   };
