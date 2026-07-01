@@ -48,6 +48,7 @@ export default function AppShell() {
   useEffect(() => {
     const clearWhenFocused = () => {
       if (document.visibilityState === 'visible' && document.hasFocus()) {
+        if (activeInstanceId) browserNotifications.markInstanceFocused(activeInstanceId);
         browserNotifications.setActiveInstanceForUnread(activeInstanceId ?? null);
       }
     };
@@ -61,7 +62,7 @@ export default function AppShell() {
       window.removeEventListener('pageshow', clearWhenFocused);
       document.removeEventListener('visibilitychange', clearWhenFocused);
     };
-  }, [activeInstanceId, browserNotifications.setActiveInstanceForUnread]);
+  }, [activeInstanceId, browserNotifications.markInstanceFocused, browserNotifications.setActiveInstanceForUnread]);
 
   // 路由切换时刷新共享实例列表：主页和实例页依赖这里的上下文；管理页自己在加载时会单独刷新一遍。
   // 不清空旧数据，拉取期间沿用旧列表，无闪烁。

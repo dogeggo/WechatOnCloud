@@ -12,7 +12,10 @@ import {
   isRuntimeOffline,
 } from "../domain/instances";
 import { VNC_STREAM_PROFILES } from "../domain/vncStream";
-import { DESKTOP_CLIENT_REPLACED_EVENT } from "../features/desktop/desktopClientEvents";
+import {
+  DESKTOP_CLIENT_REPLACED_EVENT,
+  dispatchDesktopInstanceFocused,
+} from "../features/desktop/desktopClientEvents";
 import { useDesktopFiles } from "../features/desktop/useDesktopFiles";
 import { InstanceLogs } from "../features/admin/components/InstanceLogs";
 import { useInstanceRuntimeActions } from "../features/desktop/useInstanceRuntimeActions";
@@ -195,6 +198,11 @@ export default function InstanceView({
     setDesktopClientId(createDesktopClientId());
     setClientReplaced(false);
     vnc.reconnect();
+  };
+  const handleDesktopInteraction = () => {
+    if (!id) return;
+    dispatchDesktopInstanceFocused(id);
+    vnc.reconnectIfDisconnected();
   };
   const toggleVncKeepAlive = (enabled: boolean) => {
     if (!id) return;
@@ -381,12 +389,13 @@ export default function InstanceView({
               key={`${id}:${desktopClientId}:${vnc.vncNonce}`}
               ref={frameRef}
               className="iv-frame"
+              data-woc-instance-id={id}
               src={desktopFrameSrc}
               title={`${profile.label}桌面`}
               allow="clipboard-read; clipboard-write; autoplay"
               onLoad={vnc.handleFrameLoad}
-              onFocus={() => vnc.reconnectIfDisconnected()}
-              onMouseDown={() => vnc.reconnectIfDisconnected()}
+              onFocus={handleDesktopInteraction}
+              onMouseDown={handleDesktopInteraction}
             />
 
             {!vnc.frameLoaded && !vnc.loadStuck && (

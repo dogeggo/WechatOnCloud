@@ -19,6 +19,7 @@ import { InstanceManager } from './instance/instance-manager.js';
 import { initStore } from './instance/store.js';
 import { NotificationManager } from './notification/notification-manager.js';
 import { registerNotificationRoutes } from './notification/notification-routes.js';
+import { PerformanceMetricsStreamManager } from './performance/performance-metrics-stream-manager.js';
 import { startWatchdog } from './watchdog/watchdog-manager.js';
 import { BingWallpaperManager } from './wallpaper/bing-wallpaper.js';
 
@@ -33,6 +34,7 @@ const auth = new AuthManager(
 const instances = new InstanceManager(panelConfig.watchdog, panelConfig.upload);
 const desktopClients = new DesktopClientManager();
 const notifications = new NotificationManager();
+const performanceMetrics = new PerformanceMetricsStreamManager(instances);
 const loginWallpaper = new BingWallpaperManager();
 
 const app = Fastify({
@@ -101,12 +103,6 @@ app.get('/api/login-wallpaper', async (_req, reply) => {
   reply.header('cache-control', 'public, max-age=3600');
   return handle(reply, () => loginWallpaper.current(), 502, '读取登录壁纸失败');
 });
-app.get('/api/ping', async (req, reply) => {
-  const user = requireUser(req, reply);
-  if (!user) return;
-  reply.header('cache-control', 'no-store');
-  return { ok: true, now: Date.now() };
-});
 app.get('/api/admin/sessions', async (req, reply) => auth.currentUserSessions(req, reply));
 app.delete('/api/admin/sessions/:id', async (req, reply) => auth.removeCurrentUserSession(req, reply));
 
@@ -116,11 +112,10 @@ app.get('/api/instances', async (req, reply) => {
   return handle(reply, () => instances.listWithStatus(user), 500, '读取实例失败');
 });
 
-app.get('/api/instances/:id/metrics', async (req, reply) => {
+app.get('/api/instances/:id/metrics/stream', (req, reply) => {
   const user = requireUser(req, reply);
   if (!user) return;
-  reply.header('cache-control', 'no-store');
-  return handle(reply, () => instances.applicationMetrics(user, routeParams(req).id), 500, '读取应用指标失败');
+  return handle(reply, () => performanceMetrics.openStream(req, reply, user, routeParams(req).id), 500, '读取应用指标失败');
 });
 
 app.post('/api/admin/instances', async (req, reply) => {

@@ -10,19 +10,31 @@ import {
 import { browserClientId } from '../../browserClient';
 import { useUI } from '../../ui';
 import { ReconnectWatchdog } from '../../utils/connectionWatchdog';
-import { dispatchDesktopClientReplaced } from '../desktop/desktopClientEvents';
+import {
+  DESKTOP_INSTANCE_FOCUSED_EVENT,
+  dispatchDesktopClientReplaced,
+  type DesktopInstanceFocusedEvent,
+} from '../desktop/desktopClientEvents';
 
 const STORAGE_KEY = 'woc_browser_notifications';
 const EXTERNAL_LINKS_STORAGE_KEY = 'woc_external_links';
 const UNREAD_STORAGE_KEY = 'woc_notification_unread_instances';
 const STREAM_RECONNECT_INITIAL_DELAY = 1000;
 const STREAM_RECONNECT_MAX_DELAY = 15000;
+const FRAME_FOCUS_BLUR_WINDOW_MS = 500;
 
 export type BrowserNotificationStatus = 'unsupported' | 'blocked' | 'off' | 'on';
 type UnreadInstance = { instanceId: string; count: number };
 
-function isAppWindowFocused(): boolean {
+function isTopWindowFocused(): boolean {
   return document.visibilityState === 'visible' && document.hasFocus();
+}
+
+function focusedDesktopFrameInstanceId(): string | null {
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLIFrameElement)) return null;
+  const instanceId = activeElement.dataset.wocInstanceId;
+  return instanceId || null;
 }
 
 function notificationPermission(): NotificationPermission | 'unsupported' {
@@ -120,6 +132,9 @@ export function useBrowserNotifications() {
   const openedExternalLinksRef = useRef<Set<string>>(new Set());
   const browserClientIdRef = useRef(browserClientId());
   const activeInstanceIdRef = useRef<string | null>(null);
+  const appWindowFocusedRef = useRef(isTopWindowFocused());
+  const focusedInstanceIdRef = useRef<string | null>(null);
+  const lastFrameFocusAtRef = useRef(0);
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -199,7 +214,7 @@ export function useBrowserNotifications() {
         const first = seenRef.current.values().next().value;
         if (first) seenRef.current.delete(first);
       }
-      const currentAppFocused = activeInstanceIdRef.current === event.instanceId && isAppWindowFocused();
+      const currentAppFocused = activeInstanceIdRef.current === event.instanceId && isActiveAppFocused();
       if (!currentAppFocused) {
         setUnreadInstances((items) => {
           const current = items.find((item) => item.instanceId === event.instanceId);
@@ -269,7 +284,16 @@ export function useBrowserNotifications() {
 
   const setActiveInstanceForUnread = useCallback((instanceId: string | null) => {
     activeInstanceIdRef.current = instanceId;
-    if (instanceId && isAppWindowFocused()) clearUnreadInstance(instanceId);
+    if (instanceId && isActiveAppFocused()) clearUnreadInstance(instanceId);
+  }, [clearUnreadInstance]);
+
+  const markInstanceFocused = useCallback((instanceId: string) => {
+    appWindowFocusedRef.current = document.visibilityState === 'visible';
+    focusedInstanceIdRef.current = instanceId;
+    lastFrameFocusAtRef.current = performance.now();
+    if (activeInstanceIdRef.current === instanceId && document.visibilityState === 'visible') {
+      clearUnreadInstance(instanceId);
+    }
   }, [clearUnreadInstance]);
 
   useEffect(() => {
@@ -280,6 +304,48 @@ export function useBrowserNotifications() {
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  useEffect(() => {
+    const markWindowFocused = () => {
+      if (document.visibilityState !== 'visible') return;
+      appWindowFocusedRef.current = true;
+      const activeInstanceId = activeInstanceIdRef.current;
+      if (activeInstanceId) clearUnreadInstance(activeInstanceId);
+    };
+    const markWindowBlurred = () => {
+      const blurredAt = performance.now();
+      window.setTimeout(() => {
+        const frameFocusedNearBlur = focusedDesktopFrameInstanceId() && blurredAt - lastFrameFocusAtRef.current <= FRAME_FOCUS_BLUR_WINDOW_MS;
+        if (frameFocusedNearBlur) return;
+        if (lastFrameFocusAtRef.current <= blurredAt) appWindowFocusedRef.current = false;
+      }, 100);
+    };
+    const syncVisibility = () => {
+      if (document.visibilityState !== 'visible') {
+        appWindowFocusedRef.current = false;
+        return;
+      }
+      if (document.hasFocus()) markWindowFocused();
+    };
+
+    window.addEventListener('focus', markWindowFocused);
+    window.addEventListener('blur', markWindowBlurred);
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => {
+      window.removeEventListener('focus', markWindowFocused);
+      window.removeEventListener('blur', markWindowBlurred);
+      document.removeEventListener('visibilitychange', syncVisibility);
+    };
+  }, [clearUnreadInstance]);
+
+  useEffect(() => {
+    const onDesktopInstanceFocused = (event: Event) => {
+      const detail = (event as CustomEvent<DesktopInstanceFocusedEvent>).detail;
+      if (detail?.instanceId) markInstanceFocused(detail.instanceId);
+    };
+    window.addEventListener(DESKTOP_INSTANCE_FOCUSED_EVENT, onDesktopInstanceFocused);
+    return () => window.removeEventListener(DESKTOP_INSTANCE_FOCUSED_EVENT, onDesktopInstanceFocused);
+  }, [markInstanceFocused]);
 
   useEffect(() => {
     updateDocumentTitle(unreadCount, titleRef.current);
@@ -395,12 +461,23 @@ export function useBrowserNotifications() {
     };
   }, [externalLinksEnabled, navigate, openExternalLink, showNotification]);
 
+  function isActiveAppFocused(): boolean {
+    if (document.visibilityState !== 'visible') return false;
+    const activeInstanceId = activeInstanceIdRef.current;
+    if (!activeInstanceId) return false;
+    if (isTopWindowFocused()) return true;
+    if (!appWindowFocusedRef.current) return false;
+    if (focusedDesktopFrameInstanceId() === activeInstanceId) return true;
+    return focusedInstanceIdRef.current === activeInstanceId;
+  }
+
   return {
     notificationStatus: status,
     externalLinksEnabled,
     unreadInstanceIds: unreadIds,
     clearUnreadInstance,
     setActiveInstanceForUnread,
+    markInstanceFocused,
     toggleBrowserNotifications,
     toggleExternalLinks,
   };

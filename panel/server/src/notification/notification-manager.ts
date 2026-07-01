@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { ServerResponse } from 'node:http';
 import { HttpError, httpError } from '../http/http-error.js';
+import { SseClientHub } from '../http/sse-stream.js';
 import { canAccessInstance, type Instance, type InstanceActor } from '../instance/store.js';
 
 export interface InstanceNotificationEvent {
@@ -47,11 +47,8 @@ export interface NotificationStreamOptions {
   browserClientId: string;
 }
 
-interface Client {
-  id: number;
+interface NotificationClientMeta {
   actor: InstanceActor;
-  res: ServerResponse;
-  heartbeat: NodeJS.Timeout;
   externalLinksEnabled: boolean;
   browserClientId: string;
 }
@@ -71,8 +68,7 @@ const APP_LABELS: Record<Instance['appType'], string> = {
 };
 
 export class NotificationManager {
-  private clients = new Map<number, Client>();
-  private clientSeq = 0;
+  private clients = new SseClientHub<NotificationClientMeta>();
   private eventSeq = 0;
 
   openStream(
@@ -81,34 +77,11 @@ export class NotificationManager {
     actor: InstanceActor,
     options: NotificationStreamOptions,
   ): void {
-    reply.hijack();
-    const res = reply.raw;
-    res.writeHead(200, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-cache, no-transform',
-      connection: 'keep-alive',
-      'x-accel-buffering': 'no',
-    });
-    res.write(': connected\n\n');
-
-    const clientId = ++this.clientSeq;
-    const heartbeat = setInterval(() => {
-      if (!res.destroyed) res.write(`: ping ${Date.now()}\n\n`);
-    }, 25_000);
-    const client: Client = {
-      id: clientId,
+    this.clients.open(req, reply, {
       actor,
-      res,
-      heartbeat,
       externalLinksEnabled: options.externalLinksEnabled,
       browserClientId: options.browserClientId,
-    };
-    this.clients.set(clientId, client);
-
-    const close = () => this.closeClient(clientId);
-    req.raw.once('close', close);
-    res.once('close', close);
-    res.once('error', close);
+    });
   }
 
   receive(inst: Instance, authorization: string | undefined, payload: unknown): InstanceNotificationEvent {
@@ -147,50 +120,19 @@ export class NotificationManager {
     return { event, accepted: this.sendExternalLink(inst, event, browserClientId) };
   }
 
-  private closeClient(id: number): void {
-    const client = this.clients.get(id);
-    if (!client) return;
-    clearInterval(client.heartbeat);
-    this.clients.delete(id);
-    try {
-      if (!client.res.destroyed) client.res.end();
-    } catch {
-      /* ignore closed SSE client */
-    }
-  }
-
   private broadcastForInstance(inst: Instance, eventName: string, id: string, data: unknown): void {
-    const message = sseMessage(eventName, id, data);
-    for (const client of this.clients.values()) {
-      if (!canAccessInstance(inst, client.actor)) continue;
-      if (client.res.destroyed) {
-        this.closeClient(client.id);
-        continue;
-      }
-      try {
-        client.res.write(message);
-      } catch {
-        this.closeClient(client.id);
-      }
+    for (const client of this.clients.all()) {
+      if (!canAccessInstance(inst, client.meta.actor)) continue;
+      this.clients.send(client, eventName, id, data);
     }
   }
 
   private sendExternalLink(inst: Instance, event: ExternalLinkEvent, browserClientId: string | null): boolean {
     if (!browserClientId) return false;
-    const message = sseMessage('external-link', event.id, event);
-    for (const client of this.clients.values()) {
-      if (!client.externalLinksEnabled || !canAccessInstance(inst, client.actor)) continue;
-      if (client.browserClientId !== browserClientId) continue;
-      if (client.res.destroyed) {
-        this.closeClient(client.id);
-        continue;
-      }
-      try {
-        client.res.write(message);
-        return true;
-      } catch {
-        this.closeClient(client.id);
-      }
+    for (const client of this.clients.all()) {
+      if (!client.meta.externalLinksEnabled || !canAccessInstance(inst, client.meta.actor)) continue;
+      if (client.meta.browserClientId !== browserClientId) continue;
+      if (this.clients.send(client, 'external-link', event.id, event)) return true;
     }
     return false;
   }
@@ -241,16 +183,6 @@ export class NotificationManager {
       createdAt: Date.now(),
     };
   }
-}
-
-function sseMessage(eventName: string, id: string, data: unknown): string {
-  return [
-    `id: ${id}`,
-    `event: ${eventName}`,
-    `data: ${JSON.stringify(data)}`,
-    '',
-    '',
-  ].join('\n');
 }
 
 function bearerToken(value: string | undefined): string {

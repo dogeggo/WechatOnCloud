@@ -13,6 +13,7 @@ import {
   syncVncFrameSize,
 } from './desktopFrame';
 import type { VncStreamSettings } from '../../domain/vncStream';
+import { dispatchDesktopInstanceFocused } from './desktopClientEvents';
 
 export function useVncFrame({
   active,
@@ -37,11 +38,14 @@ export function useVncFrame({
   const focusFrame = useCallback(() => focusVncFrame(frameRef.current), [frameRef]);
 
   const syncFrame = useCallback((shouldFocus: boolean) => {
-    if (shouldFocus) focusVncFrame(frameRef.current);
+    if (shouldFocus) {
+      focusVncFrame(frameRef.current);
+      if (id) dispatchDesktopInstanceFocused(id);
+    }
     injectVncStyle(frameRef.current);
     applyVncStreamSettings(frameRef.current, stream);
     if (shouldFocus) syncVncFrameSize(frameRef.current);
-  }, [frameRef, stream]);
+  }, [frameRef, id, stream]);
 
   const reconnect = useCallback(() => {
     setLoadStuck(false);
@@ -110,9 +114,19 @@ export function useVncFrame({
     if (!showVnc || !frameLoaded || !id) return;
     const doc = frameRef.current?.contentDocument;
     if (!doc) return;
-    const onPointerDown = () => reconnectIfDisconnected();
+    const onFocused = () => dispatchDesktopInstanceFocused(id);
+    const onPointerDown = () => {
+      onFocused();
+      reconnectIfDisconnected();
+    };
     doc.addEventListener('pointerdown', onPointerDown, true);
-    return () => doc.removeEventListener('pointerdown', onPointerDown, true);
+    doc.addEventListener('focusin', onFocused, true);
+    doc.addEventListener('keydown', onFocused, true);
+    return () => {
+      doc.removeEventListener('pointerdown', onPointerDown, true);
+      doc.removeEventListener('focusin', onFocused, true);
+      doc.removeEventListener('keydown', onFocused, true);
+    };
   }, [frameLoaded, frameRef, id, reconnectIfDisconnected, showVnc]);
 
   useEffect(() => {

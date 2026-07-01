@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from 'react';
-import { api } from '../../api';
+import { api, type AppMetricsEvent, type PerformancePingEvent } from '../../api';
 
 export interface VncFrameResolution {
   width: number;
@@ -135,18 +135,38 @@ export function useVncPerformanceStats({
   }, [enabled, frameRef]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!metricsEnabled) return;
+    const currentInstanceId = instanceId;
+    if (!currentInstanceId) return;
 
-    let stopped = false;
-    let timer = 0;
+    let stream: EventSource | null = null;
     const latencySamples: number[] = [];
 
-    const measureLatency = async () => {
-      const startedAt = performance.now();
+    const clearRemoteStats = () => {
+      setStats((current) =>
+        current.latencyMs === null
+          && current.latencyJitterMs === null
+          && current.appMemoryUsedBytes === null
+          && current.appMemoryMaxBytes === null
+          && current.appCpuPercent === null
+          ? current
+          : {
+            ...current,
+            latencyMs: null,
+            latencyJitterMs: null,
+            appMemoryUsedBytes: null,
+            appMemoryMaxBytes: null,
+            appCpuPercent: null,
+          },
+      );
+    };
+
+    const onPing = (event: MessageEvent) => {
       try {
-        await api.ping();
-        if (stopped) return;
-        const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
+        const ping = JSON.parse(event.data) as PerformancePingEvent;
+        if (ping?.type !== 'performance-ping') return;
+        const latencyMs = normalizeMetricNumber(Date.now() - ping.serverTime);
+        if (latencyMs === null) return;
         latencySamples.push(latencyMs);
         if (latencySamples.length > LATENCY_SAMPLE_SIZE) latencySamples.shift();
         const latencyJitterMs = latencySamples.length >= 2 ? calculateJitter(latencySamples) : null;
@@ -157,42 +177,14 @@ export function useVncPerformanceStats({
             : { ...current, latencyMs, latencyJitterMs },
         );
       } catch {
-        if (!stopped) {
-          setStats((current) =>
-            current.latencyMs === null
-              && current.latencyJitterMs === null
-              ? current
-              : {
-                ...current,
-                latencyMs: null,
-                latencyJitterMs: null,
-              },
-          );
-        }
+        /* ignore malformed ping event */
       }
-
-      if (!stopped) timer = window.setTimeout(measureLatency, 5000);
     };
 
-    void measureLatency();
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-    };
-  }, [enabled]);
-
-  useEffect(() => {
-    if (!metricsEnabled) return;
-    const currentInstanceId = instanceId;
-    if (!currentInstanceId) return;
-
-    let stopped = false;
-    let timer = 0;
-
-    const syncAppMetrics = async () => {
+    const onMetrics = (event: MessageEvent) => {
       try {
-        const metrics = await api.instanceMetrics(currentInstanceId);
-        if (stopped) return;
+        const metrics = JSON.parse(event.data) as AppMetricsEvent;
+        if (metrics?.type !== 'performance-metrics') return;
         const appMemoryUsedBytes = normalizeMetricNumber(metrics.usedBytes);
         const appMemoryMaxBytes = normalizeMetricNumber(metrics.maxBytes);
         const appCpuPercent = normalizeMetricNumber(metrics.cpuPercent);
@@ -204,29 +196,22 @@ export function useVncPerformanceStats({
             : { ...current, appMemoryUsedBytes, appMemoryMaxBytes, appCpuPercent },
         );
       } catch {
-        if (!stopped) {
-          setStats((current) =>
-            current.appMemoryUsedBytes === null
-              && current.appMemoryMaxBytes === null
-              && current.appCpuPercent === null
-              ? current
-              : {
-                ...current,
-                appMemoryUsedBytes: null,
-                appMemoryMaxBytes: null,
-                appCpuPercent: null,
-              },
-          );
-        }
+        /* ignore malformed metrics event */
       }
-
-      if (!stopped) timer = window.setTimeout(syncAppMetrics, 10000);
     };
 
-    void syncAppMetrics();
+    stream = new EventSource(api.instanceMetricsStreamUrl(currentInstanceId));
+    stream.addEventListener('ping', onPing as EventListener);
+    stream.addEventListener('metrics', onMetrics as EventListener);
+    stream.onerror = clearRemoteStats;
+
     return () => {
-      stopped = true;
-      window.clearTimeout(timer);
+      if (!stream) return;
+      stream.removeEventListener('ping', onPing as EventListener);
+      stream.removeEventListener('metrics', onMetrics as EventListener);
+      stream.onerror = null;
+      stream.close();
+      stream = null;
     };
   }, [metricsEnabled, instanceId]);
 
@@ -386,7 +371,7 @@ function calculateJitter(samples: number[]): number {
 }
 
 function normalizeMetricNumber(value: number | null): number | null {
-  return Number.isFinite(value) && value >= 0 ? value : null;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function sameRuntimeStats(
