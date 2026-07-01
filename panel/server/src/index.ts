@@ -103,6 +103,12 @@ app.get('/api/login-wallpaper', async (_req, reply) => {
   reply.header('cache-control', 'public, max-age=3600');
   return handle(reply, () => loginWallpaper.current(), 502, '读取登录壁纸失败');
 });
+app.get('/api/ping', async (req, reply) => {
+  const user = requireUser(req, reply);
+  if (!user) return;
+  reply.header('cache-control', 'no-store');
+  return { ok: true, now: Date.now() };
+});
 app.get('/api/admin/sessions', async (req, reply) => auth.currentUserSessions(req, reply));
 app.delete('/api/admin/sessions/:id', async (req, reply) => auth.removeCurrentUserSession(req, reply));
 

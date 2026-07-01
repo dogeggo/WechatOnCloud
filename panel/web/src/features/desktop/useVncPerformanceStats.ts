@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from 'react';
-import { api, type AppMetricsEvent, type PerformancePingEvent } from '../../api';
+import { api, type AppMetricsEvent } from '../../api';
 
 export interface VncFrameResolution {
   width: number;
@@ -135,38 +135,18 @@ export function useVncPerformanceStats({
   }, [enabled, frameRef]);
 
   useEffect(() => {
-    if (!metricsEnabled) return;
-    const currentInstanceId = instanceId;
-    if (!currentInstanceId) return;
+    if (!enabled) return;
 
-    let stream: EventSource | null = null;
+    let stopped = false;
+    let timer = 0;
     const latencySamples: number[] = [];
 
-    const clearRemoteStats = () => {
-      setStats((current) =>
-        current.latencyMs === null
-          && current.latencyJitterMs === null
-          && current.appMemoryUsedBytes === null
-          && current.appMemoryMaxBytes === null
-          && current.appCpuPercent === null
-          ? current
-          : {
-            ...current,
-            latencyMs: null,
-            latencyJitterMs: null,
-            appMemoryUsedBytes: null,
-            appMemoryMaxBytes: null,
-            appCpuPercent: null,
-          },
-      );
-    };
-
-    const onPing = (event: MessageEvent) => {
+    const measureLatency = async () => {
+      const startedAt = performance.now();
       try {
-        const ping = JSON.parse(event.data) as PerformancePingEvent;
-        if (ping?.type !== 'performance-ping') return;
-        const latencyMs = normalizeMetricNumber(Date.now() - ping.serverTime);
-        if (latencyMs === null) return;
+        await api.ping();
+        if (stopped) return;
+        const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
         latencySamples.push(latencyMs);
         if (latencySamples.length > LATENCY_SAMPLE_SIZE) latencySamples.shift();
         const latencyJitterMs = latencySamples.length >= 2 ? calculateJitter(latencySamples) : null;
@@ -177,8 +157,50 @@ export function useVncPerformanceStats({
             : { ...current, latencyMs, latencyJitterMs },
         );
       } catch {
-        /* ignore malformed ping event */
+        if (!stopped) {
+          setStats((current) =>
+            current.latencyMs === null
+              && current.latencyJitterMs === null
+              ? current
+              : {
+                ...current,
+                latencyMs: null,
+                latencyJitterMs: null,
+              },
+          );
+        }
       }
+
+      if (!stopped) timer = window.setTimeout(measureLatency, 5000);
+    };
+
+    void measureLatency();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!metricsEnabled) return;
+    const currentInstanceId = instanceId;
+    if (!currentInstanceId) return;
+
+    let stream: EventSource | null = null;
+
+    const clearAppMetrics = () => {
+      setStats((current) =>
+        current.appMemoryUsedBytes === null
+          && current.appMemoryMaxBytes === null
+          && current.appCpuPercent === null
+          ? current
+          : {
+            ...current,
+            appMemoryUsedBytes: null,
+            appMemoryMaxBytes: null,
+            appCpuPercent: null,
+          },
+      );
     };
 
     const onMetrics = (event: MessageEvent) => {
@@ -201,13 +223,11 @@ export function useVncPerformanceStats({
     };
 
     stream = new EventSource(api.instanceMetricsStreamUrl(currentInstanceId));
-    stream.addEventListener('ping', onPing as EventListener);
     stream.addEventListener('metrics', onMetrics as EventListener);
-    stream.onerror = clearRemoteStats;
+    stream.onerror = clearAppMetrics;
 
     return () => {
       if (!stream) return;
-      stream.removeEventListener('ping', onPing as EventListener);
       stream.removeEventListener('metrics', onMetrics as EventListener);
       stream.onerror = null;
       stream.close();

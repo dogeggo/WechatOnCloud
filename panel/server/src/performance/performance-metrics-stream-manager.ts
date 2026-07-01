@@ -10,15 +10,9 @@ interface PerformanceMetricsClientMeta {
 
 interface PerformanceMetricsStreamClient {
   sse: SseClient<PerformanceMetricsClientMeta>;
-  pingTimer: NodeJS.Timeout;
   metricsTimer: NodeJS.Timeout;
   metricsRunning: boolean;
   eventSeq: number;
-}
-
-export interface PerformancePingEvent {
-  type: 'performance-ping';
-  serverTime: number;
 }
 
 export interface PerformanceMetricsEvent extends ApplicationMetricsInfo {
@@ -27,7 +21,6 @@ export interface PerformanceMetricsEvent extends ApplicationMetricsInfo {
 }
 
 const METRICS_INTERVAL_MS = 10_000;
-const PING_INTERVAL_MS = 5_000;
 const SSE_KEEPALIVE_MS = 25_000;
 
 export class PerformanceMetricsStreamManager {
@@ -57,20 +50,11 @@ export class PerformanceMetricsStreamManager {
 
     stream = {
       sse,
-      pingTimer: setTimeout(() => this.ping(stream), 0),
       metricsTimer: setTimeout(() => this.syncMetrics(stream), 0),
       metricsRunning: false,
       eventSeq: 0,
     };
     this.streams.set(sse.id, stream);
-  }
-
-  private ping(stream: PerformanceMetricsStreamClient): void {
-    if (!this.sendPing(stream)) {
-      this.cleanupStream(stream.sse.id);
-      return;
-    }
-    this.schedulePing(stream);
   }
 
   private syncMetrics(stream: PerformanceMetricsStreamClient): void {
@@ -101,28 +85,14 @@ export class PerformanceMetricsStreamManager {
       });
   }
 
-  private schedulePing(stream: PerformanceMetricsStreamClient): void {
-    if (!this.streams.has(stream.sse.id)) return;
-    stream.pingTimer = setTimeout(() => this.ping(stream), PING_INTERVAL_MS);
-  }
-
   private scheduleMetrics(stream: PerformanceMetricsStreamClient): void {
     if (!this.streams.has(stream.sse.id)) return;
     stream.metricsTimer = setTimeout(() => this.syncMetrics(stream), METRICS_INTERVAL_MS);
   }
 
-  private sendPing(stream: PerformanceMetricsStreamClient, serverTime = Date.now()): boolean {
-    const event: PerformancePingEvent = {
-      type: 'performance-ping',
-      serverTime,
-    };
-    return this.clients.send(stream.sse, 'ping', this.nextEventId(stream, 'ping'), event);
-  }
-
   private cleanupStream(clientId: number): void {
     const stream = this.streams.get(clientId);
     if (!stream) return;
-    clearTimeout(stream.pingTimer);
     clearTimeout(stream.metricsTimer);
     this.streams.delete(clientId);
   }

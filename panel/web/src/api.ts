@@ -57,11 +57,6 @@ export interface AppMetricsEvent extends AppMetrics {
   serverTime: number;
 }
 
-export interface PerformancePingEvent {
-  type: 'performance-ping';
-  serverTime: number;
-}
-
 export type AppPhase = 'idle' | 'downloading' | 'extracting' | 'installing' | 'done' | 'error';
 export interface AppStatus {
   phase: AppPhase;
@@ -225,6 +220,7 @@ async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
 
 export const api = {
   me: () => req<{ user: PanelUser }>('/api/auth/me'),
+  ping: () => req<{ ok: true; now: number }>(`/api/ping?t=${Date.now()}`),
   instanceMetricsStreamUrl: (id: string) => `/api/instances/${encodeURIComponent(id)}/metrics/stream`,
   loginWallpaper: () => req<LoginWallpaper>('/api/login-wallpaper'),
   loginUrl: (returnTo = '/') => `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
